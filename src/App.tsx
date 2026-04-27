@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef,useMemo } from 'react';
 import { 
   Event, 
   MediaItem, 
@@ -1188,53 +1188,48 @@ const toggleGroup = (groupId: string) => {
  
 }, [activeTable]);
 
-  useEffect(() => {
-    if (!user) return;
+useEffect(() => {
+  if (!user) return;
 
-    const setupSubscription = (table: string, setter: (data: any) => void) => {
-      const fetchData = async () => {
-        try {
-          const response = await window.fetch(`/api/${table}`);
-          const data = await response.json();
-          if (Array.isArray(data)) setter(data);
-        } catch (error) {
-          console.error(`Failed to fetch ${table}:`, error);
-        }
-      };
-      
-      fetchData();
-      const interval = setInterval(fetchData, 5000); // Polling as a fallback
-      return () => clearInterval(interval);
+  const setupSubscription = (table: string, setter: (data: any) => void) => {
+    // 1. Define the fetcher
+    const fetchData = async () => {
+      // Don't fetch if the user is busy managing images to prevent flickering
+      if (imageManager?.isOpen) return; 
+
+      try {
+        const response = await window.fetch(`/api/${table}`);
+        const data = await response.json();
+        if (Array.isArray(data)) setter(data);
+      } catch (error) {
+        console.error(`Failed to fetch ${table}:`, error);
+      }
     };
+    
+    fetchData();
+    // 2. Only set the interval if the modal is CLOSED
+    const interval = setInterval(fetchData, 5000);
+    return () => clearInterval(interval);
+  };
 
-    const eventsSub = setupSubscription('events', (data) => {
-  setEvents(data);
-  // Remove the auto-selection logic so it stays closed when you close it
-});
+  const eventsSub = setupSubscription('events', setEvents);
+  const guidanceSub = setupSubscription('guidance', setGuidance);
+  const sessionsSub = setupSubscription('sessions', setSessions);
+  const locationsSub = setupSubscription('locations', setLocations);
+  const mediaSub = setupSubscription('media', setMedia);
+  const checklistSub = setupSubscription('checklist', setChecklist);
+  const ledSub = setupSubscription('led_details', setLedDetails);
+  const rentalsSub = setupSubscription('rentals', setRentals);
+  const videoSetupSub = setupSubscription('videosetup', setVideoSetup);
+  const audioSetupSub = setupSubscription('audiosetup', setAudioSetup);
 
-    const guidanceSub = setupSubscription('guidance', setGuidance);
-    const sessionsSub = setupSubscription('sessions', setSessions);
-    const locationsSub = setupSubscription('locations', setLocations);
-    const mediaSub = setupSubscription('media', setMedia);
-    const checklistSub = setupSubscription('checklist', setChecklist);
-    const ledSub = setupSubscription('led_details', setLedDetails);
-    const rentalsSub = setupSubscription('rentals', setRentals);
-    const videoSetupSub = setupSubscription('videosetup', setVideoSetup);
-    const audioSetupSub = setupSubscription('audiosetup', setAudioSetup);
-
-    return () => {
-      eventsSub();
-      guidanceSub();
-      sessionsSub();
-      locationsSub();
-      mediaSub();
-      checklistSub();
-      ledSub();
-      rentalsSub();
-      videoSetupSub();
-      audioSetupSub();
-    };
-  }, [user, selectedEventId]);
+  return () => {
+    eventsSub(); guidanceSub(); sessionsSub(); locationsSub();
+    mediaSub(); checklistSub(); ledSub(); rentalsSub();
+    videoSetupSub(); audioSetupSub();
+  };
+  // ADD imageManager?.isOpen to the dependency array below
+}, [user, selectedEventId, imageManager?.isOpen]);
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -1570,6 +1565,14 @@ const handleInlineSave = async () => {
     console.error("Inline Save Error:", error);
   }
 };
+
+const memoizedData = useMemo(() => getProcessedData(), [
+  filteredData, 
+  sortBy, 
+  groupByField, 
+  isInlineAdding,
+  collapsedGroups
+]);
 
 const deleteImage = (sessionId: string, imageIndex: number) => {
   setSessionImages(prev => {
@@ -2665,6 +2668,7 @@ if (!health?.mongodb) {
 </thead>
                       
      <tbody className="bg-white">
+     
   {getProcessedData().map((row, idx) => {
     
     // 1. Visibility logic (Keep this exactly as you had it)
