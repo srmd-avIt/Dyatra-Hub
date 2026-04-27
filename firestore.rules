@@ -1,0 +1,150 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: events
+    // Fields: name (string), date (string), location (string), description (string), status (string)
+    //
+    // Collection: sessions
+    // Fields: name (string), time (string), speaker (string), status (string)
+    //
+    // Collection: locations
+    // Fields: name (string), address (string), capacity (string), contact (string)
+    //
+    // Collection: ledDetails
+    // Fields: type (string), dimensions (string), resolution (string), operator (string)
+    //
+    // Collection: checklist
+    // Fields: task (string), category (string), status (string), assignedTo (string)
+    //
+    // Collection: media
+    // Fields: type (string), title (string), url (string), duration (string)
+    //
+    // Collection: guidance
+    // Fields: title (string), content (string), category (string)
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && 
+        (get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+         (request.auth.token.email == "it_sevarpit@avdept.org" && request.auth.token.email_verified == true));
+    }
+
+    function isValidEvent(data) {
+      return data.keys().hasAll(['name', 'date']) &&
+             data.name is string && data.name.size() > 0 && data.name.size() < 200 &&
+             data.date is string &&
+             (!('status' in data) || data.status in ['planned', 'ongoing', 'completed']);
+    }
+
+    function isValidSession(data) {
+      return data.keys().hasAll(['name', 'time']) &&
+             data.name is string && data.name.size() < 200 &&
+             data.time is string;
+    }
+
+    function isValidLocation(data) {
+      return data.keys().hasAll(['name', 'address']) &&
+             data.name is string && data.name.size() < 200 &&
+             data.address is string;
+    }
+
+    function isValidLEDDetail(data) {
+      return data.keys().hasAll(['type']) &&
+             data.type is string && data.type.size() < 100;
+    }
+
+    function isValidChecklistItem(data) {
+      return data.keys().hasAll(['task', 'category']) &&
+             data.task is string && data.task.size() < 500 &&
+             (!('status' in data) || data.status in ['pending', 'in-progress', 'completed']);
+    }
+
+    function isValidMediaItem(data) {
+      return data.keys().hasAll(['type', 'title', 'url']) &&
+             data.type in ['music', 'video'] &&
+             data.title is string && data.title.size() < 200 &&
+             data.url is string && data.url.matches("^https?://.*");
+    }
+
+    function isValidRentalItem(data) {
+      return data.keys().hasAll(['item', 'vendor']) &&
+             data.item is string && data.item.size() < 200 &&
+             data.vendor is string;
+    }
+
+    function isValidGuidance(data) {
+      return data.keys().hasAll(['title', 'content']) &&
+             data.title is string && data.title.size() < 200 &&
+             data.content is string;
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated() && (request.auth.uid == userId || isAdmin());
+      allow write: if isAdmin();
+    }
+
+    match /events/{eventId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidEvent(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /sessions/{sessionId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidSession(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /locations/{locationId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidLocation(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /ledDetails/{detailId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidLEDDetail(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /checklist/{itemId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAuthenticated() && isValidChecklistItem(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /media/{mediaId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidMediaItem(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /rentals/{rentalId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidRentalItem(request.resource.data);
+      allow delete: if isAdmin();
+    }
+
+    match /guidance/{guidanceId} {
+      allow read: if isAuthenticated();
+      allow create, update: if isAdmin() && isValidGuidance(request.resource.data);
+      allow delete: if isAdmin();
+    }
+  }
+}

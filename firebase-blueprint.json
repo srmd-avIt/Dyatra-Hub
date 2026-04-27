@@ -1,0 +1,91 @@
+{
+  "entities": {
+    "Event": {
+      "title": "Event",
+      "description": "Main event details for Dyatra events.",
+      "type": "object",
+      "properties": {
+        "name": { "type": "string", "description": "Name of the event" },
+        "date": { "type": "string", "format": "date", "description": "Date of the event" },
+        "location": { "type": "string", "description": "Location of the event" },
+        "description": { "type": "string", "description": "Brief description of the event" },
+        "status": { "type": "string", "enum": ["planned", "ongoing", "completed"], "description": "Current status of the event" }
+      },
+      "required": ["name", "date"]
+    },
+    "LEDDetail": {
+      "title": "LED Detail",
+      "description": "Technical details for LED setups at events.",
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string", "description": "Reference to the event" },
+        "type": { "type": "string", "description": "Type of LED screen" },
+        "dimensions": { "type": "string", "description": "Physical dimensions (e.g., 20x10ft)" },
+        "resolution": { "type": "string", "description": "Screen resolution" },
+        "setupDetails": { "type": "string", "description": "Technical setup instructions" },
+        "operator": { "type": "string", "description": "Person in charge of the LED" }
+      },
+      "required": ["eventId", "type"]
+    },
+    "ChecklistItem": {
+      "title": "Checklist Item",
+      "description": "Tasks for planning and data sharing.",
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string", "description": "Reference to the event" },
+        "task": { "type": "string", "description": "The task description" },
+        "category": { "type": "string", "enum": ["planning", "data-sharing"], "description": "Category of the task" },
+        "status": { "type": "string", "enum": ["pending", "in-progress", "completed"], "description": "Current status of the task" },
+        "assignedTo": { "type": "string", "description": "Person assigned to the task" }
+      },
+      "required": ["eventId", "task", "category"]
+    },
+    "RentalItem": {
+      "title": "Rental Item",
+      "description": "Audio and video equipment rentals.",
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string", "description": "Reference to the event" },
+        "type": { "type": "string", "enum": ["audio", "video"], "description": "Type of equipment" },
+        "item": { "type": "string", "description": "Name of the equipment" },
+        "quantity": { "type": "number", "description": "Number of items" },
+        "vendor": { "type": "string", "description": "Rental vendor name" },
+        "cost": { "type": "number", "description": "Rental cost" },
+        "status": { "type": "string", "enum": ["booked", "delivered", "returned"], "description": "Current status of the rental" }
+      },
+      "required": ["eventId", "type", "item"]
+    },
+    "MediaItem": {
+      "title": "Media Item",
+      "description": "Music and video playback items.",
+      "type": "object",
+      "properties": {
+        "eventId": { "type": "string", "description": "Reference to the event" },
+        "type": { "type": "string", "enum": ["music", "video"], "description": "Type of media" },
+        "title": { "type": "string", "description": "Title of the track or video" },
+        "url": { "type": "string", "format": "uri", "description": "URL to the media file" },
+        "duration": { "type": "string", "description": "Duration of the media" }
+      },
+      "required": ["eventId", "type", "title", "url"]
+    },
+    "Guidance": {
+      "title": "Guidance",
+      "description": "PPG Guidance and other documentation.",
+      "type": "object",
+      "properties": {
+        "title": { "type": "string", "description": "Title of the guidance sheet" },
+        "content": { "type": "string", "description": "Content or link to the guidance" },
+        "category": { "type": "string", "description": "Category of guidance" }
+      },
+      "required": ["title", "content"]
+    }
+  },
+  "firestore": {
+    "/events/{eventId}": { "schema": "Event", "description": "Main events collection" },
+    "/events/{eventId}/ledDetails/{detailId}": { "schema": "LEDDetail", "description": "LED details for a specific event" },
+    "/events/{eventId}/checklist/{itemId}": { "schema": "ChecklistItem", "description": "Checklist items for a specific event" },
+    "/events/{eventId}/rentals/{rentalId}": { "schema": "RentalItem", "description": "Rental items for a specific event" },
+    "/events/{eventId}/media/{mediaId}": { "schema": "MediaItem", "description": "Media items for a specific event" },
+    "/guidance/{guidanceId}": { "schema": "Guidance", "description": "General guidance sheets" }
+  }
+}
