@@ -60,7 +60,8 @@ async function getDb() {
 const getRedirectUri = (req: any) => {
   const protocol = req.headers['x-forwarded-proto'] || 'https';
   const host = req.headers['host'];
-  return `${protocol}://${host}/auth/google/callback`;
+  // Added /api/ to the path
+  return `${protocol}://${host}/api/auth/google/callback`;
 };
 
 /**
