@@ -11,7 +11,7 @@ const app = express();
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
-
+const PORT = process.env.PORT || 3000;
 const uri = process.env.MONGODB_URI;
 let cachedDb: any = null;
 let cachedClient: MongoClient | null = null;
@@ -58,9 +58,16 @@ async function getDb() {
  * OAUTH HELPER
  */
 const getRedirectUri = (req: any) => {
+  const host = req.headers['host'] || '';
+
+  // 1. If running on your computer (localhost)
+  if (host.includes('localhost') || host.includes('127.0.0.1')) {
+    // We MUST use http (not https) and we use port 5173 (Vite port)
+    return `http://localhost:5173/api/auth/google/callback`;
+  }
+
+  // 2. If running on the internet (Vercel)
   const protocol = req.headers['x-forwarded-proto'] || 'https';
-  const host = req.headers['host'];
-  // Added /api/ to the path
   return `${protocol}://${host}/api/auth/google/callback`;
 };
 
@@ -234,6 +241,11 @@ app.post('/api/settings/columns', async (req, res) => {
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: 'Settings save failed' }); }
 });
-
+if (process.env.NODE_ENV !== 'production') {
+  app.listen(PORT, () => {
+    console.log(`🚀 Server actually running on http://localhost:${PORT}`);
+    console.log(`📡 Health check: http://localhost:${PORT}/api/health`);
+  });
+}
 // Final export for Vercel
 export default app;

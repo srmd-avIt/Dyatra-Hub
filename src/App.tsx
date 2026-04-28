@@ -163,16 +163,16 @@ const RecordDetailView = ({ item, columns, onBack, tableName }: { item: any, col
           
           {/* Main Info Card */}
           <Card className="bg-white border-none shadow-2xl rounded-[32px] overflow-hidden ring-1 ring-slate-200">
-            <CardHeader className="bg-slate-50 border-b border-slate-100 p-8">
+            <CardHeader className="bg-slate-50 border-b border-slate-100 p-5 sm:p-8">
               <div className="text-[10px] font-black text-brand-primary uppercase tracking-[0.2em] mb-2">{tableName} Entry</div>
-              <CardTitle className="text-3xl font-black text-slate-900 uppercase tracking-tighter leading-tight">
+              <CardTitle className="text-xl sm:text-3xl font-black text-slate-900 uppercase tracking-tighter leading-tight">
                 {item["Event Name"] || item["Session Name"] || item["Track"] || item["Title"] || item["VideoTitle"] || item["Task"] || "Detail View"}
               </CardTitle>
             </CardHeader>
             <CardContent className="p-0">
-              <div className="grid grid-cols-1 md:grid-cols-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2">
                 {columns.map((col, idx) => (
-                  <div key={idx} className="p-6 border-b border-r border-slate-50 flex flex-col gap-1 hover:bg-slate-50/50 transition-colors">
+                  <div key={idx} className="p-4 sm:p-6 border-b border-r border-slate-50 flex flex-col gap-1 hover:bg-slate-50/50 transition-colors">
                     {/* UPDATED LABEL COLOR: Changed from slate-900 to slate-400 for better hierarchy */}
                     <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.15em] mb-0.5">
                       {col}
@@ -270,7 +270,7 @@ const [editingHeader, setEditingHeader] = useState<{ index: number, value: strin
   // UI Functionality State
   const [isGroupOpen, setIsGroupOpen] = useState(false);
 const [isSortOpen, setIsSortOpen] = useState(false);
-  const [activeTable, setActiveTable] = useState('Master Events');
+  const [activeTable, setActiveTable] = useState('Home');
   const [isAdding, setIsAdding] = useState(false);
   const [viewMode, setViewMode] = useState<'visual' | 'grid' | 'card'>('card');
   const [searchQuery, setSearchQuery] = useState('');
@@ -397,6 +397,39 @@ const handleImageUpdate = async (updatedString: string) => {
     }
   } catch (error) {
     console.error("Upload Error:", error);
+  }
+};
+
+
+const [selectedIds, setSelectedIds] = useState<string[]>([]);
+const [isActionToolbarOpen, setIsActionToolbarOpen] = useState(false);
+
+const toggleRowSelection = (id: string) => {
+  setSelectedIds(prev => 
+    prev.includes(id) ? prev.filter(item => item !== id) : [...prev, id]
+  );
+};
+
+const handleBulkDelete = async () => {
+  if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} records?`)) return;
+  
+  let collection = '';
+  switch (activeTable) {
+    case 'Events': collection = 'events'; break;
+    case 'Session': collection = 'sessions'; break;
+    case 'MusicLog': collection = 'musiclog'; break;
+    // ... add your other collection mappings ...
+  }
+
+  try {
+    // Note: This assumes your API supports bulk delete or you loop through
+    for (const id of selectedIds) {
+      await window.fetch(`/api/${collection}/${id}`, { method: 'DELETE' });
+    }
+    setSelectedIds([]);
+    fetchAllData();
+  } catch (e) {
+    console.error("Delete failed", e);
   }
 };
 
@@ -744,7 +777,7 @@ const renderRow = (item: any) => {
 
 // Inside renderRow function
 const cellCls = "px-4 py-3 border-r border-b border-slate-400 text-slate-700 text-[13px] whitespace-nowrap overflow-hidden text-ellipsis text-center";
-const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-bold text-slate-900 text-[13px] uppercase truncate text-center";
+const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold text-slate-900 text-[13px] truncate text-center";
 
   // HELPER: This renders the data for the columns added via the "+" button
   const renderExtraCells = () => {
@@ -1631,7 +1664,7 @@ if (!user) {
       <motion.div 
         initial={{ opacity: 0, y: 20 }}
         animate={{ opacity: 1, y: 0 }}
-        className="w-full max-w-[480px] bg-white rounded-[48px] p-12 text-center shadow-[0_20px_60px_rgba(0,0,0,0.6)] relative z-10 overflow-hidden"
+        className="w-full max-w-[480px] bg-white rounded-[32px] sm:rounded-[48px] p-8 sm:p-12 text-center shadow-[0_20px_60px_rgba(0,0,0,0.6)] relative z-10 overflow-hidden"
       >
         {/* Top blue accent bar */}
         <div className="absolute top-0 left-0 w-full h-2 bg-brand-primary" />
@@ -1645,7 +1678,7 @@ if (!user) {
 
         {/* Heading */}
         <div className="space-y-3 mb-12">
-          <h1 className="text-4xl font-black text-slate-900 tracking-tighter uppercase leading-none">
+          <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tighter uppercase leading-none">
             DYATRA <span className="text-brand-primary">OPS</span>
           </h1>
           <div className="h-px w-12 bg-slate-100 mx-auto my-4" />
@@ -1821,6 +1854,7 @@ if (!health?.mongodb) {
         
         <div className="space-y-1">
           {[
+            { icon: LayoutGrid, label: 'Home' }, 
            { icon: Calendar, label: 'Events' },
           { icon: MessageSquare, label: 'Session' },
           { icon: Music, label: 'MusicLog' },
@@ -1952,10 +1986,10 @@ if (!health?.mongodb) {
     </Button>
 
     {/* Search Input (Placed on the far left) */}
-    <div className="relative hidden xs:block">
+    <div className="relative hidden sm:block">
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
-      <Input 
-        placeholder="Search..." 
+      <Input
+        placeholder="Search..."
         value={searchQuery}
         onChange={(e) => setSearchQuery(e.target.value)}
         className="bg-brand-bg w-[120px] md:w-[180px] pl-8 h-9 text-xs"
@@ -1978,7 +2012,7 @@ if (!health?.mongodb) {
   }`}
 >
   <LayoutGrid className="h-4 w-4" />
-  <span className="text-xs font-semibold">Visual</span>
+  <span className="text-xs font-semibold hidden sm:inline">Visual</span>
 </Button>
     <Button 
   size="sm" 
@@ -1991,14 +2025,14 @@ if (!health?.mongodb) {
   }`}
 >
   <Grid className="h-4 w-4" />
-  <span className="text-xs font-semibold">Grid</span>
+  <span className="text-xs font-semibold hidden sm:inline">Grid</span>
 </Button>
   </div>
 
   
   {/* 1. CUSTOM ROUNDED GROUP BY */}
-  <div className="relative">
-  <button 
+  <div className="relative hidden sm:block">
+  <button
     onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
     className="flex items-center bg-white border border-slate-300 rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[180px]"
   >
@@ -2045,8 +2079,8 @@ if (!health?.mongodb) {
   </AnimatePresence>
 </div>
 
-<div className="relative">
-  <button 
+<div className="relative hidden sm:block">
+  <button
     onClick={() => { setIsSortOpen(!isSortOpen); setIsGroupOpen(false); }}
     className="flex items-center bg-white border border-slate-300 rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[180px]"
   >
@@ -2146,11 +2180,85 @@ if (!health?.mongodb) {
 </div>
 </header>
 
+      {/* Mobile-only active filter bar */}
+      {(groupByField || sortBy) && (
+        <div className="sm:hidden flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-200 overflow-x-auto shrink-0">
+          <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Active:</span>
+          {groupByField && (
+            <button
+              onClick={() => setGroupByField(null)}
+              className="flex items-center gap-1 bg-brand-primary/10 text-brand-primary text-[10px] font-black uppercase px-2 py-1 rounded-lg border border-brand-primary/20 shrink-0"
+            >
+              <Layers className="h-3 w-3" />
+              {groupByField}
+              <X className="h-3 w-3" />
+            </button>
+          )}
+          {sortBy && (
+            <button
+              onClick={() => setSortBy(null)}
+              className="flex items-center gap-1 bg-slate-100 text-slate-700 text-[10px] font-black uppercase px-2 py-1 rounded-lg border border-slate-200 shrink-0"
+            >
+              <ArrowUpDown className="h-3 w-3" />
+              {sortBy.field} {sortBy.direction === 'asc' ? '↑' : '↓'}
+              <X className="h-3 w-3" />
+            </button>
+          )}
+        </div>
+      )}
+
         <div className="flex-1 overflow-y-auto bg-brand-bg p-3 md:p-8">
           <div className="max-w-[1400px] mx-auto space-y-6 lg:space-y-8">
             
-            {/* NEW: DETAIL VIEW VS LIST VIEW LOGIC */}
-            {viewingRecord ? (
+            {activeTable === 'Home' ? (
+  /* --- HOME PAGE: TEXT TOP-LEFT, IMAGE CENTER --- */
+    <motion.div 
+    initial={{ opacity: 0, y: 20 }}
+    animate={{ opacity: 1, y: 0 }}
+    className="relative w-full min-h-[50vh] sm:min-h-[75vh] flex flex-col"
+  >
+    {/* 1. TEXT SECTION (Remains Top Left) */}
+    <div className="text-left space-y-2 mb-8 relative z-10">
+      <h6 className="text-3xl font-black text-slate-900 uppercase tracking-tighter leading-none">
+        <span className="text-brand-primary">Home</span>
+      </h6>
+      <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-xs">
+        Dyatra Hub • Management Portal
+      </p>
+    </div>
+
+    {/* 2. WIDE RECTANGULAR GLASS HIGHLIGHT */}
+    <div className="w-full flex justify-center items-center">
+      <div className="relative w-full max-w-[1200px] group">
+        
+        {/* THE GLASS RECTANGLE */}
+        <div className="relative w-full h-[260px] sm:h-[480px] rounded-[24px] sm:rounded-[40px] border border-white/60 bg-white/30 backdrop-blur-3xl shadow-[0_20px_50px_rgba(0,0,0,0.05)] flex items-center justify-center overflow-hidden transition-all duration-500 group-hover:bg-white/40 group-hover:shadow-[0_30px_70px_rgba(0,0,0,0.08)]">
+          
+          {/* Subtle Inner Glow */}
+          <div className="absolute inset-0 bg-gradient-to-br from-white/40 to-transparent pointer-events-none" />
+
+         
+
+          {/* THE IMAGE (Centrally Highlighted) */}
+          <div className="relative h-[190px] sm:h-[380px] aspect-[4/5] z-10">
+            <img 
+              src="/Image/Image1.jpeg" 
+              alt="Beloved Bapa"
+              className="h-full w-full object-cover rounded-[20px] shadow-2xl border border-white/20 transition-transform duration-700 group-hover:scale-[1.02]"
+            />
+          </div>
+
+          
+
+          
+        </div>
+
+        {/* Outer ambient glow that stays behind the glass panel */}
+        <div className="absolute -inset-10 bg-brand-primary/5 rounded-[60px] blur-3xl -z-10 opacity-60" />
+      </div>
+    </div>
+  </motion.div>
+    ) :viewingRecord ? (
               <RecordDetailView 
                 item={viewingRecord} 
                 columns={getTableColumns()} 
@@ -2189,6 +2297,291 @@ if (!health?.mongodb) {
                 </div>
 
                 {viewMode === 'visual' ? (
+                  activeTable === 'Events' ? (
+  /* --- RESPONSIVE EVENTS GALLERY (Airtable Style) --- */
+  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 py-6">
+    {[...filteredData]
+      .sort((a, b) => new Date(a.DateFrom).getTime() - new Date(b.DateFrom).getTime()) // Ascending by Date
+      .map((item: any) => (
+        <motion.div 
+          key={item.id || item._id} 
+          onClick={() => setViewingRecord(item)}
+          whileHover={{ y: -4 }}
+          className="bg-white border border-slate-200 rounded-[20px] p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[300px]"
+        >
+          {/* 1. EVENT NAME HEADER */}
+          <div className="text-l font-black text-slate-900 mb-6 leading-tight line-clamp-2">
+            {item["Event Name"] || item.EventName || "Untitled Event"}
+          </div>
+
+          {/* 2. FIELDS LIST (MATCHING SCREENSHOT) */}
+          <div className="space-y-5 flex-1">
+            {/* EventID Field */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                EventID
+              </label>
+              <div className="text-[13px] font-medium text-slate-600 pl-0.5">
+                — {/* Replace with item.EventID if available in your data */}
+              </div>
+            </div>
+
+            {/* DateFrom Field */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                DateFrom
+              </label>
+              <div className="text-[13px] font-bold text-slate-800 pl-0.5">
+                {item.DateFrom || "—"}
+              </div>
+            </div>
+
+            {/* DateTo Field */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                DateTo
+              </label>
+              <div className="text-[13px] font-bold text-slate-800 pl-0.5">
+                {item.DateTo || "—"}
+              </div>
+            </div>
+          </div>
+
+         
+         
+        </motion.div>
+      ))}
+
+    {/* ADD EVENT CARD */}
+    <motion.div 
+      onClick={openAddModal} 
+      className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[300px]"
+    >
+      <Plus className="h-8 w-8 mb-2" />
+      <span className="text-[11px] font-black uppercase tracking-widest">New Event</span>
+    </motion.div>
+  </div>
+) : activeTable === 'Tracks' ? (
+  /* --- TRACKS GALLERY VIEW (Airtable Style) --- */
+  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 py-6">
+    {filteredData.map((item: any) => (
+      <motion.div 
+        key={item.id || item._id} 
+        onClick={() => setViewingRecord(item)}
+        whileHover={{ y: -2 }}
+        className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[220px]"
+      >
+        {/* 1. TRACK TITLE */}
+        <div className="text-[14px] font-bold text-slate-900 mb-5 leading-tight line-clamp-2 border-b border-slate-50 pb-2">
+          {item["Title"] || item.title || "Unknown Track"}
+        </div>
+
+        {/* 2. CARD FIELDS */}
+        <div className="space-y-4 flex-1">
+          {/* Artist Field */}
+          <div className="space-y-0.5">
+            <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
+              Artist
+            </label>
+            <div className="text-[12px] font-semibold text-slate-700 truncate">
+              {item["Artist"] || item.artist || "—"}
+            </div>
+          </div>
+
+          {/* Album Field */}
+          <div className="space-y-0.5">
+            <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
+              Album
+            </label>
+            <div className="text-[12px] font-semibold text-slate-500 truncate">
+              {item["Album"] || item.album || "—"}
+            </div>
+          </div>
+
+          {/* Duration Field */}
+          <div className="space-y-0.5">
+            <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
+              Duration
+            </label>
+            <div className="text-[12px] font-semibold text-slate-500 truncate">
+              {item["Duration"] || item.duration || "—"}
+            </div>
+          </div>
+        </div>
+      </motion.div>
+    ))}
+
+    {/* ADD TRACK CARD */}
+    <motion.div 
+      onClick={openAddModal} 
+      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[220px]"
+    >
+      <Plus className="h-6 w-6 mb-2" />
+      <span className="text-[10px] font-black uppercase tracking-widest">Add track</span>
+    </motion.div>
+  </div>
+) : activeTable === 'DataSharing' ? (
+  /* --- DATA SHARING GALLERY VIEW (Airtable Style) --- */
+  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 py-6">
+    {filteredData.map((item: any) => {
+      // Helper to match colors from the screenshot
+      const getDeptStyles = (dept: string) => {
+        const d = dept?.toLowerCase() || "";
+        if (d.includes("mgmt")) return "bg-amber-100 text-amber-700 border-amber-200";
+        if (d.includes("qc")) return "bg-cyan-100 text-cyan-700 border-cyan-200";
+        if (d.includes("mm")) return "bg-rose-100 text-rose-700 border-rose-200";
+        if (d.includes("lrd")) return "bg-slate-100 text-slate-700 border-slate-200";
+        if (d.includes("editing")) return "bg-blue-100 text-blue-700 border-blue-200";
+        return "bg-slate-50 text-slate-500 border-slate-200";
+      };
+
+      return (
+        <motion.div 
+          key={item.id || item._id} 
+          onClick={() => setViewingRecord(item)}
+          whileHover={{ y: -2 }}
+          className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[240px]"
+        >
+          {/* 1. SEVAK NAME (HEADER) */}
+          <div className="text-[15px] font-bold text-slate-900 mb-4 truncate">
+            {item["Sevak"] || "Unknown Sevak"}
+          </div>
+
+          {/* 2. CARD FIELDS */}
+          <div className="space-y-4 flex-1">
+            {/* Dept Field */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
+                Dept
+              </label>
+              <Badge className={`px-2.5 py-0.5 text-[11px] font-bold rounded-full border shadow-sm ${getDeptStyles(item["Dept"])}`}>
+                {item["Dept"] || "—"}
+              </Badge>
+            </div>
+
+            {/* Email Field */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
+                EmailId
+              </label>
+              <div className="text-[12px] font-medium text-slate-600 truncate">
+                {item["EmailId"] || "—"}
+              </div>
+            </div>
+
+            {/* ShareFacts Field */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
+                ShareFacts?
+              </label>
+              <div className="pt-0.5">
+                {item["ShareFacts?"] === 'Yes' ? (
+                  <div className="flex items-center text-green-600">
+                     <CheckSquare className="h-4 w-4 fill-green-50" strokeWidth={3} />
+                  </div>
+                ) : (
+                  <span className="text-slate-300 italic text-[11px]">Yes</span>
+                )}
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      );
+    })}
+
+    {/* ADD RECORD CARD */}
+    <motion.div 
+      onClick={openAddModal} 
+      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[240px]"
+    >
+      <Plus className="h-6 w-6 mb-2" />
+      <span className="text-[10px] font-black uppercase tracking-widest">Add record</span>
+    </motion.div>
+  </div>
+) : activeTable === 'Guidance & Learning' ? (
+  /* --- GUIDANCE & LEARNING GALLERY VIEW --- */
+  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 py-6">
+    {filteredData.map((item: any) => {
+      // Logic to extract URL from Airtable format: (https://...)
+      const attachmentString = item["Attachments"] || "";
+      const match = attachmentString.match(/\((https?:\/\/[^)]+)\)/);
+      const imageUrl = match ? match[1] : null;
+
+      return (
+        <motion.div 
+          key={item.id || item._id} 
+          onClick={() => setViewingRecord(item)}
+          whileHover={{ y: -2 }}
+          className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[380px]"
+        >
+          {/* 1. IMAGE AREA (Correctly parsing the Airtable URL) */}
+          <div className="h-48 w-full bg-slate-50 border-b border-slate-100 flex items-center justify-center overflow-hidden">
+            {imageUrl ? (
+              <img 
+                src={imageUrl} 
+                className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
+                alt="Attachment" 
+              />
+            ) : (
+              <div className="flex flex-col items-center gap-2 opacity-20">
+                <Monitor className="h-12 w-12 text-slate-400" />
+              </div>
+            )}
+          </div>
+
+          {/* 2. CARD CONTENT */}
+          <div className="p-5 flex-1 flex flex-col">
+            {/* Learning ID (The Large Number Header) */}
+            <div className="text-[22px] font-bold text-slate-900 mb-5">
+              {item["LearningId"] || "—"}
+            </div>
+
+            <div className="space-y-4 flex-1">
+              {/* Event Field */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
+                  Event
+                </label>
+                <div className="inline-flex bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[12px] font-semibold border border-slate-200">
+                  {item["Event"] || "—"}
+                </div>
+              </div>
+
+              {/* DateFrom Field */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
+                  DateFrom (from Event)
+                </label>
+                <div className="text-[13px] font-medium text-slate-700">
+                  {item["DateFrom (from Event)"] || "—"}
+                </div>
+              </div>
+
+              {/* DateTo Field */}
+              <div className="space-y-1">
+                <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
+                  DateTo (from Event)
+                </label>
+                <div className="text-[13px] font-medium text-slate-700">
+                  {item["DateTo (from Event)"] || "—"}
+                </div>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      );
+    })}
+
+    {/* ADD FEEDBACK CARD */}
+    <motion.div 
+      onClick={openAddModal} 
+      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[380px]"
+    >
+      <Plus className="h-6 w-6 mb-2" />
+      <span className="text-[10px] font-black uppercase tracking-widest">Add Guidance & Learning</span>
+    </motion.div>
+  </div>
+) :
                   activeTable === 'Session' ? (
                     /* --- 1. SESSION TIMELINE VIEW --- */
                     <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
@@ -2249,65 +2642,121 @@ if (!health?.mongodb) {
                       </div>
                     </div>
                   ) :activeTable === 'MusicLog' ? (
-                  <div className="max-w-5xl mx-auto space-y-3 md:space-y-4 py-4 md:py-6">
-                    {filteredData.map((item: any) => (
-                      <motion.div key={item.id || item._id} onClick={() => setViewingRecord(item)} className="flex items-center gap-3 md:gap-6 bg-brand-surface border border-slate-800/90 rounded-xl md:rounded-2xl p-3 md:p-5 shadow-xl cursor-pointer">
-                        <div className="h-10 w-10 md:h-12 md:w-12 bg-brand-primary/10 rounded-lg md:rounded-xl flex items-center justify-center text-brand-primary shrink-0">
-                        {activeTable === 'MusicLog' ? <Music className="h-5 md:h-6 w-5 md:w-6" /> : <Video className="h-5 md:h-6 w-5 md:w-6" />}
-                      </div>
-                       <div className="flex-1 min-w-0">
-                        <h3 className="text-sm md:text-lg font-black text-brand-text-main uppercase truncate leading-tight">
-                          {item["Track"] || item["VideoTitle"] || "Untitled"}
-                        </h3>
-                        {/* Metadata: Wraps nicely on small screens */}
-                        <div className="flex flex-wrap items-center gap-x-2 gap-y-1 mt-1 text-[8px] md:text-[10px] font-bold text-slate-500 uppercase tracking-widest">
-                          <span className="truncate max-w-[80px] md:max-w-none">{item["Parent Event (from Session)"] || "UNASSIGNED"}</span>
-                          <span className="opacity-30">•</span>
-                          <span className="text-brand-primary/80">{item["Cue"] || item["Occasion (from Session)"]}</span>
-                          <span className="opacity-30 hidden xs:inline">•</span>
-                          <div className="flex items-center gap-1"><Clock className="h-2.5 w-2.5" /> {item["PlayedAt"] || item["TimeOfDay (from Session)"]}</div>
-                        </div>
-                      </div>
-                        <div className="hidden xs:block bg-brand-bg border border-brand-border px-3 md:px-4 py-1.5 md:py-2 rounded-lg md:rounded-xl shrink-0">
-                        <span className="text-[9px] md:text-[10px] font-mono font-black text-brand-primary">#{item["PlayID"] || item["VideoPlayId"]}</span>
-                      </div>
-                      </motion.div>
-                    ))}
+  /* --- RESPONSIVE MUSIC LOG GALLERY --- */
+  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 py-6">
+    {filteredData.map((item: any) => (
+      <motion.div 
+        key={item.id || item._id} 
+        onClick={() => setViewingRecord(item)}
+        whileHover={{ y: -4 }}
+        className="bg-white border border-slate-200 rounded-[24px] p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[340px]"
+      >
+        {/* 1. PLAY ID HEADER */}
+        <div className="text-4xl font-bold text-slate-900 mb-6">
+          {item["PlayID"] || "0"}
+        </div>
+
+        {/* 2. FIELDS CONTENT */}
+        <div className="space-y-5 flex-1">
+          {/* Session Field */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+              Session
+            </label>
+            <div className="inline-flex bg-slate-100 text-slate-700 px-3 py-1 rounded-lg text-[12px] font-bold border border-slate-200/50">
+              {item["Session"] || "—"}
+            </div>
+          </div>
+
+          {/* Parent Event Field */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+              Parent Event (from Session)
+            </label>
+            <div className="inline-flex bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-[12px] font-bold border border-blue-100/60 leading-tight">
+              {item["Parent Event (from Session)"] || "—"}
+            </div>
+          </div>
+
+          {/* Date Field */}
+          <div className="space-y-1.5">
+            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+              Date (from Session)
+            </label>
+            <div className="text-[13px] font-bold text-slate-600 pl-1">
+              {item["Date (from Session)"] || "—"}
+            </div>
+          </div>
+        </div>
+
+       
+      </motion.div>
+    ))}
                       <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-700 h-16 rounded-2xl text-slate-500 hover:text-brand-primary hover:border-brand-primary bg-slate-900/10 transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-5 w-5 mr-2" /> New Music Entry</Button>
                     </div>
-                  ) :  activeTable === 'VideoLog' ? (
-                  /* --- VIDEO LOG UNIQUE VIEW --- */
-                  <div className="max-w-5xl mx-auto space-y-4 py-6">
-                    {filteredData.map((item: any) => (
-                      <motion.div key={item.id || item._id} onClick={() => setViewingRecord(item)} whileHover={{ scale: 1.005 }} className="flex items-center gap-6 bg-brand-surface border border-slate-800/90 rounded-2xl p-5 shadow-xl shadow-black/5 transition-all group cursor-pointer">
-                        <div className="h-12 w-12 bg-indigo-500/10 rounded-xl flex items-center justify-center text-indigo-400 border border-indigo-500/20 shrink-0">
-                          <Video className="h-6 w-6" />
-                        </div>
-                        <div className="flex-1 min-w-0 flex flex-col justify-center text-left">
-                          {/* VIDEO TITLE */}
-                          <h3 className="text-lg font-black text-brand-text-main uppercase tracking-tight truncate w-full leading-tight">
-                            {item["VideoTitle"] || "Untitled Video"}
-                          </h3>
-                          <div className="flex items-center gap-2 mt-1 text-[10px] font-bold text-slate-500 uppercase tracking-widest flex-wrap">
-                            {/* PARENT EVENT NAME */}
-                            <span className="text-slate-400">{item["Parent Event (from Session)"] || item["Session"] || "UNASSIGNED"}</span>
-                            <span className="opacity-30 text-slate-600">•</span>
-                            {/* OCCASION TAG */}
-                            <span className="text-indigo-400 font-black">{item["Occasion (from Session)"] || "OPENING"}</span>
-                            <span className="opacity-30 text-slate-600">•</span>
-                            {/* TIME OF DAY */}
-                            <div className="flex items-center gap-1.5 text-slate-400">
-                              <Clock className="h-3 w-3" />
-                              {item["TimeOfDay (from Session)"] || "00:00:00 AM"}
-                            </div>
-                          </div>
-                        </div>
-                        {/* PlayID Badge (Light) */}
-                        <div className="bg-brand-bg border border-brand-border px-4 py-2 rounded-xl shadow-inner min-w-[50px] text-center shrink-0">
-                          <span className="text-[10px] font-mono font-black text-indigo-500">#{item["VideoPlayId"] || "1"}</span>
-                        </div>
-                      </motion.div>
-                    ))}
+                  ) : activeTable === 'VideoLog' ? (
+  /* --- RESPONSIVE VIDEOLOG GALLERY (Airtable Style) --- */
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 py-6">
+    {filteredData.map((item: any) => {
+      // Logic for City pill colors based on your screenshot
+      const getCityColor = (city: string) => {
+        const c = city?.toLowerCase() || "";
+        if (c.includes("dharampur")) return "bg-purple-100 text-purple-600 border-purple-200";
+        if (c.includes("ahmedabad")) return "bg-blue-100 text-blue-600 border-blue-200";
+        if (c.includes("mumbai")) return "bg-orange-100 text-orange-600 border-orange-200";
+        return "bg-slate-100 text-slate-600 border-slate-200";
+      };
+
+      return (
+        <motion.div 
+          key={item.id || item._id} 
+          onClick={() => setViewingRecord(item)}
+          whileHover={{ y: -4 }}
+          className="bg-white border border-slate-200 rounded-[20px] p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[320px]"
+        >
+          {/* 1. VIDEOPLAY ID */}
+          <div className="text-3xl font-bold text-slate-800 mb-6">
+            {item["VideoPlayId"] || "0"}
+          </div>
+
+          {/* 2. LABELED CONTENT */}
+          <div className="space-y-5 flex-1">
+            {/* Session Field */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                Session
+              </label>
+              <div className="inline-flex bg-slate-50 text-slate-700 px-3 py-1 rounded-md text-[12px] font-bold border border-slate-200/60">
+                {item["Session"] || "—"}
+              </div>
+            </div>
+
+            {/* Date Field */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                Date (from Session)
+              </label>
+              <div className="text-[13px] font-bold text-slate-600 pl-1">
+                {item["Date (from Session)"] || "—"}
+              </div>
+            </div>
+
+            {/* City Field (Colored Pill) */}
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
+                City (from Session)
+              </label>
+              <div className={`inline-flex px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-tight border ${getCityColor(item["City (from Session)"])}`}>
+                {item["City (from Session)"] || "—"}
+              </div>
+            </div>
+          </div>
+
+          {/* 3. VIDEO TITLE PILL (BOTTOM) */}
+          
+        </motion.div>
+      );
+    })}
                     <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-700 h-16 rounded-2xl text-slate-500 hover:text-indigo-400 hover:border-indigo-400 bg-slate-900/10 transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-5 w-5 mr-2" /> New Video Entry</Button>
                   </div>
                   ) : (
@@ -2578,15 +3027,16 @@ if (!health?.mongodb) {
   const extraIndex = i - baseColsCount;
 
   return (
-    <th 
-      key={i} 
-      style={{ width: colWidths[col] || 200, minWidth: colWidths[col] || 200, position: 'relative' }}
-      className={`border-r border-b border-slate-400 p-0 font-black uppercase tracking-wider overflow-hidden select-none transition-colors group/header ${isSorted ? 'bg-slate-200 text-brand-primary' : 'bg-slate-100 text-slate-700'}`}
-    >
+  <th 
+  key={i} 
+  style={{ width: colWidths[col] || 200, minWidth: colWidths[col] || 200, position: 'relative' }}
+  // Kept font-black, removed uppercase, changed tracking to tight for better readability
+  className={`border-r border-b border-slate-400 p-0 font-black tracking-tight overflow-hidden select-none transition-colors group/header ${isSorted ? 'bg-slate-200 text-brand-primary' : 'bg-slate-100 text-slate-700'}`}
+>
       {editingHeader?.index === i ? (
         <input
           autoFocus
-          className="w-full h-full px-4 py-3 bg-white text-brand-primary outline-none border-none font-black uppercase text-[11px]"
+        className="w-full h-full px-4 py-3 bg-white text-brand-primary outline-none border-none font-black text-[11px]"
           value={editingHeader.value}
           onChange={(e) => setEditingHeader({ ...editingHeader, value: e.target.value })}
           onBlur={() => {
@@ -2710,12 +3160,23 @@ if (!health?.mongodb) {
              </div>
           </td>
           <td colSpan={getTableColumns().length} className="px-4 py-2.5">
-            <div className="flex items-center gap-3" style={{ paddingLeft: row.level === 2 ? '24px' : '0px' }}>
-              <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{row.label}:</span>
-              <Badge style={{ backgroundColor: row.color, color: 'black' }} className="border-none font-black text-[11px] px-3 py-1 rounded-md uppercase">
-                {row.value}
-              </Badge>
+           <div className="flex flex-col gap-0.5" style={{ paddingLeft: row.level === 2 ? '24px' : '0px' }}>
+          
+          {/* 1. FIELD NAME (TOP) */}
+          <div className="flex items-center gap-1">
+            <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none">
+              {row.label}
+            </span>
+          </div>
+              <div className="flex items-center gap-2">
+            <Badge 
+              style={{ backgroundColor: row.color, color: 'black' }} 
+              className="border-none  text-[13px] px-2.5 py-0.5 rounded shadow-sm" 
+            >
+              {row.value}
+            </Badge>
               <span className="text-slate-400 font-bold text-[10px]">({row.count})</span>
+            </div> 
             </div>
           </td>
         </tr>
@@ -2726,28 +3187,36 @@ if (!health?.mongodb) {
  return (
   <tr 
     key={row.data?._id || row.data?.id || idx} 
-    className={`group transition-colors border-b border-slate-200 ${isEditing ? 'bg-yellow-50/30' : 'hover:bg-blue-50/40 cursor-pointer'}`}
-    // Click anywhere on the row to start editing
-    onClick={() => {
-      if (!isEditing) {
-        setEditingId(row.data?._id || row.data?.id);
-        setEditDraft({...row.data});
-      }
-    }}
+    className={`group transition-colors border-b border-slate-200 ${
+      selectedIds.includes(row.data?._id || row.data?.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'
+    }`}
   >
-    <td className="w-12 border-r border-slate-200 text-center text-slate-400 font-mono text-[10px] bg-slate-50/20 sticky left-0 z-20">
-      {isEditing ? (
-        <div className="flex flex-col gap-1 items-center py-1">
-          <button onClick={(e) => { e.stopPropagation(); handleUpdateRecord(); }} className="text-green-600">
-            <CheckSquare className="h-4 w-4" />
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); setEditingId(null); }} className="text-red-500">
-            <X className="h-4 w-4" />
-          </button>
+    {/* CHECKBOX COLUMN (Sticky Left) */}
+    <td 
+      className="w-12 border-r border-slate-200 text-center sticky left-0 z-20 bg-inherit"
+      onClick={(e) => {
+        e.stopPropagation();
+        toggleRowSelection(row.data?._id || row.data?.id);
+      }}
+    >
+      <div className="flex items-center justify-center">
+        {/* Only show index normally, show checkbox on hover or if selected */}
+        <div className={`transition-all ${
+          selectedIds.includes(row.data?._id || row.data?.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+        }`}>
+          <input 
+            type="checkbox" 
+            checked={selectedIds.includes(row.data?._id || row.data?.id)}
+            onChange={() => {}} // Handled by TD click
+            className="h-4 w-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary"
+          />
         </div>
-      ) : (
-        <span>{idx + 1}</span>
-      )}
+        <span className={`absolute text-[10px] font-mono text-slate-400 group-hover:opacity-0 ${
+          selectedIds.includes(row.data?._id || row.data?.id) ? 'opacity-0' : 'opacity-100'
+        }`}>
+          {idx + 1}
+        </span>
+      </div>
     </td>
         
         {isEditing ? (
@@ -2785,7 +3254,7 @@ if (!health?.mongodb) {
                   </div>
                   
                   {/* FOOTER BAR */}
-                  <div className="bg-slate-100 border-t border-slate-400 px-6 py-2 flex items-center justify-between text-[10px] text-slate-600 font-black uppercase tracking-widest z-20">
+                <div className="bg-slate-100 border-t border-slate-400 px-6 py-2 flex items-center justify-between text-[11px] text-slate-600 font-bold z-20">
                     <div className="flex items-center gap-4">
                       <span className="flex items-center gap-1.5"><Grid className="h-3 w-3" /> {filteredData.length} records</span>
                       <div className="w-px h-3 bg-slate-400" />
@@ -2799,7 +3268,56 @@ if (!health?.mongodb) {
                 </div>
                 )}
               </>
-            )} {/* THIS CLOSES THE viewingRecord TERNARY */}
+            )} 
+            
+            {/* THIS CLOSES THE viewingRecord TERNARY */}
+
+            {selectedIds.length > 0 && (
+  <motion.div 
+    initial={{ y: 20, opacity: 0 }} 
+    animate={{ y: 0, opacity: 1 }}
+    className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl px-6 py-3 flex items-center gap-6"
+  >
+    <div className="flex items-center gap-2 border-r border-slate-700 pr-6">
+      <div className="bg-brand-primary h-6 w-6 rounded-md flex items-center justify-center text-[10px] font-black text-white">
+        {selectedIds.length}
+      </div>
+      <span className="text-xs font-bold text-slate-300 uppercase tracking-widest">Selected</span>
+    </div>
+
+    <div className="flex items-center gap-2">
+      {/* Expand - Only show if 1 selected */}
+      {selectedIds.length === 1 && (
+        <Button 
+          variant="ghost" size="sm" 
+          className="text-slate-400 hover:text-black"
+          onClick={() => {
+            const item = getActiveData().find(d => (d._id || d.id) === selectedIds[0]);
+            setViewingRecord(item);
+          }}
+        >
+          <ArrowUpRight className="h-4 w-4 mr-2" /> Expand
+        </Button>
+      )}
+
+      <Button 
+        variant="ghost" size="sm" 
+        className="text-red-400 hover:text-red-500 hover:bg-red-500/10"
+        onClick={handleBulkDelete}
+      >
+        <X className="h-4 w-4 mr-2" /> Delete
+      </Button>
+      
+      <Button 
+        variant="ghost" size="sm" 
+        className="text-slate-400"
+        onClick={() => setSelectedIds([])}
+      >
+        Deselect
+      </Button>
+    </div>
+  </motion.div>
+)}
           </div>
         </div>
       </main>
@@ -2816,7 +3334,7 @@ if (!health?.mongodb) {
   </DialogDescription>
 </DialogHeader>
           
-          <div className="flex-1 overflow-y-auto p-8 pt-6 space-y-8 thin-scrollbar">
+          <div className="flex-1 overflow-y-auto p-4 sm:p-8 pt-4 sm:pt-6 space-y-8 thin-scrollbar">
   <div className="space-y-6">
     {/* EVENTS FIELDS */}
     {activeTable === 'Events' && (
@@ -2853,7 +3371,7 @@ if (!health?.mongodb) {
       </div>
     </div>
 
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
       <div className="space-y-2">
         <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Date</label>
         <Input type="date" value={newRecord.date || ''} onChange={(e) => setNewRecord({...newRecord, date: e.target.value})} className="bg-brand-bg" />
@@ -2868,7 +3386,7 @@ if (!health?.mongodb) {
       </div>
     </div>
 
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
       <div className="space-y-2">
         <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Time Of Day</label>
         <Input value={newRecord.timeOfDay || ''} onChange={(e) => setNewRecord({...newRecord, timeOfDay: e.target.value})} placeholder="e.g. Morning" className="bg-brand-bg" />
@@ -2907,7 +3425,7 @@ if (!health?.mongodb) {
 
     <div className="p-3 bg-brand-accent/5 border border-brand-accent/10 rounded-lg">
       <p className="text-[9px] font-black uppercase tracking-widest text-brand-accent mb-3">Track & Performance Details</p>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <Input value={newRecord.order || ''} onChange={(e) => setNewRecord({...newRecord, order: e.target.value})} placeholder="Order" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord.playedAt || ''} onChange={(e) => setNewRecord({...newRecord, playedAt: e.target.value})} placeholder="PlayedAt" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord.trackId || ''} onChange={(e) => setNewRecord({...newRecord, trackId: e.target.value})} placeholder="TrackID Link" className="bg-brand-bg h-9 text-xs" />
@@ -2947,7 +3465,7 @@ if (!health?.mongodb) {
     </div>
     <div className="p-3 bg-brand-accent/5 border border-brand-accent/10 rounded-lg">
       <p className="text-[9px] font-black uppercase tracking-widest text-brand-accent mb-3">Video Details</p>
-      <div className="grid grid-cols-3 gap-3">
+      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
         <Input value={newRecord.timeOfDay || ''} onChange={(e) => setNewRecord({...newRecord, timeOfDay: e.target.value})} placeholder="Time of Day" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord.occasion || ''} onChange={(e) => setNewRecord({...newRecord, occasion: e.target.value})} placeholder="Occasion" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord.sessionType || ''} onChange={(e) => setNewRecord({...newRecord, sessionType: e.target.value})} placeholder="Session Type" className="bg-brand-bg h-9 text-xs" />
@@ -2968,7 +3486,7 @@ if (!health?.mongodb) {
       <Input value={newRecord.LearningId || ''} onChange={(e) => setNewRecord({...newRecord, LearningId: e.target.value})} placeholder="Learning Id" className="bg-brand-bg" />
       <Input value={newRecord.event || ''} onChange={(e) => setNewRecord({...newRecord, event: e.target.value})} placeholder="Event Name" className="bg-brand-bg" />
     </div>
-    <div className="grid grid-cols-3 gap-4">
+    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
       <Input type="date" value={newRecord.dateFrom || ''} onChange={(e) => setNewRecord({...newRecord, dateFrom: e.target.value})} placeholder="Date From" className="bg-brand-bg text-xs" />
       <Input type="date" value={newRecord.dateTo || ''} onChange={(e) => setNewRecord({...newRecord, dateTo: e.target.value})} placeholder="Date To" className="bg-brand-bg text-xs" />
       <Input value={newRecord.year || ''} onChange={(e) => setNewRecord({...newRecord, year: e.target.value})} placeholder="Year" className="bg-brand-bg text-xs" />
