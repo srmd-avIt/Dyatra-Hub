@@ -843,7 +843,13 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
       return (
         <>
           <td className={`${cellCls} font-mono text-brand-primary`} style={cellStyle(cols[0])}>{item["PlayID"]}</td>
-          <td className={titleCls} style={cellStyle(cols[1])}>{item["Session"]}</td>
+          <td
+            className={`${titleCls} cursor-pointer hover:text-brand-primary hover:underline`}
+            style={cellStyle(cols[1])}
+            onClick={(e) => { e.stopPropagation(); const s = sessions.find(s => s["Session Name"] === item["Session"]); if (s) setLinkedSession(s); }}
+          >
+            <span className="flex items-center justify-center gap-1">{item["Session"]}<ArrowUpRight className="h-3 w-3 shrink-0 opacity-40" /></span>
+          </td>
           <td className={cellCls} style={cellStyle(cols[2])}>{item["Parent Event (from Session)"]}</td>
           <td className={`${cellCls} font-mono`} style={cellStyle(cols[3])}>{item["Date (from Session)"]}</td>
           <td className={cellCls} style={cellStyle(cols[4])}>{item["TimeOfDay (from Session)"]}</td>
@@ -866,7 +872,13 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
       return (
         <>
           <td className={`${cellCls} font-mono text-indigo-500`} style={cellStyle(cols[0])}>{item["VideoPlayId"]}</td>
-          <td className={cellCls} style={cellStyle(cols[1])}>{item["Session"]}</td>
+          <td
+            className={`${cellCls} cursor-pointer hover:text-brand-primary hover:underline font-semibold text-slate-900`}
+            style={cellStyle(cols[1])}
+            onClick={(e) => { e.stopPropagation(); const s = sessions.find(s => s["Session Name"] === item["Session"]); if (s) setLinkedSession(s); }}
+          >
+            <span className="flex items-center justify-center gap-1">{item["Session"]}<ArrowUpRight className="h-3 w-3 shrink-0 opacity-40" /></span>
+          </td>
           <td className={`${cellCls} font-mono`} style={cellStyle(cols[2])}>{item["Date (from Session)"]}</td>
           <td className={cellCls} style={cellStyle(cols[3])}>{item["City (from Session)"]}</td>
           <td className={cellCls} style={cellStyle(cols[4])}>{item["Venue (from Session)"]}</td>
@@ -1197,6 +1209,7 @@ const groupColors = [
   { main: "#FFC6FF" }, // Orchid
 ];
 const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
+const [linkedSession, setLinkedSession] = useState<any | null>(null);
 
 // Update your toggle function as well:
 const toggleGroup = (groupId: string) => {
@@ -1396,7 +1409,7 @@ const getProcessedData = (): any[] => {
         const eventId = `${yearId}-event-${parent}`;
         finalResult.push({ type: 'header', level: 2, id: eventId, parentId: yearId, label: 'PARENT EVENT', value: parent, count: nestedGroups[year][parent].length, color: theme.main });
         nestedGroups[year][parent].forEach(item => {
-          finalResult.push({ type: 'row', data: item, parentId: eventId, grandParentId: yearId });
+          finalResult.push({ type: 'row', data: item, parentId: eventId, grandParentId: yearId, groupColor: theme.main });
         });
       });
     });
@@ -1415,7 +1428,7 @@ const getProcessedData = (): any[] => {
       const theme = groupColors[gIdx % groupColors.length];
       const gid = `group-${name}`;
       finalResult.push({ type: 'header', level: 1, id: gid, label: activeGroupField, value: name, count: items.length, color: theme.main });
-      items.forEach(item => finalResult.push({ type: 'row', data: item, parentId: gid }));
+      items.forEach(item => finalResult.push({ type: 'row', data: item, parentId: gid, groupColor: theme.main }));
     });
   } 
   // 4. No Grouping
@@ -1459,26 +1472,62 @@ const exportToCSV = () => {
 const renderEditableRow = () => {
   const cols = getTableColumns();
   const getWidth = (name: string) => colWidths[name] || 200;
+  const isSessionLinkedTable = activeTable === 'MusicLog' || activeTable === 'VideoLog';
+
+  const handleInlineSessionSelect = (sessionName: string) => {
+    const s = sessions.find(s => s["Session Name"] === sessionName);
+    if (!s) { setInlineRecord({ ...inlineRecord, Session: sessionName }); return; }
+    const patch: any = { Session: s["Session Name"] };
+    if (activeTable === 'MusicLog') {
+      patch["Parent Event (from Session)"] = s["Parent Event"];
+      patch["Date (from Session)"] = s["Date"];
+      patch["TimeOfDay (from Session)"] = s["TimeOfDay"];
+      patch["Occasion (from Session)"] = s["Occasion"];
+    } else {
+      patch["Parent Event (from Session)"] = s["Parent Event"];
+      patch["Date (from Session)"] = s["Date"];
+      patch["City (from Session)"] = s["City"];
+      patch["Venue (from Session)"] = s["Venue"];
+      patch["TimeOfDay (from Session)"] = s["TimeOfDay"];
+      patch["Occasion (from Session)"] = s["Occasion"];
+      patch["SessionType (from Session)"] = s["SessionType"];
+    }
+    setInlineRecord({ ...inlineRecord, ...patch });
+  };
 
   return (
     <>
       {cols.map((col, i) => (
-        <td 
-          key={i} 
-          className="px-2 py-2 border-r border-b border-slate-400 bg-blue-50/50" 
+        <td
+          key={i}
+          className="px-2 py-2 border-r border-b border-slate-400 bg-blue-50/50"
           style={{ width: getWidth(col), minWidth: getWidth(col), maxWidth: getWidth(col) }}
         >
-          <input
-            autoFocus={i === 0}
-            className="w-full h-8 bg-white border border-blue-300 rounded px-2 text-[12px] font-bold text-black placeholder:text-slate-400 focus:ring-2 focus:ring-brand-primary outline-none shadow-sm"
-            placeholder={`Enter ${col}...`}
-            value={inlineRecord[col] || ''}
-            onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleInlineSave();
-              if (e.key === 'Escape') setIsInlineAdding(false);
-            }}
-          />
+          {isSessionLinkedTable && col === 'Session' ? (
+            <select
+              autoFocus
+              className="w-full h-8 bg-white border border-blue-300 rounded px-2 text-[12px] font-bold text-black focus:ring-2 focus:ring-brand-primary outline-none shadow-sm"
+              value={inlineRecord['Session'] || ''}
+              onChange={(e) => handleInlineSessionSelect(e.target.value)}
+            >
+              <option value="">Select session...</option>
+              {sessions.map((s, si) => (
+                <option key={si} value={s["Session Name"]}>{s["Session Name"]}</option>
+              ))}
+            </select>
+          ) : (
+            <input
+              autoFocus={i === 0 && !isSessionLinkedTable}
+              className="w-full h-8 bg-white border border-blue-300 rounded px-2 text-[12px] font-bold text-black placeholder:text-slate-400 focus:ring-2 focus:ring-brand-primary outline-none shadow-sm"
+              placeholder={`Enter ${col}...`}
+              value={inlineRecord[col] || ''}
+              onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter') handleInlineSave();
+                if (e.key === 'Escape') setIsInlineAdding(false);
+              }}
+            />
+          )}
         </td>
       ))}
     </>
@@ -1986,6 +2035,7 @@ if (!health?.mongodb) {
     </Button>
 
     {/* Search Input (Placed on the far left) */}
+    {activeTable !== 'Home' && (
     <div className="relative hidden sm:block">
       <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
       <Input
@@ -1995,12 +2045,13 @@ if (!health?.mongodb) {
         className="bg-brand-bg w-[120px] md:w-[180px] pl-8 h-9 text-xs"
       />
     </div>
+    )}
   </div>
 
 <div className="flex items-center justify-between w-full md:w-auto gap-1.5 md:gap-2">
 
     {/* 3. VIEW SWITCHER */}
-  <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-8 items-center">
+  {activeTable !== 'Home' && <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-8 items-center">
    <Button 
   size="sm" 
   variant="ghost"
@@ -2027,53 +2078,37 @@ if (!health?.mongodb) {
   <Grid className="h-4 w-4" />
   <span className="text-xs font-semibold hidden sm:inline">Grid</span>
 </Button>
-  </div>
+  </div>}
 
-  
-  {/* 1. CUSTOM ROUNDED GROUP BY */}
+
+  {/* 1. GROUP BY + SORT BY (hidden on Home) */}
+  {activeTable !== 'Home' && <>
   <div className="relative hidden sm:block">
   <button
     onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
     className="flex items-center bg-white border border-slate-300 rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[180px]"
   >
     <Layers className="h-4 w-4 text-slate-500 mr-2 shrink-0" />
-
     <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-6">
       {groupByField || "No Grouping"}
     </span>
-
     <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isGroupOpen ? 'rotate-180' : ''}`} />
   </button>
-
   <AnimatePresence>
     {isGroupOpen && (
       <>
         <div className="fixed inset-0 z-40" onClick={() => setIsGroupOpen(false)} />
-
-       <motion.div 
-  initial={{ opacity: 0, y: 5 }}
-  animate={{ opacity: 1, y: 0 }}
-  exit={{ opacity: 0, y: 5 }}
-  // ADDED: max-h-80, overflow-y-auto, and scrollbar-hide
-  className="absolute top-full left-0 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
->
-  <button 
-    onClick={() => { setGroupByField(null); setIsGroupOpen(false); }}
-    className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase"
-  >
-    No Grouping
-  </button>
-
-  {getTableColumns().map(col => (
-    <button 
-      key={col}
-      onClick={() => { setGroupByField(col); setIsGroupOpen(false); }}
-      className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors"
-    >
-      {col}
-    </button>
-  ))}
-</motion.div>
+        <motion.div
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 5 }}
+          className="absolute top-full left-0 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
+        >
+          <button onClick={() => { setGroupByField(null); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Grouping</button>
+          {getTableColumns().map(col => (
+            <button key={col} onClick={() => { setGroupByField(col); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{col}</button>
+          ))}
+        </motion.div>
       </>
     )}
   </AnimatePresence>
@@ -2085,103 +2120,60 @@ if (!health?.mongodb) {
     className="flex items-center bg-white border border-slate-300 rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[180px]"
   >
     <ArrowUpDown className="h-4 w-4 text-slate-500 mr-2 shrink-0" />
-
     <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-10">
       {sortBy ? `By ${sortBy.field}` : "No Sort"}
     </span>
-
-    {/* Direction Toggle (slightly smaller) */}
     {sortBy && (
-      <button 
-        onClick={(e) => {
-          e.preventDefault();
-          e.stopPropagation();
-          setSortBy({
-            ...sortBy,
-            direction: sortBy.direction === 'asc' ? 'desc' : 'asc'
-          });
-        }}
+      <button
+        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSortBy({ ...sortBy, direction: sortBy.direction === 'asc' ? 'desc' : 'asc' }); }}
         className="absolute right-10 h-6 w-6 hover:bg-slate-100 rounded-md transition-colors flex items-center justify-center bg-white border border-slate-200 shadow-sm z-10"
       >
-        <span className="text-xs text-brand-primary font-bold leading-none">
-          {sortBy.direction === 'asc' ? '↑' : '↓'}
-        </span>
+        <span className="text-xs text-brand-primary font-bold leading-none">{sortBy.direction === 'asc' ? '↑' : '↓'}</span>
       </button>
     )}
-
-    <ChevronDown 
-      className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${
-        isSortOpen ? 'rotate-180' : ''
-      }`} 
-    />
+    <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isSortOpen ? 'rotate-180' : ''}`} />
   </button>
-
   <AnimatePresence>
     {isSortOpen && (
       <>
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => setIsSortOpen(false)} 
-        />
-
-       <motion.div 
-  initial={{ opacity: 0, y: 5 }}
-  animate={{ opacity: 1, y: 0 }}
-  exit={{ opacity: 0, y: 5 }}
-  // ADDED: max-h-80, overflow-y-auto, and scrollbar-hide
-  className="absolute top-full left-0 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
->
-  <button 
-    onClick={() => { 
-      setSortBy(null); 
-      setIsSortOpen(false); 
-    }}
-    className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase"
-  >
-    No Sort
-  </button>
-
-  {getTableColumns().map(col => (
-    <button 
-      key={col}
-      onClick={() => { 
-        setSortBy({ field: col, direction: 'asc' }); 
-        setIsSortOpen(false); 
-      }}
-      className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors"
-    >
-      {col}
-    </button>
-  ))}
-</motion.div>
+        <div className="fixed inset-0 z-40" onClick={() => setIsSortOpen(false)} />
+        <motion.div
+          initial={{ opacity: 0, y: 5 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: 5 }}
+          className="absolute top-full left-0 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
+        >
+          <button onClick={() => { setSortBy(null); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Sort</button>
+          {getTableColumns().map(col => (
+            <button key={col} onClick={() => { setSortBy({ field: col, direction: 'asc' }); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{col}</button>
+          ))}
+        </motion.div>
       </>
     )}
   </AnimatePresence>
 </div>
+  </>}
   {/* 4. NEW RECORD BUTTON */}
- <Button 
-  onClick={() => {
-    setInlineRecord({});
-    setIsInlineAdding(true);
-    // Scroll to bottom after state update
-    setTimeout(() => {
-      const container = document.querySelector('.overflow-auto');
-      if (container) container.scrollTop = container.scrollHeight;
-    }, 100);
-  }} 
-  className="bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-4 shadow-md flex items-center gap-2 transition-transform active:scale-95 ml-1"
->
-  <Plus className="h-4 w-4" />
-  <span className="hidden md:inline uppercase text-xs font-bold tracking-wide">
-    Add Record
-  </span>
-</Button>
+  {activeTable !== 'Home' && <Button
+    onClick={() => {
+      setInlineRecord({});
+      setIsInlineAdding(true);
+      setTimeout(() => {
+        const container = document.querySelector('.overflow-auto');
+        if (container) container.scrollTop = container.scrollHeight;
+      }, 100);
+    }}
+    className="bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-4 shadow-md flex items-center gap-2 transition-transform active:scale-95 ml-1"
+  >
+    <Plus className="h-4 w-4" />
+    <span className="hidden md:inline uppercase text-xs font-bold tracking-wide">Add Record</span>
+  </Button>}
 
 </div>
 </header>
 
       {/* Mobile-only active filter bar */}
-      {(groupByField || sortBy) && (
+      {activeTable !== 'Home' && (groupByField || sortBy) && (
         <div className="sm:hidden flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-200 overflow-x-auto shrink-0">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Active:</span>
           {groupByField && (
@@ -2211,53 +2203,157 @@ if (!health?.mongodb) {
           <div className="max-w-[1400px] mx-auto space-y-6 lg:space-y-8">
             
             {activeTable === 'Home' ? (
-  /* --- HOME PAGE: TEXT TOP-LEFT, IMAGE CENTER --- */
-    <motion.div 
-    initial={{ opacity: 0, y: 20 }}
-    animate={{ opacity: 1, y: 0 }}
-    className="relative w-full min-h-[50vh] sm:min-h-[75vh] flex flex-col"
-  >
-    {/* 1. TEXT SECTION (Remains Top Left) */}
-    <div className="text-left space-y-2 mb-8 relative z-10">
-      <h6 className="text-3xl font-black text-slate-900 uppercase tracking-tighter leading-none">
-        <span className="text-brand-primary">Home</span>
-      </h6>
-      <p className="text-slate-500 font-bold uppercase tracking-[0.3em] text-xs">
-        Dyatra Hub • Management Portal
-      </p>
-    </div>
+  /* --- HOME DASHBOARD --- */
+  (() => {
+    const now = new Date();
+    const hr = now.getHours();
+    const greeting = hr < 12 ? 'Good Morning' : hr < 17 ? 'Good Afternoon' : 'Good Evening';
+    const recentEvents = [...events].sort((a: any, b: any) => new Date(b.DateFrom || 0).getTime() - new Date(a.DateFrom || 0).getTime()).slice(0, 4);
+    const recentSessions = [...sessions].sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()).slice(0, 5);
+    const pendingChecklist = checklist.filter((c: any) => !c.done).slice(0, 6);
+    const navLinks = [
+      { label: 'Events', table: 'Events', Icon: Calendar, count: events.length, color: 'bg-blue-500' },
+      { label: 'Sessions', table: 'Session', Icon: MessageSquare, count: sessions.length, color: 'bg-violet-500' },
+      { label: 'Music Log', table: 'MusicLog', Icon: Music, count: musicLogs.length, color: 'bg-pink-500' },
+      { label: 'Video Log', table: 'VideoLog', Icon: Video, count: videoLogs.length, color: 'bg-orange-500' },
+      { label: 'Checklist', table: 'DyatraChecklist', Icon: CheckSquare, count: checklist.length, color: 'bg-green-500' },
+      { label: 'LED', table: 'LED', Icon: Monitor, count: ledDetails.length, color: 'bg-yellow-500' },
+      { label: 'Guidance', table: 'Guidance & Learning', Icon: FileText, count: guidance.length, color: 'bg-teal-500' },
+      { label: 'Tracks', table: 'Tracks', Icon: Play, count: media.length, color: 'bg-red-500' },
+    ];
+    return (
+      <motion.div initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} className="w-full space-y-5">
 
-    {/* 2. WIDE RECTANGULAR GLASS HIGHLIGHT */}
-    <div className="w-full flex justify-center items-center">
-      <div className="relative w-full max-w-[1200px] group">
-        
-        {/* THE GLASS RECTANGLE */}
-        <div className="relative w-full h-[260px] sm:h-[480px] rounded-[24px] sm:rounded-[40px] border border-white/60 bg-white/30 backdrop-blur-3xl shadow-[0_20px_50px_rgba(0,0,0,0.05)] flex items-center justify-center overflow-hidden transition-all duration-500 group-hover:bg-white/40 group-hover:shadow-[0_30px_70px_rgba(0,0,0,0.08)]">
-          
-          {/* Subtle Inner Glow */}
-          <div className="absolute inset-0 bg-gradient-to-br from-white/40 to-transparent pointer-events-none" />
-
-         
-
-          {/* THE IMAGE (Centrally Highlighted) */}
-          <div className="relative h-[190px] sm:h-[380px] aspect-[4/5] z-10">
-            <img 
-              src="/Image/Image1.jpeg" 
-              alt="Beloved Bapa"
-              className="h-full w-full object-cover rounded-[20px] shadow-2xl border border-white/20 transition-transform duration-700 group-hover:scale-[1.02]"
-            />
+        {/* GREETING ROW */}
+        <div className="flex items-end justify-between flex-wrap gap-3">
+          <div>
+            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">{greeting}</p>
+            <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tighter leading-none mt-0.5">
+              {user?.name?.split(' ')[0] || 'Welcome'} <span className="text-brand-primary">—</span>
+            </h1>
+            <p className="text-xs text-slate-400 font-semibold mt-1 uppercase tracking-widest">
+              {now.toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })}
+            </p>
           </div>
-
-          
-
-          
+          <div className="flex items-center gap-2 bg-white border border-slate-200 rounded-2xl px-4 py-3 shadow-sm">
+            <div className="h-8 w-8 rounded-xl bg-brand-primary flex items-center justify-center">
+              <Zap className="h-4 w-4 text-white fill-white" />
+            </div>
+            <div>
+              <div className="text-[9px] font-black uppercase tracking-widest text-slate-400">Dyatra Ops</div>
+              <div className="text-xs font-black text-slate-800">Management Portal</div>
+            </div>
+          </div>
         </div>
 
-        {/* Outer ambient glow that stays behind the glass panel */}
-        <div className="absolute -inset-10 bg-brand-primary/5 rounded-[60px] blur-3xl -z-10 opacity-60" />
-      </div>
-    </div>
-  </motion.div>
+        {/* STAT PILLS */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+          {[
+            { label: 'Total Events', value: events.length, sub: 'across all years', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
+            { label: 'Sessions', value: sessions.length, sub: 'recorded', color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
+            { label: 'Music Plays', value: musicLogs.length, sub: 'log entries', color: 'text-pink-600', bg: 'bg-pink-50', border: 'border-pink-100' },
+            { label: 'Video Plays', value: videoLogs.length, sub: 'log entries', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
+          ].map(s => (
+            <div key={s.label} className={`${s.bg} border ${s.border} rounded-2xl p-4`}>
+              <div className={`text-3xl font-black ${s.color} leading-none`}>{s.value}</div>
+              <div className="text-[11px] font-black text-slate-700 mt-1 uppercase tracking-wide">{s.label}</div>
+              <div className="text-[10px] text-slate-400 mt-0.5">{s.sub}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* MAIN GRID: NAV + CHECKLIST */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
+          <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Quick Navigate</p>
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+              {navLinks.map(n => (
+                <button key={n.table} onClick={() => setActiveTable(n.table)}
+                  className="flex flex-col items-start gap-2 p-3 rounded-xl border border-slate-100 hover:border-brand-primary/30 hover:bg-brand-primary/5 transition-all text-left">
+                  <div className={`h-8 w-8 ${n.color} rounded-lg flex items-center justify-center`}>
+                    <n.Icon className="h-4 w-4 text-white" />
+                  </div>
+                  <div>
+                    <div className="text-[11px] font-black text-slate-800 uppercase tracking-wide leading-none">{n.label}</div>
+                    <div className="text-[10px] text-slate-400 mt-0.5">{n.count} records</div>
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Checklist</p>
+              <button onClick={() => setActiveTable('DyatraChecklist')} className="text-[10px] font-black text-brand-primary uppercase tracking-widest hover:underline">View All</button>
+            </div>
+            {pendingChecklist.length === 0
+              ? <div className="flex-1 flex items-center justify-center text-slate-300 text-xs font-bold uppercase">All clear ✓</div>
+              : <div className="space-y-2 flex-1">
+                  {pendingChecklist.map((c: any, i: number) => (
+                    <div key={i} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50">
+                      <div className="h-4 w-4 rounded border-2 border-slate-300 mt-0.5 shrink-0" />
+                      <div>
+                        <div className="text-[12px] font-semibold text-slate-800 leading-tight">{c["Task"] || '—'}</div>
+                        {c["TaskGroup"] && <div className="text-[10px] text-slate-400 uppercase">{c["TaskGroup"]}</div>}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+            }
+          </div>
+        </div>
+
+        {/* BOTTOM GRID: RECENT EVENTS + SESSIONS */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Recent Events</p>
+              <button onClick={() => setActiveTable('Events')} className="text-[10px] font-black text-brand-primary uppercase tracking-widest hover:underline">View All</button>
+            </div>
+            <div className="space-y-1">
+              {recentEvents.length === 0 && <div className="text-slate-300 text-xs font-bold uppercase py-6 text-center">No events yet</div>}
+              {recentEvents.map((ev: any, i: number) => (
+                <div key={i} onClick={() => setActiveTable('Events')} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer">
+                  <div className="h-9 w-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
+                    <Calendar className="h-4 w-4 text-blue-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-bold text-slate-800 truncate">{ev["Event Name"] || ev.EventName || '—'}</div>
+                    <div className="text-[10px] text-slate-400">{ev.DateFrom || '—'}{ev.City ? ` · ${ev.City}` : ''}</div>
+                  </div>
+                  {ev.Year && <Badge className="bg-slate-100 text-slate-500 border-none text-[10px] font-black shrink-0">{ev.Year}</Badge>}
+                </div>
+              ))}
+            </div>
+          </div>
+
+          <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-center justify-between mb-4">
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Recent Sessions</p>
+              <button onClick={() => setActiveTable('Session')} className="text-[10px] font-black text-brand-primary uppercase tracking-widest hover:underline">View All</button>
+            </div>
+            <div className="space-y-1">
+              {recentSessions.length === 0 && <div className="text-slate-300 text-xs font-bold uppercase py-6 text-center">No sessions yet</div>}
+              {recentSessions.map((s: any, i: number) => (
+                <div key={i} onClick={() => setActiveTable('Session')} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer">
+                  <div className="h-9 w-9 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center shrink-0">
+                    <MessageSquare className="h-4 w-4 text-violet-500" />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="text-[13px] font-bold text-slate-800 truncate">{s["Session Name"] || '—'}</div>
+                    <div className="text-[10px] text-slate-400">{s["Parent Event"] || ''}{s["Date"] ? ` · ${s["Date"]}` : ''}</div>
+                  </div>
+                  {s["SessionType"] && <Badge className="bg-violet-50 text-violet-500 border border-violet-100 text-[10px] font-black shrink-0">{s["SessionType"]}</Badge>}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+
+      </motion.div>
+    );
+  })()
     ) :viewingRecord ? (
               <RecordDetailView 
                 item={viewingRecord} 
@@ -3185,11 +3281,12 @@ if (!health?.mongodb) {
 
     // C. RENDER DATA ROWS
  return (
-  <tr 
-    key={row.data?._id || row.data?.id || idx} 
+  <tr
+    key={row.data?._id || row.data?.id || idx}
     className={`group transition-colors border-b border-slate-200 ${
-      selectedIds.includes(row.data?._id || row.data?.id) ? 'bg-blue-50/60' : 'hover:bg-slate-50'
+      selectedIds.includes(row.data?._id || row.data?.id) ? 'bg-blue-50/60' : !row.groupColor ? 'hover:bg-slate-50' : ''
     }`}
+    style={!selectedIds.includes(row.data?._id || row.data?.id) && row.groupColor ? { backgroundColor: row.groupColor + '22' } : undefined}
   >
     {/* CHECKBOX COLUMN (Sticky Left) */}
     <td 
@@ -3415,7 +3512,21 @@ if (!health?.mongodb) {
       <p className="text-[9px] font-black uppercase tracking-widest text-brand-primary mb-3">Event & Session Context</p>
       <div className="grid grid-cols-2 gap-3">
         <Input value={newRecord.playId || ''} onChange={(e) => setNewRecord({...newRecord, playId: e.target.value})} placeholder="PlayID" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.session || ''} onChange={(e) => setNewRecord({...newRecord, session: e.target.value})} placeholder="Session Name" className="bg-brand-bg h-9 text-xs" />
+        <div className="col-span-2 space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Session</label>
+          <select
+            className="w-full h-9 bg-white border border-slate-200 rounded-md px-2 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-brand-primary outline-none"
+            value={newRecord.session || ''}
+            onChange={(e) => {
+              const s = sessions.find(s => s["Session Name"] === e.target.value);
+              if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["TimeOfDay"], occasion: s["Occasion"] });
+              else setNewRecord({ ...newRecord, session: e.target.value });
+            }}
+          >
+            <option value="">Select session...</option>
+            {sessions.map((s, i) => <option key={i} value={s["Session Name"]}>{s["Session Name"]}</option>)}
+          </select>
+        </div>
         <Input value={newRecord.parentEvent || ''} onChange={(e) => setNewRecord({...newRecord, parentEvent: e.target.value})} placeholder="Parent Event" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord.date || ''} onChange={(e) => setNewRecord({...newRecord, date: e.target.value})} placeholder="Date" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord.timeOfDay || ''} onChange={(e) => setNewRecord({...newRecord, timeOfDay: e.target.value})} placeholder="Time of Day" className="bg-brand-bg h-9 text-xs" />
@@ -3456,7 +3567,21 @@ if (!health?.mongodb) {
       <p className="text-[9px] font-black uppercase tracking-widest text-brand-primary mb-3">Session Context</p>
       <div className="grid grid-cols-2 gap-3">
         <Input value={newRecord.VideoPlayId || ''} onChange={(e) => setNewRecord({...newRecord, VideoPlayId: e.target.value})} placeholder="VideoPlayId" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.session || ''} onChange={(e) => setNewRecord({...newRecord, session: e.target.value})} placeholder="Session Name" className="bg-brand-bg h-9 text-xs" />
+        <div className="col-span-1 space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Session</label>
+          <select
+            className="w-full h-9 bg-white border border-slate-200 rounded-md px-2 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-brand-primary outline-none"
+            value={newRecord.session || ''}
+            onChange={(e) => {
+              const s = sessions.find(s => s["Session Name"] === e.target.value);
+              if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], city: s["City"], venue: s["Venue"], timeOfDay: s["TimeOfDay"], occasion: s["Occasion"], sessionType: s["SessionType"] });
+              else setNewRecord({ ...newRecord, session: e.target.value });
+            }}
+          >
+            <option value="">Select session...</option>
+            {sessions.map((s, i) => <option key={i} value={s["Session Name"]}>{s["Session Name"]}</option>)}
+          </select>
+        </div>
         <Input value={newRecord.date || ''} onChange={(e) => setNewRecord({...newRecord, date: e.target.value})} placeholder="Date" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord.city || ''} onChange={(e) => setNewRecord({...newRecord, city: e.target.value})} placeholder="City" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord.venue || ''} onChange={(e) => setNewRecord({...newRecord, venue: e.target.value})} placeholder="Venue" className="bg-brand-bg h-9 text-xs" />
@@ -3795,12 +3920,52 @@ if (!health?.mongodb) {
         </DialogContent>
       </Dialog>
 
-      <AttachmentManagerDialog 
-    manager={imageManager} 
+      <AttachmentManagerDialog
+    manager={imageManager}
     onClose={() => setImageManager(null)}
     onUpdate={handleImageUpdate}
     activeTable={activeTable}
   />
+
+      {linkedSession && (
+        <div
+          className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4"
+          onClick={() => setLinkedSession(null)}
+        >
+          <div
+            className="bg-white rounded-[24px] shadow-2xl w-full max-w-lg overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-slate-50 border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+              <div>
+                <div className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-0.5">Linked Session</div>
+                <div className="text-lg font-black text-slate-900 tracking-tight">{linkedSession["Session Name"]}</div>
+              </div>
+              <button onClick={() => setLinkedSession(null)} className="p-2 rounded-xl hover:bg-slate-200 transition-colors">
+                <X className="h-4 w-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="p-6 grid grid-cols-2 gap-x-6 gap-y-4">
+              {(['Parent Event', 'Date', 'City', 'Venue', 'TimeOfDay', 'Occasion', 'SessionType', 'Notes'] as const).map(field =>
+                linkedSession[field] ? (
+                  <div key={field}>
+                    <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{field}</div>
+                    <div className="text-[13px] font-semibold text-slate-800">{linkedSession[field]}</div>
+                  </div>
+                ) : null
+              )}
+            </div>
+            <div className="px-6 pb-5 border-t border-slate-100 pt-4">
+              <button
+                onClick={() => { setActiveTable('Session'); setLinkedSession(null); }}
+                className="text-[11px] font-black text-brand-primary uppercase tracking-widest hover:underline flex items-center gap-1"
+              >
+                Open in Sessions table <ArrowUpRight className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
 
   );
