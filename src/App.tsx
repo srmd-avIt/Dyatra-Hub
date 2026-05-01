@@ -60,7 +60,9 @@ import {
   ChevronDown,
   ArrowDown,
   ArrowUp,
-  ArrowUpRight
+  ArrowUpRight,
+  Check,
+  Maximize2
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 const CardImageGallery = ({ imageString }: { imageString: string }) => {
@@ -133,7 +135,561 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
   );
 };
 
-const RecordDetailView = ({ item, columns, onBack, tableName }: { item: any, columns: string[], onBack: () => void, tableName: string }) => {
+/** Airtable-style searchable dropdown with free-type "Create" option */
+const CellDropdown = React.memo(function CellDropdown({
+  value, options, onCommit, onCancel, placeholder = 'Select...', tagClass
+}: {
+  value: string; options: string[]; onCommit: (v: string) => void; onCancel: () => void; placeholder?: string; tagClass?: string;
+}) {
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const [inputHighlight, setInputHighlight] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const openRef = useRef(false);
+  openRef.current = open;
+
+  useEffect(() => { if (open) setTimeout(() => searchRef.current?.focus(), 0); }, [open]);
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (openRef.current && ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false); setSearch('');
+      }
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, []);
+
+  const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
+  const canCreate = !!search.trim() && !options.some(o => o.toLowerCase() === search.trim().toLowerCase());
+  const pick = (val: string) => { setSearch(''); setOpen(false); onCommit(val); };
+  const triggerAddNew = (e: React.MouseEvent) => {
+    e.preventDefault();
+    setSearch('');
+    setInputHighlight(true);
+    setTimeout(() => { searchRef.current?.focus(); }, 0);
+    setTimeout(() => setInputHighlight(false), 800);
+  };
+
+  return (
+    <div ref={ref} className="relative w-full">
+      {/* Trigger — value centred, chevron pinned right */}
+      <div className="w-full h-8 relative flex items-center justify-center px-6 bg-white border-2 border-blue-500 rounded-md cursor-pointer select-none" onClick={() => setOpen(v => !v)}>
+        {value && tagClass
+          ? <span className={`${tagClass} truncate max-w-full`}>{value}</span>
+          : <span className={`text-[12px] font-medium truncate ${value ? 'text-slate-900' : 'text-slate-400'}`}>{value || placeholder}</span>
+        }
+        <ChevronDown className={`absolute right-2 h-3.5 w-3.5 text-slate-400 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} />
+      </div>
+
+      {open && (
+        <div className="absolute z-[9999] top-full left-0 mt-1 w-full min-w-[220px] bg-white border border-slate-200 rounded-xl shadow-2xl" style={{ overflow: 'visible' }}>
+          {/* Search input — always white */}
+          <div className="p-2 border-b border-slate-100">
+            <input
+              ref={searchRef}
+              className={`w-full text-[12px] px-2.5 py-1.5 rounded-lg border bg-white outline-none placeholder:text-slate-400 transition-all ${inputHighlight ? 'border-blue-400 ring-2 ring-blue-200' : 'border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100'}`}
+              placeholder={inputHighlight ? 'Type name for new option…' : 'Search or type new value…'}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => {
+                if (e.key === 'Escape') { setOpen(false); onCancel(); }
+                if (e.key === 'Enter') { canCreate ? pick(search.trim()) : filtered.length > 0 && pick(filtered[0]); }
+              }}
+            />
+          </div>
+
+          <div className="max-h-52 overflow-y-auto py-1">
+            {/* Deselect row — only shown when a value is currently selected */}
+            {value && !search.trim() && (
+              <div className="px-3 py-2 text-[12px] cursor-pointer text-slate-400 hover:bg-red-50 hover:text-red-500 flex items-center gap-2.5 transition-colors border-b border-slate-100" onMouseDown={e => { e.preventDefault(); pick(''); }}>
+                <X className="h-3.5 w-3.5 shrink-0" />
+                <span>Clear selection</span>
+              </div>
+            )}
+            {filtered.map(opt => (
+              <div key={opt} className={`px-3 py-2 text-[12px] cursor-pointer flex items-center gap-2.5 transition-colors hover:bg-slate-50 ${value === opt ? 'bg-blue-50' : ''}`} onMouseDown={e => { e.preventDefault(); pick(opt); }}>
+                <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${value === opt ? 'bg-blue-500 border-blue-500' : 'border-slate-200'}`}>
+                  {value === opt && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
+                </div>
+                <span className={value === opt ? 'text-blue-700 font-semibold' : 'text-slate-700'}>{opt}</span>
+              </div>
+            ))}
+            {filtered.length === 0 && !canCreate && !search.trim() && <div className="px-3 py-4 text-[12px] text-slate-400 text-center">No options yet</div>}
+            {filtered.length === 0 && !canCreate && search.trim() && <div className="px-3 py-4 text-[12px] text-slate-400 text-center">No match</div>}
+          </div>
+
+          {/* Create / add-new footer */}
+          <div className="border-t border-slate-100">
+            {canCreate ? (
+              <div className="px-3 py-2 text-[12px] cursor-pointer text-blue-600 font-semibold hover:bg-blue-50 flex items-center gap-1.5" onMouseDown={e => { e.preventDefault(); pick(search.trim()); }}>
+                <Plus className="h-3.5 w-3.5" />Create &ldquo;{search.trim()}&rdquo;
+              </div>
+            ) : (
+              <div className="px-3 py-2 text-[12px] cursor-pointer text-blue-600 font-medium hover:bg-blue-50 flex items-center gap-1.5 transition-colors" onMouseDown={triggerAddNew}>
+                <Plus className="h-3.5 w-3.5" />Add new option…
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+/** Airtable-style multi-chip linked-record picker */
+const SessionPicker = React.memo(function SessionPicker({
+  value, allSessions, onCommit, onCancel
+}: {
+  value: string; allSessions: any[]; onCommit: (v: string) => void; onCancel: () => void;
+}) {
+  // Keep internal selection state so we always have the latest value in handlers
+  const [localSel, setLocalSel] = useState<string[]>(() => value ? value.split(',').map(s => s.trim()).filter(Boolean) : []);
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const latestRef = useRef(localSel);
+  const openRef = useRef(false);
+  latestRef.current = localSel;
+  openRef.current = open;
+
+  // Sync if parent value changes externally
+  useEffect(() => {
+    const next = value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+    setLocalSel(next);
+  }, [value]);
+
+  useEffect(() => { if (open) setTimeout(() => searchRef.current?.focus(), 0); }, [open]);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (openRef.current && ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        onCommit(latestRef.current.join(', '));
+      }
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [onCommit]);
+
+  const toggle = (name: string) => {
+    const next = localSel.includes(name) ? localSel.filter(s => s !== name) : [...localSel, name];
+    setLocalSel(next);
+    onCommit(next.join(', '));
+  };
+
+  const remove = (name: string, e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const next = localSel.filter(s => s !== name);
+    setLocalSel(next);
+    onCommit(next.join(', '));
+  };
+
+  const filtered = allSessions.filter(s => s["Session Name"]?.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div ref={ref} className="relative w-full">
+      <div className="w-full min-h-8 flex flex-wrap gap-1 items-center px-1 py-1">
+        {localSel.length > 0 ? localSel.map(name => (
+          <span key={name} className="inline-flex items-center gap-0.5 bg-slate-100 text-slate-700 text-[11px] font-medium px-2 py-0.5 rounded border border-slate-200 leading-tight">
+            {name}
+            <button onMouseDown={e => remove(name, e)} className="ml-0.5 text-slate-400 hover:text-red-500 leading-none text-[13px] font-bold">&times;</button>
+          </span>
+        )) : <span className="text-[12px] text-slate-400">Link sessions…</span>}
+        <button
+          onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
+          className="inline-flex items-center justify-center h-5 w-5 rounded border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 hover:border-slate-400 hover:text-brand-primary transition-colors ml-0.5 shrink-0"
+          title="Add linked session"
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+      </div>
+      {open && (
+        <div className="absolute z-[300] top-full left-0 mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
+          <div className="p-2 border-b border-slate-100">
+            <input ref={searchRef} className="w-full text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder:text-slate-400" placeholder="Search sessions…" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); onCancel(); } }} />
+          </div>
+          <div className="max-h-52 overflow-y-auto py-1">
+            {filtered.map(s => {
+              const name = s["Session Name"]; const sel = localSel.includes(name);
+              return (
+                <div key={name} className={`px-3 py-2 text-[12px] cursor-pointer flex items-center gap-2.5 transition-colors hover:bg-slate-50 ${sel ? 'bg-blue-50' : ''}`} onMouseDown={e => { e.preventDefault(); toggle(name); }}>
+                  <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${sel ? 'bg-blue-500 border-blue-500' : 'border-slate-200'}`}>
+                    {sel && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
+                  </div>
+                  <span className={sel ? 'text-blue-700 font-semibold' : 'text-slate-700'}>{name}</span>
+                </div>
+              );
+            })}
+            {filtered.length === 0 && <div className="px-3 py-4 text-[12px] text-slate-400 text-center">No sessions found</div>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
+/** Airtable-style expanded record modal — desktop two-panel + mobile wizard */
+const RecordExpandModal = React.memo(function RecordExpandModal({
+  item, tableName, columns, sessions, events, onClose, onSave
+}: {
+  item: any; tableName: string; columns: string[]; sessions: any[];
+  events: any[]; onClose: () => void; onSave: (draft: any) => void;
+}) {
+  const normalize = (raw: any) => {
+    const d = { ...raw };
+    ['DateFrom', 'DateTo', 'Date'].forEach(k => {
+      if (!d[k]) return;
+      const s = String(d[k]);
+      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return;
+      if (s.includes('T')) { d[k] = s.split('T')[0]; return; }
+      const p = new Date(s);
+      if (!isNaN(p.getTime())) d[k] = `${p.getFullYear()}-${String(p.getMonth()+1).padStart(2,'0')}-${String(p.getDate()).padStart(2,'0')}`;
+    });
+    if (!d['Sessions'] && d['Imported table']) d['Sessions'] = d['Imported table'];
+    return d;
+  };
+
+  const [draft, setDraft] = useState(() => normalize(item));
+  const [step, setStep] = useState(0);
+  const draftRef = useRef(draft);
+  draftRef.current = draft;
+
+  const isEv = tableName === 'Events';
+  const isSe = tableName === 'Session';
+  const isML = tableName === 'MusicLog';
+  const isVL = tableName === 'VideoLog';
+  const isLinked = isML || isVL;
+
+  const commit = (col: string, val: string) => {
+    const nd = { ...draftRef.current, [col]: val };
+    setDraft(nd);
+    onSave(nd);
+  };
+
+  useEffect(() => {
+    const h = (e: KeyboardEvent) => { if (e.key === 'Escape') onClose(); };
+    document.addEventListener('keydown', h);
+    return () => document.removeEventListener('keydown', h);
+  }, [onClose]);
+
+  // Build wizard steps (mobile): group fields into logical sections
+  const wizardSteps: { label: string; fields: string[] }[] = (() => {
+    const makeGroups = (groups: { label: string; fields: string[] }[]) => {
+      const filtered = groups
+        .map(g => ({ ...g, fields: g.fields.filter(f => columns.includes(f)) }))
+        .filter(g => g.fields.length > 0);
+      const covered = new Set(filtered.flatMap(g => g.fields));
+      const remaining = columns.filter(c => !covered.has(c));
+      if (remaining.length > 0) filtered.push({ label: 'More Details', fields: remaining });
+      return filtered;
+    };
+    if (isEv) return makeGroups([
+      { label: 'Event Details', fields: ['Event Name', 'Venue'] },
+      { label: 'Schedule', fields: ['DateFrom', 'DateTo'] },
+      { label: 'Classification', fields: ['Occasion', 'City', 'Year'] },
+      { label: 'Linked Sessions', fields: ['Sessions'] },
+    ]);
+    if (isSe) return makeGroups([
+      { label: 'Session Info', fields: ['Session Name', 'Parent Event'] },
+      { label: 'Schedule', fields: ['Date', 'Time Of Day'] },
+      { label: 'Location', fields: ['City', 'Venue'] },
+      { label: 'Type & Notes', fields: ['Occasion', 'SessionType', 'Notes'] },
+    ]);
+    if (isML) return makeGroups([
+      { label: 'Session Context', fields: ['Session', 'Parent Event (from Session)', 'Date (from Session)'] },
+      { label: 'Track Details', fields: ['Track', 'Order', 'PlayedAt', 'Theme', 'Relevance'] },
+      { label: 'Notes & Remarks', fields: ['notes', 'ppgRemarks', 'topic', 'cue'] },
+    ]);
+    // Generic: chunk into groups of 3
+    const chunks: { label: string; fields: string[] }[] = [];
+    for (let i = 0; i < columns.length; i += 3)
+      chunks.push({ label: `Step ${Math.floor(i / 3) + 1}`, fields: columns.slice(i, i + 3) });
+    return chunks;
+  })();
+
+  const totalSteps = wizardSteps.length;
+  const currentStepData = wizardSteps[Math.min(step, totalSteps - 1)] || { label: '', fields: [] };
+
+  const linkedSessions = isEv
+    ? sessions.filter((s: any) => {
+        const val = draft['Sessions'] || '';
+        return val.split(',').map((x: string) => x.trim()).includes(s["Session Name"]);
+      })
+    : [];
+
+  const recordTitle = draft["Event Name"] || draft["Session Name"] || draft["Track"] || draft["Title"] || draft["VideoTitle"] || draft["Task"] || "Record";
+
+  const inputCls = "w-full h-10 bg-white border border-slate-200 rounded-xl px-3.5 text-[13px] font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all";
+  const readonlyCls = "w-full h-10 bg-slate-50 border border-slate-100 rounded-xl px-3.5 text-[13px] text-slate-400 flex items-center italic";
+
+  const renderField = (col: string) => {
+    if (isLinked && col === 'Session') {
+      return (
+        <CellDropdown
+          value={draft['Session'] || ''}
+          options={sessions.map((s: any) => s["Session Name"])}
+          onCommit={val => {
+            const s = sessions.find((x: any) => x["Session Name"] === val);
+            const patch: any = { Session: val };
+            if (s) {
+              if (isML) {
+                patch["Parent Event (from Session)"] = s["Parent Event"];
+                patch["Date (from Session)"] = s["Date"];
+                patch["TimeOfDay (from Session)"] = s["TimeOfDay"];
+                patch["Occasion (from Session)"] = s["Occasion"];
+              } else {
+                patch["Parent Event (from Session)"] = s["Parent Event"];
+                patch["Date (from Session)"] = s["Date"];
+                patch["City (from Session)"] = s["City"];
+                patch["Venue (from Session)"] = s["Venue"];
+                patch["TimeOfDay (from Session)"] = s["TimeOfDay"];
+                patch["Occasion (from Session)"] = s["Occasion"];
+                patch["SessionType (from Session)"] = s["SessionType"];
+              }
+            }
+            const nd = { ...draftRef.current, ...patch };
+            setDraft(nd); onSave(nd);
+          }}
+          onCancel={onClose}
+          placeholder="Select session…"
+          tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20"
+        />
+      );
+    }
+    if (isLinked && col.includes('(from Session)')) {
+      return <div className={readonlyCls}>{draft[col] || '—'}</div>;
+    }
+    if ((isEv && (col === 'DateFrom' || col === 'DateTo')) || (isSe && col === 'Date')) {
+      return (
+        <input type="date" className={inputCls}
+          value={draft[col] || ''}
+          onChange={e => { const nd = { ...draftRef.current, [col]: e.target.value }; setDraft(nd); }}
+          onBlur={() => onSave(draftRef.current)}
+        />
+      );
+    }
+    if (isEv && col === 'Sessions') {
+      return (
+        <SessionPicker
+          value={draft['Sessions'] || ''}
+          allSessions={sessions}
+          onCommit={val => commit('Sessions', val)}
+          onCancel={onClose}
+        />
+      );
+    }
+    let opts: string[] = [];
+    if (isEv && col === 'Occasion')
+      opts = [...new Set(events.map((e: any) => e.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+    else if ((isEv || isSe) && col === 'City')
+      opts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+    else if (isEv && col === 'Year') {
+      const yr = new Date().getFullYear();
+      opts = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
+    } else if (isSe && col === 'Occasion')
+      opts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+    else if (isSe && col === 'Time Of Day')
+      opts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
+    else if (isSe && col === 'SessionType')
+      opts = [...new Set(sessions.map((s: any) => s.SessionType).filter(Boolean))].sort() as string[];
+    else if (isSe && col === 'Parent Event')
+      opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
+
+    const tagClass =
+      col === 'Occasion' ? 'bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm' :
+      col === 'City'     ? 'bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm' :
+      col === 'Year'     ? 'bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20' :
+      undefined;
+
+    if (opts.length > 0 || (isEv && (col === 'Occasion' || col === 'City' || col === 'Year')) || (isSe && (col === 'City' || col === 'Occasion' || col === 'Time Of Day' || col === 'SessionType' || col === 'Parent Event'))) {
+      return (
+        <CellDropdown
+          value={draft[col] || ''}
+          options={opts}
+          onCommit={val => commit(col, val)}
+          onCancel={onClose}
+          placeholder={`Select ${col}…`}
+          tagClass={tagClass}
+        />
+      );
+    }
+    if (col === 'Notes' || col === 'notes' || col === 'proposalsList' || col === 'Details' || col === 'guidanceLearning') {
+      return (
+        <textarea className={`${inputCls} h-28 resize-none py-2.5`}
+          value={draft[col] || ''}
+          onChange={e => { const nd = { ...draftRef.current, [col]: e.target.value }; setDraft(nd); }}
+          onBlur={() => onSave(draftRef.current)}
+          placeholder={`Enter ${col}…`}
+        />
+      );
+    }
+    return (
+      <input className={inputCls}
+        value={draft[col] || ''}
+        onChange={e => { const nd = { ...draftRef.current, [col]: e.target.value }; setDraft(nd); }}
+        onBlur={() => onSave(draftRef.current)}
+        placeholder={`Enter ${col}…`}
+      />
+    );
+  };
+
+  const sidebarContent = (
+    <>
+      {isEv && (
+        <div className="p-4 border-b border-slate-200">
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] mb-3">Linked Sessions</div>
+          <div className="space-y-2">
+            {linkedSessions.length > 0 ? linkedSessions.map((s: any) => (
+              <div key={s["Session Name"]} className="p-2.5 bg-brand-primary/5 rounded-lg border border-brand-primary/10">
+                <div className="text-[11px] font-bold text-brand-primary leading-tight">{s["Session Name"]}</div>
+                {s["Date"] && <div className="text-[10px] text-slate-500 mt-0.5">{String(s["Date"]).split('T')[0]}</div>}
+                {s["City"] && <div className="text-[10px] text-slate-500">{s["City"]}</div>}
+              </div>
+            )) : (
+              <div className="text-[11px] text-slate-400 italic">No sessions linked yet</div>
+            )}
+          </div>
+        </div>
+      )}
+      <div className="flex-1 p-4">
+        <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] mb-3">Activity</div>
+        <div className="text-[11px] text-slate-400 italic mb-4">No comments yet.</div>
+        <div className="border border-slate-200 rounded-xl p-3 bg-white shadow-sm">
+          <textarea className="w-full text-[12px] bg-transparent outline-none resize-none text-slate-700 placeholder:text-slate-400" rows={3} placeholder="Start a conversation…" />
+          <div className="flex justify-end mt-2">
+            <button className="text-[10px] font-black text-brand-primary uppercase tracking-widest bg-brand-primary/10 px-3 py-1.5 rounded-lg hover:bg-brand-primary/20 transition-colors">Post</button>
+          </div>
+        </div>
+      </div>
+    </>
+  );
+
+  return (
+    <div
+      className="fixed inset-0 z-[500] flex items-end sm:items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(2px)' }}
+      onClick={onClose}
+    >
+      {/* ── MOBILE: bottom-sheet wizard ─────────────────────────────────── */}
+      <div
+        className="sm:hidden w-full bg-white rounded-t-3xl shadow-2xl flex flex-col max-h-[92vh]"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Drag handle */}
+        <div className="flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-slate-300 rounded-full" />
+        </div>
+
+        {/* Header */}
+        <div className="px-5 pt-2 pb-3 flex items-start justify-between shrink-0">
+          <div className="flex-1 min-w-0 pr-3">
+            <div className="text-[9px] font-black text-brand-primary uppercase tracking-[0.2em] mb-0.5">{tableName}</div>
+            <h2 className="text-[17px] font-black text-slate-900 tracking-tight leading-snug truncate">{recordTitle}</h2>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-slate-100 mt-0.5 shrink-0">
+            <X className="h-5 w-5 text-slate-400" />
+          </button>
+        </div>
+
+        {/* Step progress bar */}
+        <div className="px-5 pb-3 shrink-0">
+          <div className="flex items-center gap-1 mb-2">
+            {wizardSteps.map((_, i) => (
+              <div
+                key={i}
+                className={`h-1 rounded-full transition-all duration-300 ${
+                  i === step ? 'bg-brand-primary flex-[2]' : i < step ? 'bg-brand-primary/40 flex-1' : 'bg-slate-200 flex-1'
+                }`}
+              />
+            ))}
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="text-[10px] font-black text-brand-primary uppercase tracking-[0.15em]">
+              {currentStepData.label}
+            </span>
+            <span className="text-[10px] font-bold text-slate-400">
+              {step + 1} / {totalSteps}
+            </span>
+          </div>
+        </div>
+
+        {/* Fields for this step */}
+        <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-5 min-h-0">
+          {currentStepData.fields.map(col => (
+            <div key={col}>
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] block mb-2">{col}</label>
+              {renderField(col)}
+            </div>
+          ))}
+        </div>
+
+        {/* Footer nav */}
+        <div className="px-5 py-4 border-t border-slate-100 shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+          <div className="flex items-center gap-3">
+            <button
+              onClick={() => setStep(s => Math.max(0, s - 1))}
+              disabled={step === 0}
+              className="flex-1 h-12 border border-slate-300 rounded-2xl text-[12px] font-black uppercase tracking-widest text-slate-600 disabled:opacity-25 hover:bg-slate-50 transition-colors"
+            >
+              Back
+            </button>
+            {step < totalSteps - 1 ? (
+              <button
+                onClick={() => setStep(s => s + 1)}
+                className="flex-[2] h-12 bg-brand-primary text-white rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-brand-primary/90 transition-colors shadow-lg shadow-brand-primary/25"
+              >
+                Next
+              </button>
+            ) : (
+              <button
+                onClick={() => { onSave(draftRef.current); onClose(); }}
+                className="flex-[2] h-12 bg-green-600 text-white rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-green-700 transition-colors shadow-lg shadow-green-600/25"
+              >
+                Save &amp; Close
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* ── DESKTOP: centered two-panel modal ───────────────────────────── */}
+      <div
+        className="hidden sm:flex flex-col bg-white rounded-2xl shadow-2xl w-full max-w-4xl max-h-[90vh] overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 shrink-0">
+          <div>
+            <div className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-0.5">{tableName}</div>
+            <h2 className="text-xl font-black text-slate-900 tracking-tight truncate max-w-[480px]">{recordTitle}</h2>
+          </div>
+          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-200 transition-colors ml-4">
+            <X className="h-5 w-5 text-slate-500" />
+          </button>
+        </div>
+
+        {/* Body: fields + sidebar */}
+        <div className="flex flex-1 overflow-hidden min-h-0">
+          <div className="flex-1 overflow-y-auto p-6 space-y-4 thin-scrollbar">
+            {columns.map(col => (
+              <div key={col}>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] block mb-1.5">{col}</label>
+                {renderField(col)}
+              </div>
+            ))}
+          </div>
+          <div className="w-64 border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto thin-scrollbar bg-slate-50/50">
+            {sidebarContent}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+});
+
+const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], onSessionClick }: { item: any, columns: string[], onBack: () => void, tableName: string, sessions?: any[], onSessionClick?: (s: any) => void }) => {
   return (
     <motion.div 
       initial={{ opacity: 0, y: 10 }} 
@@ -183,15 +739,23 @@ const RecordDetailView = ({ item, columns, onBack, tableName }: { item: any, col
                       {(() => {
                         const val = item[col];
                         
-                        // Special Rendering for "Imported table" Tags (Unchanged as requested)
-                        if (col === "Imported table" && typeof val === 'string') {
+                        // Sessions column in Events detail view — clickable chips
+                        if ((col === "Sessions" || col === "Imported table") && typeof val === 'string') {
                           return (
                             <div className="flex flex-wrap gap-1 mt-1">
-                              {val.split(',').map((tag, i) => (
-                                <Badge key={i} className="bg-slate-100 text-slate-600 border border-slate-200 text-[10px] px-2 py-0.5 uppercase">
-                                  {tag.trim()}
-                                </Badge>
-                              ))}
+                              {val.split(',').map((tag, i) => {
+                                const sName = tag.trim();
+                                const linked = sessions.find((s: any) => s["Session Name"] === sName);
+                                return (
+                                  <Badge
+                                    key={i}
+                                    className={`text-[10px] px-2 py-0.5 uppercase ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-600 border border-slate-200 cursor-default'}`}
+                                    onClick={() => { if (linked) onSessionClick?.(linked); }}
+                                  >
+                                    {sName}
+                                  </Badge>
+                                );
+                              })}
                             </div>
                           );
                         }
@@ -244,6 +808,8 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
 const [editDraft, setEditDraft] = useState<any>(null);
+const [expandedRecord, setExpandedRecord] = useState<any>(null);
+const [editingCell, setEditingCell] = useState<string | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<any[]>([]);
@@ -655,7 +1221,7 @@ const filteredData = getActiveData().filter((item: any) => {
   if (activeTable === 'Events') {
     return (
       item["Event Name"]?.toLowerCase().includes(searchStr) || 
-      item["Imported table"]?.toLowerCase().includes(searchStr) || 
+      (item["Sessions"] || item["Imported table"])?.toLowerCase().includes(searchStr) ||
       item["Year"]?.toString().includes(searchStr)
     );
   }
@@ -721,8 +1287,8 @@ const getTableColumns = () => {
   let baseCols: string[] = []; // Initialize as an array of strings
   
   switch (activeTable) {
-    case 'Events': 
-      baseCols = ['Event Name', 'DateFrom', 'DateTo', 'Occasion', 'City', 'Venue', 'Imported table', 'Year'];
+    case 'Events':
+      baseCols = ['Event Name', 'DateFrom', 'DateTo', 'Occasion', 'City', 'Venue', 'Sessions', 'Year'];
       break;
     case 'Session': 
       baseCols = ['Session Name', 'Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes']; 
@@ -776,8 +1342,10 @@ const renderRow = (item: any) => {
   });
 
 // Inside renderRow function
-const cellCls = "px-4 py-3 border-r border-b border-slate-400 text-slate-700 text-[13px] whitespace-nowrap overflow-hidden text-ellipsis text-center";
-const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold text-slate-900 text-[13px] truncate text-center";
+const cellCls = "px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] whitespace-nowrap overflow-hidden text-ellipsis text-center";
+const titleCls = "px-4 py-3 border-r border-b border-slate-200 font-semibold text-slate-900 text-[13px] truncate text-center";
+// Primary field — no longer sticky, inherits row hover background
+const primaryCls = "px-4 py-3 border-r border-b border-slate-200 font-semibold text-slate-900 text-[13px] truncate bg-inherit";
 
   // HELPER: This renders the data for the columns added via the "+" button
   const renderExtraCells = () => {
@@ -793,29 +1361,39 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
     case 'Events':
       return (
         <>
-          <td className={titleCls} style={cellStyle(cols[0])}>{item["Event Name"] || item.EventName || "Untitled Event"}</td>
+          <td className={primaryCls} style={cellStyle(cols[0])}>{item["Event Name"] || item.EventName || "Untitled Event"}</td>
           <td className={`${cellCls} font-mono`} style={cellStyle(cols[1])}>{item.DateFrom}</td>
           <td className={`${cellCls} font-mono`} style={cellStyle(cols[2])}>{item.DateTo}</td>
           <td className={cellCls} style={cellStyle(cols[3])}>
             <div className="flex flex-wrap gap-1">
               {item.Occasion && item.Occasion.split(',').map((tag: string, i: number) => (
-                <Badge key={i} className="bg-blue-600 text-white border-none text-[12px] uppercase px-2 py-0.5">{tag.trim()}</Badge>
+                <Badge key={i} className="bg-blue-600 text-white border-none text-[12px] px-2 py-0.5 rounded-sm">{tag.trim()}</Badge>
               ))}
             </div>
           </td>
           <td className={cellCls} style={cellStyle(cols[4])}>
             <div className="flex flex-wrap gap-1">
               {item.City && item.City.split(',').map((tag: string, i: number) => (
-                <Badge key={i} className="bg-orange-500 text-white border-none text-[12px] uppercase px-2 py-0.5">{tag.trim()}</Badge>
+                <Badge key={i} className="bg-orange-500 text-white border-none text-[12px] px-2 py-0.5 rounded-sm">{tag.trim()}</Badge>
               ))}
             </div>
           </td>
           <td className={cellCls} style={cellStyle(cols[5])}>{item.Venue}</td>
           <td className={cellCls} style={cellStyle(cols[6])}>
-            <div className="flex flex-wrap gap-1.5">
-              {item["Imported table"] && item["Imported table"].split(',').map((tag: string, i: number) => (
-                <Badge key={i} className="bg-slate-100 text-slate-700 border border-slate-300 font-bold text-[12px] uppercase px-2 py-0.5 rounded shadow-sm">{tag.trim()}</Badge>
-              ))}
+            <div className="flex flex-wrap gap-1.5 overflow-hidden">
+              {(item["Sessions"] || item["Imported table"]) && (item["Sessions"] || item["Imported table"]).split(',').map((sessionName: string, i: number) => {
+                const sName = sessionName.trim();
+                const linked = sessions.find((s: any) => s["Session Name"] === sName);
+                return (
+                  <Badge
+                    key={i}
+                    className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm shadow-sm transition-all ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-700 border border-slate-300 cursor-default'}`}
+                    onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
+                  >
+                    {sName}{linked && <ArrowUpRight className="inline h-3 w-3 ml-0.5 opacity-60" />}
+                  </Badge>
+                );
+              })}
             </div>
           </td>
           <td className={`${cellCls} text-center`} style={cellStyle(cols[7])}>
@@ -827,7 +1405,7 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
     case 'Session':
       return (
        <>
-          <td className={titleCls} style={cellStyle(cols[0])}>{item["Session Name"] || "Untitled Session"}</td>
+          <td className={primaryCls} style={cellStyle(cols[0])}>{item["Session Name"] || "Untitled Session"}</td>
           <td className={cellCls} style={cellStyle(cols[1])}>{item["Parent Event"] || '—'}</td>
           <td className={`${cellCls} font-mono`} style={cellStyle(cols[2])}>{item["Date"]}</td>
           <td className={cellCls} style={cellStyle(cols[3])}>{item["City"] ? <Badge className="bg-blue-50 text-blue-600 border border-blue-100 text-[11px] font-bold px-2 py-0.5 rounded uppercase">{item["City"]}</Badge> : '—'}</td>
@@ -842,7 +1420,7 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
      case 'MusicLog':
       return (
         <>
-          <td className={`${cellCls} font-mono text-brand-primary`} style={cellStyle(cols[0])}>{item["PlayID"]}</td>
+          <td className={`${primaryCls} font-mono text-brand-primary`} style={cellStyle(cols[0])}>{item["PlayID"]}</td>
           <td
             className={`${titleCls} cursor-pointer hover:text-brand-primary hover:underline`}
             style={cellStyle(cols[1])}
@@ -871,7 +1449,7 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
     case 'VideoLog':
       return (
         <>
-          <td className={`${cellCls} font-mono text-indigo-500`} style={cellStyle(cols[0])}>{item["VideoPlayId"]}</td>
+          <td className={`${primaryCls} font-mono text-indigo-500`} style={cellStyle(cols[0])}>{item["VideoPlayId"]}</td>
           <td
             className={`${cellCls} cursor-pointer hover:text-brand-primary hover:underline font-semibold text-slate-900`}
             style={cellStyle(cols[1])}
@@ -895,7 +1473,7 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
     case 'Guidance & Learning':
       return (
         <>
-          <td className={`${cellCls} font-mono text-brand-primary`} style={cellStyle(cols[0])}>{item["LearningId"]}</td>
+          <td className={`${primaryCls} font-mono text-brand-primary`} style={cellStyle(cols[0])}>{item["LearningId"]}</td>
           <td className={titleCls} style={cellStyle(cols[1])}>{item["Event"]}</td>
           <td className={`${cellCls} font-mono`} style={cellStyle(cols[2])}>{item["DateFrom (from Event)"]}</td>
           <td className={`${cellCls} font-mono`} style={cellStyle(cols[3])}>{item["DateTo (from Event)"]}</td>
@@ -911,7 +1489,7 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
   case 'LED':
       return (
         <>
-          <td className={`${cellCls} font-mono text-brand-primary`} style={cellStyle(cols[0])}>{item["LedId"]}</td>
+          <td className={`${primaryCls} font-mono text-brand-primary`} style={cellStyle(cols[0])}>{item["LedId"]}</td>
           <td className={titleCls} style={cellStyle(cols[1])}>{item["🕘 Session"]}</td>
           <td className={cellCls} style={cellStyle(cols[2])}>{item["Parent Event (from 🕘 Session)"]}</td>
           <td className={`${cellCls} font-mono`} style={cellStyle(cols[3])}>{item["Date (from 🕘 Session)"]}</td>
@@ -988,7 +1566,7 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
     case 'DyatraChecklist':
       return (
         <>
-          <td className={titleCls} style={cellStyle(cols[0])}>{item["Task"]}</td>
+          <td className={primaryCls} style={cellStyle(cols[0])}>{item["Task"]}</td>
           <td className={cellCls} style={cellStyle(cols[1])}>{item["Details"]}</td>
           <td className={cellCls} style={cellStyle(cols[2])}>{item["TaskGroup"] && <Badge className="bg-slate-100 text-slate-600 border-slate-300">{item["TaskGroup"]}</Badge>}</td>
           <td className={`${cellCls} font-mono`} style={cellStyle(cols[3])}>{item["OrderId"]}</td>
@@ -1003,7 +1581,7 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
     case 'DataSharing':
       return (
         <>
-          <td className={titleCls} style={cellStyle(cols[0])}>{item["Sevak"]}</td>
+          <td className={primaryCls} style={cellStyle(cols[0])}>{item["Sevak"]}</td>
           <td className={cellCls} style={cellStyle(cols[1])}>{item["Dept"] && <Badge className="bg-blue-600 text-white border-none text-[11px]">{item["Dept"]}</Badge>}</td>
           <td className={cellCls} style={cellStyle(cols[2])}>{item["EmailId"]}</td>
           <td className={cellCls} style={cellStyle(cols[3])}><Badge className={`${item["ShareFacts?"] === 'Yes' ? 'bg-green-500/10 text-green-500' : 'bg-slate-100 text-slate-400'} border-none text-[10px]`}>{item["ShareFacts?"] || 'No'}</Badge></td>
@@ -1014,7 +1592,7 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
     case 'Tracks':
       return (
         <>
-          <td className={titleCls} style={cellStyle(cols[0])}>{item["Title"] || item.title }</td>
+          <td className={primaryCls} style={cellStyle(cols[0])}>{item["Title"] || item.title}</td>
           <td className={cellCls} style={cellStyle(cols[1])}>{item["Artist"] || item.artist }</td>
           <td className={cellCls} style={cellStyle(cols[2])}>{item["Album"] || item.album }</td>
           <td className={cellCls} style={cellStyle(cols[3])}>{item["Duration"] }</td>
@@ -1031,10 +1609,10 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
           {renderExtraCells()}
         </>
       );
-    case 'VideoSetup': 
+    case 'VideoSetup':
     return (
         <>
-          <td className={titleCls} style={cellStyle(cols[0])}>{item.name || item.item || '-'}</td>
+          <td className={primaryCls} style={cellStyle(cols[0])}>{item.name || item.item || '-'}</td>
           <td className={cellCls} style={cellStyle(cols[1])}>{item.notes || '-'}</td>
           <td className={cellCls} style={cellStyle(cols[2])}>{item.assignee || '-'}</td>
           <td className={cellCls} style={cellStyle(cols[3])}><Badge className={`${item.status === 'Ready' ? 'bg-green-600' : item.status === 'Pending' ? 'bg-yellow-600' : 'bg-red-600'} text-white`}>{item.status || 'Unknown'}</Badge></td>
@@ -1046,7 +1624,7 @@ const titleCls = "px-4 py-3 border-r border-b border-slate-400 font-semibold tex
     case 'AudioSetup':
       return (
         <>
-          <td className={titleCls} style={cellStyle(cols[0])}>{item.name || item.item || '-'}</td>
+          <td className={primaryCls} style={cellStyle(cols[0])}>{item.name || item.item || '-'}</td>
           <td className={cellCls} style={cellStyle(cols[1])}>{item.notes || '-'}</td>
           <td className={cellCls} style={cellStyle(cols[2])}>{item.assignee || '-'}</td>
           <td className={cellCls} style={cellStyle(cols[3])}><Badge className={`${item.status === 'Ready' ? 'bg-green-600' : item.status === 'Pending' ? 'bg-yellow-600' : 'bg-red-600'} text-white`}>{item.status || 'Unknown'}</Badge></td>
@@ -1495,6 +2073,10 @@ const renderEditableRow = () => {
     setInlineRecord({ ...inlineRecord, ...patch });
   };
 
+  const isEventsTable = activeTable === 'Events';
+  const selectCls = "w-full h-8 bg-white border border-blue-300 rounded px-2 text-[12px] font-bold text-black focus:ring-2 focus:ring-brand-primary outline-none shadow-sm";
+  const inputCls = "w-full h-8 bg-white border border-blue-300 rounded px-2 text-[12px] font-bold text-black placeholder:text-slate-400 focus:ring-2 focus:ring-brand-primary outline-none shadow-sm";
+
   return (
     <>
       {cols.map((col, i) => (
@@ -1503,31 +2085,87 @@ const renderEditableRow = () => {
           className="px-2 py-2 border-r border-b border-slate-400 bg-blue-50/50"
           style={{ width: getWidth(col), minWidth: getWidth(col), maxWidth: getWidth(col) }}
         >
-          {isSessionLinkedTable && col === 'Session' ? (
-            <select
-              autoFocus
-              className="w-full h-8 bg-white border border-blue-300 rounded px-2 text-[12px] font-bold text-black focus:ring-2 focus:ring-brand-primary outline-none shadow-sm"
-              value={inlineRecord['Session'] || ''}
-              onChange={(e) => handleInlineSessionSelect(e.target.value)}
-            >
-              <option value="">Select session...</option>
-              {sessions.map((s, si) => (
-                <option key={si} value={s["Session Name"]}>{s["Session Name"]}</option>
-              ))}
-            </select>
-          ) : (
-            <input
-              autoFocus={i === 0 && !isSessionLinkedTable}
-              className="w-full h-8 bg-white border border-blue-300 rounded px-2 text-[12px] font-bold text-black placeholder:text-slate-400 focus:ring-2 focus:ring-brand-primary outline-none shadow-sm"
-              placeholder={`Enter ${col}...`}
-              value={inlineRecord[col] || ''}
-              onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') handleInlineSave();
-                if (e.key === 'Escape') setIsInlineAdding(false);
-              }}
-            />
-          )}
+          {(() => {
+            if (isSessionLinkedTable && col === 'Session') {
+              return (
+                <select autoFocus className={selectCls} value={inlineRecord['Session'] || ''} onChange={(e) => handleInlineSessionSelect(e.target.value)}>
+                  <option value="">Select session...</option>
+                  {sessions.map((s: any, si: number) => <option key={si} value={s["Session Name"]}>{s["Session Name"]}</option>)}
+                </select>
+              );
+            }
+            if (isEventsTable && (col === 'DateFrom' || col === 'DateTo')) {
+              return (
+                <input autoFocus={i === 0} type="date" className={inputCls} value={inlineRecord[col] || ''} onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })} />
+              );
+            }
+            if (isEventsTable && col === 'Occasion') {
+              const opts = [...new Set(events.map((e: any) => e.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+              return (
+                <select className={selectCls} value={inlineRecord[col] || ''} onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}>
+                  <option value="">Select occasion...</option>
+                  {opts.map((o, oi) => <option key={oi} value={o}>{o}</option>)}
+                </select>
+              );
+            }
+            if (isEventsTable && col === 'City') {
+              const opts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+              return (
+                <select className={selectCls} value={inlineRecord[col] || ''} onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}>
+                  <option value="">Select city...</option>
+                  {opts.map((o, oi) => <option key={oi} value={o}>{o}</option>)}
+                </select>
+              );
+            }
+            if (isEventsTable && col === 'Year') {
+              const yr = new Date().getFullYear();
+              const yrs = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
+              return (
+                <select className={selectCls} value={inlineRecord[col] || ''} onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}>
+                  <option value="">Select year...</option>
+                  {yrs.map((y, yi) => <option key={yi} value={y}>{y}</option>)}
+                </select>
+              );
+            }
+            if (isEventsTable && col === 'Sessions') {
+              const existing = inlineRecord['Sessions'] ? inlineRecord['Sessions'].split(',').map((x: string) => x.trim()).filter(Boolean) : [];
+              return (
+                <div className="flex flex-col gap-1">
+                  <select className={selectCls} value="" onChange={(e) => {
+                    const picked = e.target.value;
+                    if (!picked || existing.includes(picked)) return;
+                    setInlineRecord({ ...inlineRecord, Sessions: [...existing, picked].join(', ') });
+                  }}>
+                    <option value="">Add session...</option>
+                    {sessions.filter((s: any) => !existing.includes(s["Session Name"])).map((s: any, si: number) => <option key={si} value={s["Session Name"]}>{s["Session Name"]}</option>)}
+                  </select>
+                  {existing.length > 0 && (
+                    <div className="flex flex-wrap gap-0.5">
+                      {existing.map((name: string, ni: number) => (
+                        <span key={ni} className="inline-flex items-center gap-0.5 bg-brand-primary/10 text-brand-primary text-[10px] font-bold px-1.5 py-0.5 rounded-sm border border-brand-primary/20">
+                          {name}
+                          <button onClick={() => setInlineRecord({ ...inlineRecord, Sessions: existing.filter((_: any, fi: number) => fi !== ni).join(', ') })} className="hover:text-red-500">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              );
+            }
+            return (
+              <input
+                autoFocus={i === 0 && !isSessionLinkedTable && !isEventsTable}
+                className={inputCls}
+                placeholder={`Enter ${col}...`}
+                value={inlineRecord[col] || ''}
+                onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') handleInlineSave();
+                  if (e.key === 'Escape') setIsInlineAdding(false);
+                }}
+              />
+            );
+          })()}
         </td>
       ))}
     </>
@@ -1535,8 +2173,9 @@ const renderEditableRow = () => {
 };
 
 
-const handleUpdateRecord = async () => {
-  if (!editingId || !editDraft) return;
+const handleUpdateRecord = async (draftOverride?: any) => {
+  const draft = draftOverride ?? editDraft;
+  if (!editingId || !draft) return;
 
   let collection = '';
   switch (activeTable) {
@@ -1554,17 +2193,18 @@ const handleUpdateRecord = async () => {
   }
 
   try {
-    const id = editDraft._id || editDraft.id;
+    const id = draft._id || draft.id;
     const response = await window.fetch(`/api/${collection}/${id}`, {
-      method: 'PUT', // or 'PATCH' depending on your API
+      method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(editDraft)
+      body: JSON.stringify(draft)
     });
 
     if (response.ok) {
       setEditingId(null);
       setEditDraft(null);
-      fetchAllData(); // Refresh the list
+      setEditingCell(null);
+      fetchAllData();
     } else {
       alert("Failed to update record");
     }
@@ -1573,28 +2213,243 @@ const handleUpdateRecord = async () => {
   }
 };
 
-const renderEditInputs = (item: any) => {
+const handleExpandedSave = async (newDraft: any) => {
+  const id = newDraft._id || newDraft.id;
+  if (!id) return;
+  let collection = '';
+  switch (activeTable) {
+    case 'Events': collection = 'events'; break;
+    case 'Session': collection = 'sessions'; break;
+    case 'MusicLog': collection = 'musiclog'; break;
+    case 'VideoLog': collection = 'videolog'; break;
+    case 'Tracks': collection = 'media'; break;
+    case 'DyatraChecklist': collection = 'checklist'; break;
+    case 'Guidance & Learning': collection = 'guidance'; break;
+    case 'LED': collection = 'led_details'; break;
+    case 'DataSharing': collection = 'locations'; break;
+    case 'VideoSetup': collection = 'videosetup'; break;
+    case 'AudioSetup': collection = 'audiosetup'; break;
+    default: collection = activeTable.toLowerCase();
+  }
+  const updateData = { ...newDraft };
+  delete updateData._id;
+  try {
+    await window.fetch(`/api/${collection}/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updateData)
+    });
+    fetchAllData();
+  } catch (e) {
+    console.error("Expand save error", e);
+  }
+};
+
+const renderEditInputs = (_item: any) => {
   const cols = getTableColumns();
-  const getWidth = (name: string) => colWidths[name] || 200;
+  const gw   = (n: string) => colWidths[n] || 200;
+  const isEv = activeTable === 'Events';
+  const isSe = activeTable === 'Session';
+  const isML = activeTable === 'MusicLog';
+  const isVL = activeTable === 'VideoLog';
+  const isLinked = isML || isVL;
+
+  const inputCls    = (col: string) => `w-full h-8 bg-white border-2 border-blue-500 rounded-md px-2.5 text-[12px] font-medium text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-200 outline-none${editingCell === col ? ' text-center' : ''}`;
+  const readonlyCls = "w-full h-8 bg-slate-50 border border-slate-200 rounded-md px-2.5 text-[12px] text-slate-400 flex items-center italic select-none cursor-not-allowed";
+  const saveKeys    = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleUpdateRecord(); if (e.key === 'Escape') { setEditingId(null); setEditDraft(null); setEditingCell(null); } };
+
+  // Commit a single-field change and save immediately (avoids React async state issue)
+  const commitField = (col: string, val: string) => {
+    const nd = { ...editDraft, [col]: val };
+    setEditDraft(nd);
+    handleUpdateRecord(nd);
+  };
+
+  // Compute session auto-fill patch and save
+  const commitSession = (sessionName: string) => {
+    const s = sessions.find((x: any) => x["Session Name"] === sessionName);
+    const patch: any = { Session: sessionName };
+    if (s) {
+      if (isML) {
+        patch["Parent Event (from Session)"] = s["Parent Event"];
+        patch["Date (from Session)"]         = s["Date"];
+        patch["TimeOfDay (from Session)"]    = s["TimeOfDay"];
+        patch["Occasion (from Session)"]     = s["Occasion"];
+      } else {
+        patch["Parent Event (from Session)"] = s["Parent Event"];
+        patch["Date (from Session)"]         = s["Date"];
+        patch["City (from Session)"]         = s["City"];
+        patch["Venue (from Session)"]        = s["Venue"];
+        patch["TimeOfDay (from Session)"]    = s["TimeOfDay"];
+        patch["Occasion (from Session)"]     = s["Occasion"];
+        patch["SessionType (from Session)"]  = s["SessionType"];
+      }
+    }
+    const nd = { ...editDraft, ...patch };
+    setEditDraft(nd);
+    handleUpdateRecord(nd);
+  };
+
+  const isActiveCell = (col: string) => editingCell === col;
 
   return (
     <>
       {cols.map((col, i) => (
-        <td 
-          key={i} 
-          className="px-2 py-2 border-r border-b border-slate-400 bg-yellow-50/50" 
-          style={{ width: getWidth(col), minWidth: getWidth(col), maxWidth: getWidth(col) }}
+        <td
+          key={i}
+          className={`border-r border-b bg-white cursor-text transition-colors ${isActiveCell(col) ? 'px-1.5 py-1 border-blue-400 ring-2 ring-inset ring-blue-300 overflow-visible' : `px-4 py-3 border-slate-200 hover:bg-slate-50/60 overflow-hidden${i > 0 ? ' text-center' : ''}`}`}
+          style={{ width: gw(col), minWidth: gw(col), maxWidth: gw(col) }}
+          onClick={() => setEditingCell(col)}
         >
-          <input
-            className="w-full h-8 bg-white border border-yellow-300 rounded px-2 text-[12px] font-bold text-black placeholder:text-slate-400 focus:ring-2 focus:ring-brand-primary outline-none shadow-sm"
-            value={editDraft[col] || ''}
-            onChange={(e) => setEditDraft({ ...editDraft, [col]: e.target.value })}
-            onBlur={handleUpdateRecord} 
-            onKeyDown={(e) => {
-              if (e.key === 'Enter') handleUpdateRecord();
-              if (e.key === 'Escape') setEditingId(null);
-            }}
-          />
+          {(() => {
+            // ── AUTO-FILLED "from Session" — always readonly ─────────────────
+            if (isLinked && col.includes('(from Session)')) {
+              return <div className={readonlyCls}>{editDraft[col] || 'auto'}</div>;
+            }
+
+            // ── INACTIVE CELL — mirror renderRow formatting exactly ──────────
+            if (!isActiveCell(col)) {
+              const v = editDraft[col];
+              const empty = <span className="text-slate-300 italic text-[12px]">—</span>;
+
+              // Events: Occasion → blue badges
+              if (col === 'Occasion') return v
+                ? <div className="flex flex-wrap gap-1">{v.split(',').map((t: string, i: number) => <Badge key={i} className="bg-blue-600 text-white border-none text-[12px] px-2 py-0.5 rounded-sm">{t.trim()}</Badge>)}</div>
+                : empty;
+
+              // Events: City → orange badges  |  Session: City → blue badge
+              if (col === 'City') return v
+                ? <div className="flex flex-wrap gap-1">{v.split(',').map((t: string, i: number) => (
+                    isEv
+                      ? <Badge key={i} className="bg-orange-500 text-white border-none text-[12px] px-2 py-0.5 rounded-sm">{t.trim()}</Badge>
+                      : <Badge key={i} className="bg-blue-50 text-blue-600 border border-blue-100 text-[11px] font-bold px-2 py-0.5 rounded uppercase">{t.trim()}</Badge>
+                  ))}</div>
+                : empty;
+
+              // Events: Year → brand-primary badge
+              if (isEv && col === 'Year') return v
+                ? <Badge className="bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-black text-[12px] px-3 py-1 rounded-md shadow-sm tracking-tighter">{v}</Badge>
+                : empty;
+
+              // Events: Sessions → linked chips
+              if (isEv && col === 'Sessions') {
+                const val = v || editDraft['Imported table'] || '';
+                const names = val.split(',').map((s: string) => s.trim()).filter(Boolean);
+                return names.length > 0
+                  ? <div className="flex flex-wrap gap-1.5 overflow-hidden">{names.map((sName: string, i: number) => {
+                      const linked = sessions.find((s: any) => s["Session Name"] === sName);
+                      return <Badge key={i} className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30' : 'bg-slate-100 text-slate-700 border border-slate-300'}`}>{sName}{linked && <ArrowUpRight className="inline h-3 w-3 ml-0.5 opacity-60" />}</Badge>;
+                    })}</div>
+                  : empty;
+              }
+
+              // Session: TimeOfDay → coloured badge
+              if (isSe && col === 'Time Of Day') return v
+                ? <Badge className={`${v.toLowerCase().includes('morn') ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-blue-50 text-blue-600 border-blue-100'} text-[11px] font-bold px-2 py-0.5 rounded uppercase`}>{v}</Badge>
+                : empty;
+
+              // Session: SessionType → italic
+              if (isSe && col === 'SessionType') return <span className="text-[13px] text-slate-700 italic truncate block">{v || empty}</span>;
+
+              // Session: Notes → muted italic
+              if (isSe && col === 'Notes') return <span className="text-[13px] text-slate-500 italic truncate block">{v || empty}</span>;
+
+              // MusicLog / VideoLog: Session field → link style
+              if (isLinked && col === 'Session') return v
+                ? <span className="flex items-center gap-1 text-[13px] font-semibold text-slate-900 cursor-pointer hover:text-brand-primary hover:underline">{v}<ArrowUpRight className="h-3 w-3 shrink-0 opacity-40" /></span>
+                : empty;
+
+              // MusicLog: Track → brand-accent bold
+              if (isML && col === 'Track') return <span className="text-[13px] font-bold text-brand-accent truncate block">{v || empty}</span>;
+
+              // MusicLog: PlayID / VideoLog: VideoPlayId → mono colored
+              if ((isML && col === 'PlayID') || (isVL && col === 'VideoPlayId')) return <span className={`font-mono text-[13px] ${isVL ? 'text-indigo-500' : 'text-brand-primary'}`}>{v || empty}</span>;
+
+              // Date-like columns → mono
+              if (['DateFrom', 'DateTo', 'Date', 'PlayedAt', 'Duration'].includes(col) || col.startsWith('Date (')) return <span className="font-mono text-[13px] text-slate-700">{v || empty}</span>;
+
+              // Default → plain text
+              return <span className="text-[13px] text-slate-700 truncate block">{v || empty}</span>;
+            }
+
+            // ── ACTIVE CELL BELOW ────────────────────────────────────────────
+
+            // ── LINKED SESSION (MusicLog / VideoLog) ─────────────────────────
+            if (isLinked && col === 'Session') {
+              return (
+                <CellDropdown
+                  value={editDraft['Session'] || ''}
+                  options={sessions.map((s: any) => s["Session Name"])}
+                  onCommit={commitSession}
+                  onCancel={() => { setEditingId(null); setEditDraft(null); }}
+                  placeholder="Select session…"
+                  tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20"
+                />
+              );
+            }
+            // ── DATE FIELDS ─────────────────────────────────────────────────
+            if ((isEv && (col === 'DateFrom' || col === 'DateTo')) || (isSe && col === 'Date')) {
+              return <input type="date" className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={handleUpdateRecord} onKeyDown={saveKeys} autoFocus />;
+            }
+            // ── EVENTS: SESSIONS multi-chip ──────────────────────────────────
+            if (isEv && col === 'Sessions') {
+              return (
+                <SessionPicker
+                  value={editDraft['Sessions'] || ''}
+                  allSessions={sessions}
+                  onCommit={val => commitField('Sessions', val)}
+                  onCancel={() => { setEditingId(null); setEditDraft(null); }}
+                />
+              );
+            }
+            // ── DROPDOWN FIELDS ──────────────────────────────────────────────
+            let opts: string[] = [];
+            if (isEv && col === 'Occasion')
+              opts = [...new Set(events.map((e: any) => e.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+            else if ((isEv || isSe) && col === 'City')
+              opts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+            else if (isEv && col === 'Year') {
+              const yr = new Date().getFullYear();
+              opts = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
+            } else if (isSe && col === 'Occasion')
+              opts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+            else if (isSe && col === 'Time Of Day')
+              opts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
+            else if (isSe && col === 'SessionType')
+              opts = [...new Set(sessions.map((s: any) => s.SessionType).filter(Boolean))].sort() as string[];
+            else if (isSe && col === 'Parent Event')
+              opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
+
+            const tagClass =
+              col === 'Occasion' ? 'bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm' :
+              col === 'City'     ? 'bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm' :
+              col === 'Year'     ? 'bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20' :
+              undefined;
+
+            if (opts.length > 0 || ((isEv && (col === 'Occasion' || col === 'City' || col === 'Year')) || (isSe && (col === 'City' || col === 'Occasion' || col === 'Time Of Day' || col === 'SessionType' || col === 'Parent Event')))) {
+              return (
+                <CellDropdown
+                  value={editDraft[col] || ''}
+                  options={opts}
+                  onCommit={val => commitField(col, val)}
+                  onCancel={() => { setEditingId(null); setEditDraft(null); }}
+                  placeholder={`Select ${col}…`}
+                  tagClass={tagClass}
+                />
+              );
+            }
+            // ── DEFAULT TEXT INPUT ───────────────────────────────────────────
+            return (
+              <input
+                autoFocus
+                className={inputCls(col)}
+                value={editDraft[col] || ''}
+                onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
+                onBlur={handleUpdateRecord}
+                onKeyDown={saveKeys}
+              />
+            );
+          })()}
         </td>
       ))}
     </>
@@ -2355,11 +3210,13 @@ if (!health?.mongodb) {
     );
   })()
     ) :viewingRecord ? (
-              <RecordDetailView 
-                item={viewingRecord} 
-                columns={getTableColumns()} 
+              <RecordDetailView
+                item={viewingRecord}
+                columns={getTableColumns()}
                 tableName={activeTable}
-                onBack={() => setViewingRecord(null)} 
+                onBack={() => setViewingRecord(null)}
+                sessions={sessions}
+                onSessionClick={(s) => setLinkedSession(s)}
               />
             ) : (
               <>
@@ -3100,7 +3957,7 @@ if (!health?.mongodb) {
                 ) : (
                   /* --- 3. DATA GRID VIEW (Table) --- */
                   /* --- 3. WHITE EXCEL / AIRTABLE STYLE GRID VIEW --- */
-               <div className="bg-white border border-slate-400 rounded-xl overflow-hidden shadow-lg flex flex-col h-[calc(100vh-200px)]">
+               <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-[calc(100vh-200px)]">
                   <div className="md:hidden bg-blue-50 text-[10px] text-center py-1 text-blue-600 font-bold uppercase">
                     ← Scroll horizontally to see all columns →
                   </div>
@@ -3109,10 +3966,10 @@ if (!health?.mongodb) {
                       className="border-collapse text-left text-[11px] table-fixed" 
                       style={{ width: 'max-content' }} 
                     >
-         <thead className="sticky top-0 z-30 bg-slate-100 shadow-sm">
+         <thead className="sticky top-0 z-30 bg-slate-50 border-b border-slate-200">
   <tr>
-    <th className="w-12 border-r border-b border-slate-400 px-2 py-3 bg-slate-200/50 text-center sticky left-0 z-40">
-      <span className="text-[10px] font-black text-slate-500">#</span>
+    <th className="w-12 border-r border-b border-slate-200 px-2 py-3 bg-slate-100 text-center sticky left-0 z-40">
+      <span className="text-[10px] font-black text-slate-400">#</span>
     </th>
    {getTableColumns().map((col, i) => {
   const isSorted = sortBy?.field === col;
@@ -3123,11 +3980,10 @@ if (!health?.mongodb) {
   const extraIndex = i - baseColsCount;
 
   return (
-  <th 
-  key={i} 
+  <th
+  key={i}
   style={{ width: colWidths[col] || 200, minWidth: colWidths[col] || 200, position: 'relative' }}
-  // Kept font-black, removed uppercase, changed tracking to tight for better readability
-  className={`border-r border-b border-slate-400 p-0 font-black tracking-tight overflow-hidden select-none transition-colors group/header ${isSorted ? 'bg-slate-200 text-brand-primary' : 'bg-slate-100 text-slate-700'}`}
+  className={`border-r border-b border-slate-200 p-0 font-semibold tracking-tight overflow-hidden select-none transition-colors group/header ${isSorted ? 'bg-blue-50 text-brand-primary' : 'bg-slate-50 text-slate-600'}`}
 >
       {editingHeader?.index === i ? (
         <input
@@ -3249,8 +4105,8 @@ if (!health?.mongodb) {
     if (row.type === 'header') {
       const isCollapsed = collapsedGroups.includes(row.id);
       return (
-        <tr key={row.id} className="bg-slate-50/80 border-b border-slate-300 sticky z-10 cursor-pointer" style={{ top: '37px' }} onClick={() => toggleGroup(row.id)}>
-          <td className="border-r border-slate-300 text-center w-12 bg-slate-100">
+        <tr key={row.id} className="bg-slate-50 border-b border-slate-200 sticky z-10 cursor-pointer" style={{ top: '37px' }} onClick={() => toggleGroup(row.id)}>
+          <td className="border-r border-slate-200 text-center w-12 bg-slate-100">
              <div className="flex justify-center items-center h-full">
                {!isCollapsed ? <ChevronDown className="h-4 w-4 text-slate-900" /> : <ChevronRight className="h-4 w-4 text-slate-400" />}
              </div>
@@ -3284,44 +4140,66 @@ if (!health?.mongodb) {
   <tr
     key={row.data?._id || row.data?.id || idx}
     className={`group transition-colors border-b border-slate-200 ${
-      selectedIds.includes(row.data?._id || row.data?.id) ? 'bg-blue-50/60' : !row.groupColor ? 'hover:bg-slate-50' : ''
+      selectedIds.includes(row.data?._id || row.data?.id) ? 'bg-blue-100/60' : !row.groupColor ? 'hover:bg-blue-50/40' : ''
     }`}
     style={!selectedIds.includes(row.data?._id || row.data?.id) && row.groupColor ? { backgroundColor: row.groupColor + '22' } : undefined}
   >
-    {/* CHECKBOX COLUMN (Sticky Left) */}
-    <td 
-      className="w-12 border-r border-slate-200 text-center sticky left-0 z-20 bg-inherit"
-      onClick={(e) => {
-        e.stopPropagation();
-        toggleRowSelection(row.data?._id || row.data?.id);
-      }}
-    >
-      <div className="flex items-center justify-center">
-        {/* Only show index normally, show checkbox on hover or if selected */}
-        <div className={`transition-all ${
-          selectedIds.includes(row.data?._id || row.data?.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
-        }`}>
-          <input 
-            type="checkbox" 
-            checked={selectedIds.includes(row.data?._id || row.data?.id)}
-            onChange={() => {}} // Handled by TD click
-            className="h-4 w-4 rounded border-slate-300 text-brand-primary focus:ring-brand-primary"
-          />
-        </div>
-        <span className={`absolute text-[10px] font-mono text-slate-400 group-hover:opacity-0 ${
+    {/* CHECKBOX + EXPAND COLUMN (Sticky Left) */}
+    <td className="w-12 border-r border-slate-200 text-center sticky left-0 z-20 bg-inherit px-1 py-0">
+      <div className="relative flex items-center justify-center h-full">
+        {/* Row index — visible by default, fades on hover */}
+        <span className={`absolute text-[10px] font-mono text-slate-400 transition-opacity duration-150 group-hover:opacity-0 ${
           selectedIds.includes(row.data?._id || row.data?.id) ? 'opacity-0' : 'opacity-100'
         }`}>
           {idx + 1}
         </span>
+        {/* Controls — hidden by default, appear on hover / when selected */}
+        <div className={`flex items-center gap-1 transition-opacity duration-150 ${
+          selectedIds.includes(row.data?._id || row.data?.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+        }`}>
+          <input
+            type="checkbox"
+            checked={selectedIds.includes(row.data?._id || row.data?.id)}
+            onChange={() => {}}
+            onClick={e => { e.stopPropagation(); toggleRowSelection(row.data?._id || row.data?.id); }}
+            className="h-3.5 w-3.5 rounded border-slate-300 text-brand-primary focus:ring-brand-primary cursor-pointer"
+          />
+          <button
+            onClick={e => { e.stopPropagation(); setExpandedRecord(row.data); }}
+            className="p-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-brand-primary transition-colors"
+            title="Expand record"
+          >
+            <Maximize2 className="h-3 w-3" />
+          </button>
+        </div>
       </div>
     </td>
-        
+
         {isEditing ? (
           renderEditInputs(row.data)
         ) : (
-          <div className="contents" onClick={() => {
+          <div className="contents" onClick={(e) => {
+            // Detect which column cell was clicked via DOM position
+            const td = (e.target as HTMLElement).closest('td');
+            const tr = td?.closest('tr');
+            if (td && tr) {
+              const tds = Array.from(tr.querySelectorAll('td'));
+              const tdIdx = tds.indexOf(td as HTMLTableCellElement) - 1; // -1 for checkbox col
+              const clickedCol = getTableColumns()[tdIdx];
+              if (clickedCol) setEditingCell(clickedCol);
+            }
             setEditingId(row.data?._id || row.data?.id);
-            setEditDraft({...row.data});
+            const d: any = { ...row.data };
+            ['DateFrom', 'DateTo', 'Date'].forEach(k => {
+              if (!d[k]) return;
+              const raw: string = String(d[k]);
+              if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return;
+              if (raw.includes('T')) { d[k] = raw.split('T')[0]; return; }
+              const parsed = new Date(raw);
+              if (!isNaN(parsed.getTime())) d[k] = `${parsed.getFullYear()}-${String(parsed.getMonth()+1).padStart(2,'0')}-${String(parsed.getDate()).padStart(2,'0')}`;
+            });
+            if (!d['Sessions'] && d['Imported table']) d['Sessions'] = d['Imported table'];
+            setEditDraft(d);
           }}>
             {renderRow(row.data)}
           </div>
@@ -3351,7 +4229,7 @@ if (!health?.mongodb) {
                   </div>
                   
                   {/* FOOTER BAR */}
-                <div className="bg-slate-100 border-t border-slate-400 px-6 py-2 flex items-center justify-between text-[11px] text-slate-600 font-bold z-20">
+                <div className="bg-slate-50 border-t border-slate-200 px-6 py-2 flex items-center justify-between text-[11px] text-slate-500 font-medium z-20">
                     <div className="flex items-center gap-4">
                       <span className="flex items-center gap-1.5"><Grid className="h-3 w-3" /> {filteredData.length} records</span>
                       <div className="w-px h-3 bg-slate-400" />
@@ -3434,26 +4312,61 @@ if (!health?.mongodb) {
           <div className="flex-1 overflow-y-auto p-4 sm:p-8 pt-4 sm:pt-6 space-y-8 thin-scrollbar">
   <div className="space-y-6">
     {/* EVENTS FIELDS */}
-    {activeTable === 'Events' && (
-  <div className="space-y-4">
-    <div className="grid grid-cols-2 gap-4">
-      <Input value={newRecord.name || ''} onChange={(e) => setNewRecord({...newRecord, name: e.target.value})} placeholder="Event Name" className="bg-brand-bg" />
-      <Input value={newRecord.occasion || ''} onChange={(e) => setNewRecord({...newRecord, occasion: e.target.value})} placeholder="Occasion" className="bg-brand-bg" />
-    </div>
-    <div className="grid grid-cols-2 gap-4">
-      <Input type="date" value={newRecord.dateFrom || ''} onChange={(e) => setNewRecord({...newRecord, dateFrom: e.target.value})} placeholder="Date From" className="bg-brand-bg" />
-      <Input type="date" value={newRecord.dateTo || ''} onChange={(e) => setNewRecord({...newRecord, dateTo: e.target.value})} placeholder="Date To" className="bg-brand-bg" />
-    </div>
-    <div className="grid grid-cols-2 gap-4">
-      <Input value={newRecord.city || ''} onChange={(e) => setNewRecord({...newRecord, city: e.target.value})} placeholder="City" className="bg-brand-bg" />
-      <Input value={newRecord.venue || ''} onChange={(e) => setNewRecord({...newRecord, venue: e.target.value})} placeholder="Venue" className="bg-brand-bg" />
-    </div>
-    <div className="grid grid-cols-2 gap-4">
-      <Input value={newRecord.importedTable || ''} onChange={(e) => setNewRecord({...newRecord, importedTable: e.target.value})} placeholder="Imported Table Name" className="bg-brand-bg" />
-      <Input value={newRecord.year || ''} onChange={(e) => setNewRecord({...newRecord, year: e.target.value})} placeholder="Year" className="bg-brand-bg" />
-    </div>
-  </div>
-)}
+    {activeTable === 'Events' && (() => {
+      const occasionOpts = [...new Set(events.map((e: any) => e.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+      const cityOpts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+      const yr = new Date().getFullYear();
+      const yearOpts = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
+      const selectedSessions: string[] = newRecord.Sessions ? newRecord.Sessions.split(',').map((x: string) => x.trim()).filter(Boolean) : [];
+      const selectCls = "w-full h-9 bg-brand-bg border border-brand-border rounded-md px-3 text-sm text-brand-text focus:ring-2 focus:ring-brand-primary outline-none";
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <Input value={newRecord["Event Name"] || ''} onChange={(e) => setNewRecord({...newRecord, "Event Name": e.target.value})} placeholder="Event Name" className="bg-brand-bg" />
+            <Input value={newRecord.Venue || ''} onChange={(e) => setNewRecord({...newRecord, Venue: e.target.value})} placeholder="Venue" className="bg-brand-bg" />
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <Input type="date" value={newRecord.DateFrom || ''} onChange={(e) => setNewRecord({...newRecord, DateFrom: e.target.value})} className="bg-brand-bg" />
+            <Input type="date" value={newRecord.DateTo || ''} onChange={(e) => setNewRecord({...newRecord, DateTo: e.target.value})} className="bg-brand-bg" />
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <select className={selectCls} value={newRecord.Occasion || ''} onChange={(e) => setNewRecord({...newRecord, Occasion: e.target.value})}>
+              <option value="">Occasion...</option>
+              {occasionOpts.map((o, i) => <option key={i} value={o}>{o}</option>)}
+            </select>
+            <select className={selectCls} value={newRecord.City || ''} onChange={(e) => setNewRecord({...newRecord, City: e.target.value})}>
+              <option value="">City...</option>
+              {cityOpts.map((o, i) => <option key={i} value={o}>{o}</option>)}
+            </select>
+            <select className={selectCls} value={newRecord.Year || ''} onChange={(e) => setNewRecord({...newRecord, Year: e.target.value})}>
+              <option value="">Year...</option>
+              {yearOpts.map((y, i) => <option key={i} value={y}>{y}</option>)}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Linked Sessions</label>
+            <select className={selectCls} value="" onChange={(e) => {
+              const picked = e.target.value;
+              if (!picked || selectedSessions.includes(picked)) return;
+              setNewRecord({ ...newRecord, Sessions: [...selectedSessions, picked].join(', ') });
+            }}>
+              <option value="">Add session...</option>
+              {sessions.filter((s: any) => !selectedSessions.includes(s["Session Name"])).map((s: any, i: number) => <option key={i} value={s["Session Name"]}>{s["Session Name"]}</option>)}
+            </select>
+            {selectedSessions.length > 0 && (
+              <div className="flex flex-wrap gap-1.5 mt-1">
+                {selectedSessions.map((name: string, i: number) => (
+                  <span key={i} className="inline-flex items-center gap-1 bg-brand-primary/10 text-brand-primary text-[11px] font-bold px-2 py-1 rounded-sm border border-brand-primary/20">
+                    {name}
+                    <button onClick={() => setNewRecord({ ...newRecord, Sessions: selectedSessions.filter((_: any, fi: number) => fi !== i).join(', ') })} className="hover:text-red-500 font-bold">×</button>
+                  </span>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      );
+    })()}
     {/* SESSION FIELDS */}
    {activeTable === 'Session' && (
   <>
@@ -3926,6 +4839,18 @@ if (!health?.mongodb) {
     onUpdate={handleImageUpdate}
     activeTable={activeTable}
   />
+
+      {expandedRecord && (
+        <RecordExpandModal
+          item={expandedRecord}
+          tableName={activeTable}
+          columns={getTableColumns()}
+          sessions={sessions}
+          events={events}
+          onClose={() => setExpandedRecord(null)}
+          onSave={handleExpandedSave}
+        />
+      )}
 
       {linkedSession && (
         <div
