@@ -28,16 +28,16 @@ import {
   DialogTitle,
 } from "@/components/ui/dialog";
 import { 
-  Music, 
-  Video, 
-  FileText, 
-  Monitor, 
-  CheckSquare, 
-  Truck, 
-  MessageSquare, 
-  Plus, 
-  Search, 
-  LogOut, 
+  Music,
+  Video,
+  FileText,
+  Monitor,
+  CheckSquare,
+  Truck,
+  MessageSquare,
+  Plus,
+  Search,
+  LogOut,
   Calendar,
   MapPin,
   Play,
@@ -53,7 +53,7 @@ import {
   Clock,
   LayoutGrid,
   Grid,
-    ChevronLeft, 
+    ChevronLeft,
   ChevronRight,
   Layers,
   ArrowUpDown,
@@ -62,7 +62,16 @@ import {
   ArrowUp,
   ArrowUpRight,
   Check,
-  Maximize2
+  Maximize2,
+  Eye,
+  EyeOff,
+  AlignLeft,
+  Hash,
+  List,
+  Mail,
+  Link2,
+  Phone,
+  Settings2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 const CardImageGallery = ({ imageString }: { imageString: string }) => {
@@ -599,7 +608,8 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
             {wizardSteps.map((_, i) => (
               <div
                 key={i}
-                className={`h-1 rounded-full transition-all duration-300 ${
+                onClick={() => setStep(i)}
+                className={`h-1 rounded-full transition-all duration-300 cursor-pointer ${
                   i === step ? 'bg-brand-primary flex-[2]' : i < step ? 'bg-brand-primary/40 flex-1' : 'bg-slate-200 flex-1'
                 }`}
               />
@@ -803,6 +813,25 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], onS
     </motion.div>
   );
 };
+const FIELD_TYPES = [
+  { id: 'text',        label: 'Text',        icon: AlignLeft,   desc: 'Plain single-line text' },
+  { id: 'long_text',   label: 'Long Text',   icon: AlignLeft,   desc: 'Multiline, shown italic' },
+  { id: 'number',      label: 'Number',      icon: Hash,        desc: 'Monospace numeric value' },
+  { id: 'id',          label: 'ID / Code',   icon: Hash,        desc: 'Monospace ID in brand color' },
+  { id: 'date',        label: 'Date',        icon: Calendar,    desc: 'Date, shown monospace' },
+  { id: 'year',        label: 'Year',        icon: Calendar,    desc: 'Year pill badge' },
+  { id: 'checkbox',    label: 'Checkbox',    icon: CheckSquare, desc: 'True / false toggle' },
+  { id: 'yes_no',      label: 'Yes / No',    icon: CheckSquare, desc: 'Yes or No colored badge' },
+  { id: 'status',      label: 'Status',      icon: Zap,         desc: 'Ready / Pending / other' },
+  { id: 'select',      label: 'Select',      icon: List,        desc: 'Dropdown single-select' },
+  { id: 'badge',       label: 'Badge',       icon: List,        desc: 'Single blue outlined badge' },
+  { id: 'badge_multi', label: 'Multi-Badge', icon: Layers,      desc: 'Comma-split blue badges' },
+  { id: 'email',       label: 'Email',       icon: Mail,        desc: 'Email address link' },
+  { id: 'url',         label: 'URL',         icon: Link2,       desc: 'Shows as "Link" anchor' },
+  { id: 'phone',       label: 'Phone',       icon: Phone,       desc: 'Phone number' },
+] as const;
+type FieldType = typeof FIELD_TYPES[number]['id'];
+
 export default function App() {
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -841,6 +870,8 @@ const [isSortOpen, setIsSortOpen] = useState(false);
   const [viewMode, setViewMode] = useState<'visual' | 'grid' | 'card'>('card');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
+  const [isMobileView, setIsMobileView] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const [addWizardStep, setAddWizardStep] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [newRecord, setNewRecord] = useState<any>({});
   const [loginError, setLoginError] = useState<string | null>(null);
@@ -908,6 +939,12 @@ const handleMouseDown = (e: React.MouseEvent, columnName: string) => {
     checkHealth();
     const interval = setInterval(checkHealth, 5000);
     return () => clearInterval(interval);
+  }, []);
+
+  useEffect(() => {
+    const handleResize = () => setIsMobileView(window.innerWidth < 768);
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
   }, []);
 
   const isConfigured = health?.mongodb; // Only require MongoDB for general operation
@@ -1007,17 +1044,62 @@ const handleDeleteColumn = (colToDelete: string) => {
 
   const currentExtras = extraColumns[activeTable] || [];
   const updatedExtras = currentExtras.filter(col => col !== colToDelete);
+  const newCols = { ...extraColumns, [activeTable]: updatedExtras };
 
-  const newExtraObj = {
-    ...extraColumns,
-    [activeTable]: updatedExtras
-  };
+  const newTypes = { ...columnTypes };
+  if (newTypes[activeTable]) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { [colToDelete]: _removed, ...rest } = newTypes[activeTable];
+    newTypes[activeTable] = rest;
+  }
 
-  // 1. Update Local State
-  setExtraColumns(newExtraObj);
-  
-  // 2. Save to Backend
-  saveExtraColumns(newExtraObj);
+  setExtraColumns(newCols);
+  setColumnTypes(newTypes);
+  saveSettings(newCols, newTypes, hiddenColumns);
+};
+
+const toggleHideColumn = (col: string) => {
+  const currentHidden = hiddenColumns[activeTable] || [];
+  const newHidden = currentHidden.includes(col)
+    ? currentHidden.filter(c => c !== col)
+    : [...currentHidden, col];
+  const newHiddenObj = { ...hiddenColumns, [activeTable]: newHidden };
+  setHiddenColumns(newHiddenObj);
+  saveSettings(extraColumns, columnTypes, newHiddenObj);
+};
+
+const confirmAddColumn = () => {
+  if (!addColumnModal || !addColumnModal.name.trim()) return;
+  const name = addColumnModal.name.trim();
+  const type = addColumnModal.type;
+  const currentExtras = extraColumns[activeTable] || [];
+  const newCols = { ...extraColumns, [activeTable]: [...currentExtras, name] };
+  const newTypes = { ...columnTypes, [activeTable]: { ...(columnTypes[activeTable] || {}), [name]: type } };
+  setExtraColumns(newCols);
+  setColumnTypes(newTypes);
+  saveSettings(newCols, newTypes, hiddenColumns);
+  setAddColumnModal(null);
+};
+
+const confirmEditColumnType = () => {
+  if (!editColumnModal) return;
+  const { col, type, extraIndex } = editColumnModal;
+
+  // Always save the type for any column
+  const newTypes = { ...columnTypes, [activeTable]: { ...(columnTypes[activeTable] || {}), [col]: type } };
+  setColumnTypes(newTypes);
+
+  // Only touch extraColumns if it's an extra column (for rename support)
+  if (extraIndex >= 0) {
+    const newExtras = [...(extraColumns[activeTable] || [])];
+    newExtras[extraIndex] = editColumnModal.col;
+    const newCols = { ...extraColumns, [activeTable]: newExtras };
+    setExtraColumns(newCols);
+    saveSettings(newCols, newTypes, hiddenColumns);
+  } else {
+    saveSettings(extraColumns, newTypes, hiddenColumns);
+  }
+  setEditColumnModal(null);
 };
 // Find getActiveData around line 185 and update the Tracks case:
 const getActiveData = () => {
@@ -1154,15 +1236,19 @@ const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     </Dialog>
   );
 };
-const saveExtraColumns = async (updatedColumns: Record<string, string[]>) => {
+const saveSettings = async (
+  cols: Record<string, string[]>,
+  types: Record<string, Record<string, FieldType>>,
+  hidden: Record<string, string[]>
+) => {
   try {
     await window.fetch('/api/settings/columns', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedColumns)
+      body: JSON.stringify({ _v: 2, columns: cols, types, hidden })
     });
   } catch (error) {
-    console.error("Failed to save column settings:", error);
+    console.error("Failed to save settings:", error);
   }
 };
 
@@ -1172,13 +1258,19 @@ useEffect(() => {
       const response = await window.fetch('/api/settings/columns');
       if (response.ok) {
         const data = await response.json();
-        setExtraColumns(data || {});
+        if (data && data._v === 2) {
+          setExtraColumns(data.columns || {});
+          setColumnTypes(data.types || {});
+          setHiddenColumns(data.hidden || {});
+        } else {
+          setExtraColumns(data || {});
+        }
       }
     } catch (error) {
       console.error("Failed to load columns:", error);
     }
   };
-  
+
   if (user) loadColumns();
 }, [user]);
 const filteredData = getActiveData().filter((item: any) => {
@@ -1282,360 +1374,289 @@ if (activeTable === 'Tracks') {
   );
 });
 const [extraColumns, setExtraColumns] = useState<Record<string, string[]>>({});
+const [columnTypes, setColumnTypes] = useState<Record<string, Record<string, FieldType>>>({});
+const [hiddenColumns, setHiddenColumns] = useState<Record<string, string[]>>({});
+const [isFieldsOpen, setIsFieldsOpen] = useState(false);
+const [addColumnModal, setAddColumnModal] = useState<{ name: string; type: FieldType } | null>(null);
+const [editColumnModal, setEditColumnModal] = useState<{ col: string; type: FieldType; extraIndex: number } | null>(null);
 
-const getTableColumns = () => {
-  let baseCols: string[] = []; // Initialize as an array of strings
-  
+const getColumnType = (col: string): FieldType => {
+  // Explicitly stored type always wins
+  if (columnTypes[activeTable]?.[col]) return columnTypes[activeTable][col] as FieldType;
+  // Smart defaults by column name
+  if (['PlayID', 'VideoPlayId', 'LedId', 'LearningId'].includes(col) || (col.toLowerCase().endsWith('id') && !col.includes(' '))) return 'id';
+  if (['DateFrom', 'DateTo', 'Date', 'PlayedAt', 'LastUpdated'].includes(col) || col.startsWith('Date (') || col.startsWith('DateFrom (') || col.startsWith('DateTo (')) return 'date';
+  if (['Year', 'Year (from Event)'].includes(col)) return 'year';
+  if (['Occasion', 'Occasion (from Session)', 'Tags'].includes(col)) return 'badge_multi';
+  if (['City', 'City (from Session)', 'City (from 🕘 Session)', 'Dept', 'TaskGroup', 'Indoor/Outdoor LED?'].includes(col)) return 'badge';
+  if (['SessionType', 'SessionType (from Session)', 'Category', 'Time Of Day', 'TimeOfDay', 'TimeOfDay (from Session)'].includes(col)) return 'badge';
+  if (['Notes', 'Details', 'Guidance/Learning', 'ShareData', 'ProposalsList', 'attachmentSummary', 'Lyrics', 'notes'].includes(col)) return 'long_text';
+  if (['Attachments', 'Attachment', 'FileLink', 'TrackID (link)'].includes(col)) return 'url';
+  if (['EmailId'].includes(col)) return 'email';
+  if (['ShareFacts?', 'is Led Required?'].includes(col)) return 'yes_no';
+  if (['Status', 'status'].includes(col)) return 'status';
+  if (['BPM', 'DurationTime', 'Plays', 'Order', 'Patrank', 'OrderId', 'Duration', 'Stageht',
+       'CntrPitch', 'CntrWdth', 'CntrHt', 'CntrRiser', 'SidePitch', 'SideWdth', 'SideHt',
+       'OtherPitch', 'OtherWdth', 'OtherHt', 'Other2Wdth', 'Other2Ht', 'DGUseedKva', 'BackupPower'].includes(col)) return 'number';
+  return 'text';
+};
+
+const renderCell = (col: string, item: any): React.ReactNode => {
+  const val = item[col];
+  const type = getColumnType(col);
+  const empty = <span className="text-slate-300 italic text-[12px]">—</span>;
+
+  switch (type) {
+    case 'id':
+      return <span className={`font-mono text-[13px] ${activeTable === 'VideoLog' ? 'text-indigo-500' : 'text-brand-primary'}`}>{val || empty}</span>;
+    case 'date':
+      return <span className="font-mono text-slate-700 text-[13px]">{val || empty}</span>;
+    case 'year':
+      return val
+        ? <Badge className="bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-black text-[12px] px-3 py-1 rounded-md shadow-sm tracking-tighter">{val}</Badge>
+        : empty;
+    case 'number':
+      return <span className="font-mono text-slate-700 text-[13px] block text-center">{val || empty}</span>;
+    case 'badge':
+      return val
+        ? <Badge className="bg-blue-50 text-blue-600 border border-blue-100 text-[11px] font-bold px-2 py-0.5 rounded uppercase">{val}</Badge>
+        : empty;
+    case 'badge_multi':
+      return val
+        ? <div className="flex flex-wrap gap-1">{String(val).split(',').map((t: string, i: number) => <Badge key={i} className="bg-blue-600 text-white border-none text-[12px] px-2 py-0.5 rounded-sm">{t.trim()}</Badge>)}</div>
+        : empty;
+    case 'yes_no':
+      return val === 'Yes'
+        ? <Badge className="bg-green-100 text-green-700 border border-green-200 text-[11px] px-2">Yes</Badge>
+        : <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[11px] px-2">No</Badge>;
+    case 'status':
+      return val
+        ? <Badge className={`${val === 'Ready' ? 'bg-green-100 text-green-700 border-green-200' : val === 'Pending' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' : 'bg-red-100 text-red-700 border-red-200'} text-[11px] px-2`}>{val}</Badge>
+        : empty;
+    case 'email':
+      return val ? <span className="text-brand-primary underline text-[13px]">{val}</span> : empty;
+    case 'url':
+      return val
+        ? <a href={val} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px]">Link</a>
+        : empty;
+    case 'long_text':
+      return <span className="text-slate-500 italic text-[13px] truncate block">{val ? (String(val).length > 60 ? String(val).substring(0, 60) + '…' : String(val)) : empty}</span>;
+    case 'checkbox':
+      return (val === 'true' || val === true)
+        ? <Check className="h-4 w-4 text-green-500 mx-auto" />
+        : empty;
+    case 'select':
+      return val ? <Badge className="bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-[11px] px-2">{val}</Badge> : empty;
+    case 'phone':
+    case 'text':
+    default:
+      return <span className="text-[13px] text-slate-700 truncate block">{val || empty}</span>;
+  }
+};
+
+const getTableColumns = (includeHidden = false) => {
+  let baseCols: string[] = [];
+
   switch (activeTable) {
     case 'Events':
       baseCols = ['Event Name', 'DateFrom', 'DateTo', 'Occasion', 'City', 'Venue', 'Sessions', 'Year'];
       break;
-    case 'Session': 
-      baseCols = ['Session Name', 'Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes']; 
+    case 'Session':
+      baseCols = ['Session Name', 'Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes'];
       break;
-    case 'MusicLog': 
+    case 'MusicLog':
       baseCols = ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID'];
       break;
-    case 'Tracks': 
+    case 'Tracks':
       baseCols = ['Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'];
       break;
-    case 'VideoLog': 
+    case 'VideoLog':
       baseCols = ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList'];
       break;
-    case 'Guidance & Learning': 
+    case 'Guidance & Learning':
       baseCols = ['LearningId', 'Event', 'DateFrom (from Event)', 'DateTo (from Event)', 'Year (from Event)', 'City', 'GuidanceFrom', 'Guidance/Learning', 'Category', 'Attachments'];
       break;
-    case 'LED': 
+    case 'LED':
       baseCols = ['LedId', '🕘 Session', 'Parent Event (from 🕘 Session)', 'Date (from 🕘 Session)', 'City (from 🕘 Session)', 'Venue (from 🕘 Session)', 'Indoor/Outdoor LED?', 'CentreLed', 'CntrPitch', 'CntrWdth', 'CntrHt', 'CntrRiser', 'Stageht', 'SideLed', 'SidePitch', 'SideWdth', 'SideHt', 'OtherLed1', 'OtherPitch', 'OtherWdth', 'OtherHt', 'OtherLed2', 'is Led Required?', 'Other2Wdth', 'Other2Ht', 'DGUseedKva', 'BackupPower', 'Vendor', 'Images'];
       break;
-    case 'DyatraChecklist': 
+    case 'DyatraChecklist':
       baseCols = ['Task', 'Details', 'TaskGroup', 'OrderId', 'People Involved', 'Typical Timeline', 'Category', 'Period', 'Attachment'];
       break;
-    case 'DataSharing': 
+    case 'DataSharing':
       baseCols = ['Sevak', 'Dept', 'EmailId', 'ShareFacts?', 'ShareData'];
       break;
-    case 'VideoSetup': 
+    case 'VideoSetup':
       baseCols = ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'];
       break;
-    case 'AudioSetup': 
+    case 'AudioSetup':
       baseCols = ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'];
       break;
-    default: 
+    default:
       baseCols = [];
       break;
   }
 
-  // Now this part is reachable!
   const added = extraColumns[activeTable] || [];
-  return [...baseCols, ...added];
+  const all = [...baseCols, ...added];
+  if (includeHidden) return all;
+  const hidden = hiddenColumns[activeTable] || [];
+  return all.filter(col => !hidden.includes(col));
 };
 
 const renderRow = (item: any) => {
   const cols = getTableColumns();
   const getWidth = (name: string) => colWidths[name] || 200;
+  const cellStyle = (colName: string) => ({ width: getWidth(colName), minWidth: getWidth(colName), maxWidth: getWidth(colName) });
+  const cellCls = "px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] whitespace-nowrap overflow-hidden text-ellipsis text-center";
+  const primaryCls = "px-4 py-3 border-r border-b border-slate-200 font-semibold text-slate-900 text-[13px] truncate bg-inherit";
 
-  // Shared cell style
-  const cellStyle = (colName: string) => ({
-    width: getWidth(colName),
-    minWidth: getWidth(colName),
-    maxWidth: getWidth(colName),
-  });
-
-// Inside renderRow function
-const cellCls = "px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] whitespace-nowrap overflow-hidden text-ellipsis text-center";
-const titleCls = "px-4 py-3 border-r border-b border-slate-200 font-semibold text-slate-900 text-[13px] truncate text-center";
-// Primary field — no longer sticky, inherits row hover background
-const primaryCls = "px-4 py-3 border-r border-b border-slate-200 font-semibold text-slate-900 text-[13px] truncate bg-inherit";
-
-  // HELPER: This renders the data for the columns added via the "+" button
+  // renderExtraCells kept for backward compat but no longer called from renderRow
   const renderExtraCells = () => {
     const extraKeys = extraColumns[activeTable] || [];
-    return extraKeys.map((colName) => (
-      <td key={colName} className={cellCls} style={cellStyle(colName)}>
-        {item[colName] || <span className="text-slate-300 italic">—</span>}
-      </td>
-    ));
+    const hidden = hiddenColumns[activeTable] || [];
+    return extraKeys.filter(colName => !hidden.includes(colName)).map((colName) => {
+      return (
+        <td key={colName} className={cellCls} style={cellStyle(colName)}>
+          {renderCell(colName, item)}
+        </td>
+      );
+    });
   };
+  void renderExtraCells; // suppress unused warning
 
-  switch (activeTable) {
-    case 'Events':
-      return (
-        <>
-          <td className={primaryCls} style={cellStyle(cols[0])}>{item["Event Name"] || item.EventName || "Untitled Event"}</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[1])}>{item.DateFrom}</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[2])}>{item.DateTo}</td>
-          <td className={cellCls} style={cellStyle(cols[3])}>
-            <div className="flex flex-wrap gap-1">
-              {item.Occasion && item.Occasion.split(',').map((tag: string, i: number) => (
-                <Badge key={i} className="bg-blue-600 text-white border-none text-[12px] px-2 py-0.5 rounded-sm">{tag.trim()}</Badge>
-              ))}
-            </div>
-          </td>
-          <td className={cellCls} style={cellStyle(cols[4])}>
-            <div className="flex flex-wrap gap-1">
-              {item.City && item.City.split(',').map((tag: string, i: number) => (
-                <Badge key={i} className="bg-orange-500 text-white border-none text-[12px] px-2 py-0.5 rounded-sm">{tag.trim()}</Badge>
-              ))}
-            </div>
-          </td>
-          <td className={cellCls} style={cellStyle(cols[5])}>{item.Venue}</td>
-          <td className={cellCls} style={cellStyle(cols[6])}>
-            <div className="flex flex-wrap gap-1.5 overflow-hidden">
-              {(item["Sessions"] || item["Imported table"]) && (item["Sessions"] || item["Imported table"]).split(',').map((sessionName: string, i: number) => {
-                const sName = sessionName.trim();
-                const linked = sessions.find((s: any) => s["Session Name"] === sName);
-                return (
-                  <Badge
-                    key={i}
-                    className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm shadow-sm transition-all ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-700 border border-slate-300 cursor-default'}`}
-                    onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
-                  >
-                    {sName}{linked && <ArrowUpRight className="inline h-3 w-3 ml-0.5 opacity-60" />}
-                  </Badge>
-                );
-              })}
-            </div>
-          </td>
-          <td className={`${cellCls} text-center`} style={cellStyle(cols[7])}>
-            {item.Year && <Badge className="bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-black text-[12px] px-3 py-1 rounded-md shadow-sm tracking-tighter">{item.Year}</Badge>}
-          </td>
-          {renderExtraCells()}
-        </>
-      );
-    case 'Session':
-      return (
-       <>
-          <td className={primaryCls} style={cellStyle(cols[0])}>{item["Session Name"] || "Untitled Session"}</td>
-          <td className={cellCls} style={cellStyle(cols[1])}>{item["Parent Event"] || '—'}</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[2])}>{item["Date"]}</td>
-          <td className={cellCls} style={cellStyle(cols[3])}>{item["City"] ? <Badge className="bg-blue-50 text-blue-600 border border-blue-100 text-[11px] font-bold px-2 py-0.5 rounded uppercase">{item["City"]}</Badge> : '—'}</td>
-          <td className={cellCls} style={cellStyle(cols[4])}>{item["Venue"]}</td>
-          <td className={cellCls} style={cellStyle(cols[5])}>{item["TimeOfDay"] ? <Badge className={`${item["TimeOfDay"].toLowerCase().includes('morn') ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-blue-50 text-blue-600 border-blue-100'} text-[11px] font-bold px-2 py-0.5 rounded uppercase`}>{item["TimeOfDay"]}</Badge> : '—'}</td>
-          <td className={cellCls} style={cellStyle(cols[6])}>{item["Occasion"]}</td>
-          <td className={`${cellCls} italic`} style={cellStyle(cols[7])}>{item["SessionType"]}</td>
-          <td className={`${cellCls} text-slate-500 italic`} style={cellStyle(cols[8])}>{item["Notes"]}</td>
-          {renderExtraCells()}
-        </>
-      );
-     case 'MusicLog':
-      return (
-        <>
-          <td className={`${primaryCls} font-mono text-brand-primary`} style={cellStyle(cols[0])}>{item["PlayID"]}</td>
-          <td
-            className={`${titleCls} cursor-pointer hover:text-brand-primary hover:underline`}
-            style={cellStyle(cols[1])}
-            onClick={(e) => { e.stopPropagation(); const s = sessions.find(s => s["Session Name"] === item["Session"]); if (s) setLinkedSession(s); }}
-          >
-            <span className="flex items-center justify-center gap-1">{item["Session"]}<ArrowUpRight className="h-3 w-3 shrink-0 opacity-40" /></span>
-          </td>
-          <td className={cellCls} style={cellStyle(cols[2])}>{item["Parent Event (from Session)"]}</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[3])}>{item["Date (from Session)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[4])}>{item["TimeOfDay (from Session)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[5])}>{item["Occasion (from Session)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[6])}>{item["Order"]}</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[7])}>{item["PlayedAt"]}</td>
-          <td className={`${cellCls} font-bold text-brand-accent`} style={cellStyle(cols[8])}>{item["Track"]}</td>
-          <td className={cellCls} style={cellStyle(cols[9])}>{item["Theme"]}</td>
-          <td className={cellCls} style={cellStyle(cols[10])}>{item["Relevance"]}</td>
-          <td className={cellCls} style={cellStyle(cols[11])}>{item["Patrank"]}</td>
-          <td className={cellCls} style={cellStyle(cols[12])}>{item["Topic"]}</td>
-          <td className={cellCls} style={cellStyle(cols[13])}>{item["Cue"]}</td>
-          <td className={cellCls} style={cellStyle(cols[14])}>{item["Notes"]}</td>
-          <td className={cellCls} style={cellStyle(cols[15])}>{item["PPG Remarks"]}</td>
-          <td className={`${cellCls} text-brand-primary underline`} style={cellStyle(cols[16])}>{item["TrackID (link)"]}</td>
-          {renderExtraCells()}
-        </>
-      );
-    case 'VideoLog':
-      return (
-        <>
-          <td className={`${primaryCls} font-mono text-indigo-500`} style={cellStyle(cols[0])}>{item["VideoPlayId"]}</td>
-          <td
-            className={`${cellCls} cursor-pointer hover:text-brand-primary hover:underline font-semibold text-slate-900`}
-            style={cellStyle(cols[1])}
-            onClick={(e) => { e.stopPropagation(); const s = sessions.find(s => s["Session Name"] === item["Session"]); if (s) setLinkedSession(s); }}
-          >
-            <span className="flex items-center justify-center gap-1">{item["Session"]}<ArrowUpRight className="h-3 w-3 shrink-0 opacity-40" /></span>
-          </td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[2])}>{item["Date (from Session)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[3])}>{item["City (from Session)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[4])}>{item["Venue (from Session)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[5])}>{item["Parent Event (from Session)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[6])}>{item["TimeOfDay (from Session)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[7])}>{item["Occasion (from Session)"]}</td>
-          <td className={`${cellCls} italic`} style={cellStyle(cols[8])}>{item["SessionType (from Session)"]}</td>
-          <td className={titleCls} style={cellStyle(cols[9])}>{item["VideoTitle"]}</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[10])}>{item["Duration"]}</td>
-          <td className={cellCls} style={cellStyle(cols[11])}>{item["ProposalsList"]}</td>
-          {renderExtraCells()}
-        </>
-      );
-    case 'Guidance & Learning':
-      return (
-        <>
-          <td className={`${primaryCls} font-mono text-brand-primary`} style={cellStyle(cols[0])}>{item["LearningId"]}</td>
-          <td className={titleCls} style={cellStyle(cols[1])}>{item["Event"]}</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[2])}>{item["DateFrom (from Event)"]}</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[3])}>{item["DateTo (from Event)"]}</td>
-          <td className={`${cellCls} font-bold`} style={cellStyle(cols[4])}>{item["Year (from Event)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[5])}>{item["City"]}</td>
-          <td className={cellCls} style={cellStyle(cols[6])}>{item["GuidanceFrom"]}</td>
-          <td className={cellCls} style={cellStyle(cols[7])}>{item["Guidance/Learning"]}</td>
-          <td className={cellCls} style={cellStyle(cols[8])}>{item["Category"] && <Badge className="bg-purple-600 text-white border-none text-[11px] px-2">{item["Category"]}</Badge>}</td>
-          <td className={`${cellCls} text-brand-primary underline`} style={cellStyle(cols[9])}>{item["Attachments"]}</td>
-          {renderExtraCells()}
-        </>
-      );
-  case 'LED':
-      return (
-        <>
-          <td className={`${primaryCls} font-mono text-brand-primary`} style={cellStyle(cols[0])}>{item["LedId"]}</td>
-          <td className={titleCls} style={cellStyle(cols[1])}>{item["🕘 Session"]}</td>
-          <td className={cellCls} style={cellStyle(cols[2])}>{item["Parent Event (from 🕘 Session)"]}</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[3])}>{item["Date (from 🕘 Session)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[4])}>{item["City (from 🕘 Session)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[5])}>{item["Venue (from 🕘 Session)"]}</td>
-          <td className={cellCls} style={cellStyle(cols[6])}>{item["Indoor/Outdoor LED?"] && <Badge className="bg-slate-800 text-white border-none text-[11px]">{item["Indoor/Outdoor LED?"]}</Badge>}</td>
-          <td className={cellCls} style={cellStyle(cols[7])}>{item["CentreLed"]}</td>
-          <td className={cellCls} style={cellStyle(cols[8])}>{item["CntrPitch"]}</td>
-          <td className={cellCls} style={cellStyle(cols[9])}>{item["CntrWdth"]}</td>
-          <td className={cellCls} style={cellStyle(cols[10])}>{item["CntrHt"]}</td>
-          <td className={cellCls} style={cellStyle(cols[11])}>{item["CntrRiser"]}</td>
-          <td className={cellCls} style={cellStyle(cols[12])}>{item["Stageht"]}</td>
-          <td className={cellCls} style={cellStyle(cols[13])}>{item["SideLed"]}</td>
-          <td className={cellCls} style={cellStyle(cols[14])}>{item["SidePitch"]}</td>
-          <td className={cellCls} style={cellStyle(cols[15])}>{item["SideWdth"]}</td>
-          <td className={cellCls} style={cellStyle(cols[16])}>{item["SideHt"]}</td>
-          <td className={cellCls} style={cellStyle(cols[17])}>{item["OtherLed1"]}</td>
-          <td className={cellCls} style={cellStyle(cols[18])}>{item["OtherPitch"]}</td>
-          <td className={cellCls} style={cellStyle(cols[19])}>{item["OtherWdth"]}</td>
-          <td className={cellCls} style={cellStyle(cols[20])}>{item["OtherHt"]}</td>
-          <td className={cellCls} style={cellStyle(cols[21])}>{item["OtherLed2"]}</td>
-          <td className={cellCls} style={cellStyle(cols[22])}>{item["is Led Required?"]}</td>
-          <td className={cellCls} style={cellStyle(cols[23])}>{item["Other2Wdth"]}</td>
-          <td className={cellCls} style={cellStyle(cols[24])}>{item["Other2Ht"]}</td>
-          <td className={cellCls} style={cellStyle(cols[25])}>{item["DGUseedKva"]}</td>
-          <td className={cellCls} style={cellStyle(cols[26])}>{item["BackupPower"]}</td>
-          <td className={titleCls} style={cellStyle(cols[27])}>{item["Vendor"]}</td>
-          
-          {/* CORRECTED IMAGE COLUMN */}
-          <td 
-            className={`${cellCls} relative group/cell`} 
-            style={{...cellStyle(cols[28]), minWidth: '200px'}}
-          >
-            <div className="flex items-center gap-1.5 overflow-hidden">
-              {(() => {
-                const imageString = item["Images"] || "";
-                const urlRegex = /\((https?:\/\/[^)]+)\)/g;
-                const matches = [];
-                let m;
-                while ((m = urlRegex.exec(imageString)) !== null) matches.push(m[1]);
+  // Primary (name) column per table — first col is always primary
+  const primaryColName: Record<string, string> = {
+    'Events': 'Event Name', 'Session': 'Session Name', 'MusicLog': 'PlayID',
+    'VideoLog': 'VideoPlayId', 'Guidance & Learning': 'LearningId', 'LED': 'LedId',
+    'DyatraChecklist': 'Task', 'DataSharing': 'Sevak', 'Tracks': 'Title',
+    'VideoSetup': 'Name', 'AudioSetup': 'Name',
+  };
+  const primaryFallbacks: Record<string, string> = {
+    'Events': 'Untitled Event', 'Session': 'Untitled Session', 'Tracks': 'Untitled Track',
+    'DyatraChecklist': 'Untitled Task', 'DataSharing': 'Untitled',
+  };
+  const primaryKey = primaryColName[activeTable];
+  const primaryFallback = primaryFallbacks[activeTable] || '—';
 
-                if (matches.length === 0) return <span className="text-slate-300 italic text-[10px]">No Images</span>;
+  return (
+    <>
+      {cols.map((col, i) => {
+        const isPrimary = col === primaryKey;
+        const style = cellStyle(col);
 
-                return (
-                  <>
-                    {matches.slice(0, 3).map((url, i) => (
-                      <img key={i} src={url} className="h-8 w-12 object-cover rounded border border-slate-300 shrink-0" alt="" />
-                    ))}
-                    {matches.length > 3 && <span className="text-[10px] font-black text-slate-400">+{matches.length - 3}</span>}
-                  </>
-                );
-              })()}
-            </div>
+        // ── SPECIAL CASES (behaviour beyond just display type) ─────────────
 
-            {/* THE EXPAND ICON (Appears on Hover) */}
-            <button 
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                setImageManager({ 
-                  item: { ...item }, 
-                  column: "Images", 
-                  isOpen: true 
-                });
-              }}
-              className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/cell:opacity-100 bg-white border border-slate-300 rounded shadow-lg p-1.5 text-slate-500 hover:text-brand-primary transition-all z-20"
+        // Events: Sessions — multi-chip linked records
+        if (activeTable === 'Events' && col === 'Sessions') {
+          const val = item["Sessions"] || item["Imported table"] || '';
+          return (
+            <td key={col} className={cellCls} style={style}>
+              <div className="flex flex-wrap gap-1.5 overflow-hidden">
+                {val ? val.split(',').map((sessionName: string, idx: number) => {
+                  const sName = sessionName.trim();
+                  const linked = sessions.find((s: any) => s["Session Name"] === sName);
+                  return (
+                    <Badge
+                      key={idx}
+                      className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm shadow-sm transition-all ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-700 border border-slate-300 cursor-default'}`}
+                      onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
+                    >
+                      {sName}{linked && <ArrowUpRight className="inline h-3 w-3 ml-0.5 opacity-60" />}
+                    </Badge>
+                  );
+                }) : <span className="text-slate-300 italic text-[12px]">—</span>}
+              </div>
+            </td>
+          );
+        }
+
+        // MusicLog / VideoLog: Session field — clickable link to session
+        if ((activeTable === 'MusicLog' || activeTable === 'VideoLog') && col === 'Session') {
+          return (
+            <td
+              key={col}
+              className={`${cellCls} cursor-pointer hover:text-brand-primary hover:underline font-semibold text-slate-900`}
+              style={style}
+              onClick={(e) => { e.stopPropagation(); const s = sessions.find((x: any) => x["Session Name"] === item["Session"]); if (s) setLinkedSession(s); }}
             >
-              <ArrowUpRight className="h-3.5 w-3.5" /> 
-            </button>
+              <span className="flex items-center justify-center gap-1">
+                {item["Session"] || <span className="text-slate-300 italic text-[12px]">—</span>}
+                {item["Session"] && <ArrowUpRight className="h-3 w-3 shrink-0 opacity-40" />}
+              </span>
+            </td>
+          );
+        }
+
+        // MusicLog: Track — brand-accent bold
+        if (activeTable === 'MusicLog' && col === 'Track') {
+          return (
+            <td key={col} className={`${cellCls} font-bold text-brand-accent`} style={style}>
+              {item["Track"] || <span className="text-slate-300 italic text-[12px]">—</span>}
+            </td>
+          );
+        }
+
+        // LED: Images — thumbnail gallery with expand button
+        if (activeTable === 'LED' && col === 'Images') {
+          const imageString = item["Images"] || "";
+          const urlRegex = /\((https?:\/\/[^)]+)\)/g;
+          const matches: string[] = [];
+          let m;
+          const re = new RegExp(urlRegex.source, 'g');
+          while ((m = re.exec(imageString)) !== null) matches.push(m[1]);
+          return (
+            <td key={col} className={`${cellCls} relative group/cell`} style={{ ...style, minWidth: '200px' }}>
+              <div className="flex items-center gap-1.5 overflow-hidden">
+                {matches.length === 0
+                  ? <span className="text-slate-300 italic text-[10px]">No Images</span>
+                  : <>
+                      {matches.slice(0, 3).map((url, idx) => (
+                        <img key={idx} src={url} className="h-8 w-12 object-cover rounded border border-slate-300 shrink-0" alt="" />
+                      ))}
+                      {matches.length > 3 && <span className="text-[10px] font-black text-slate-400">+{matches.length - 3}</span>}
+                    </>
+                }
+              </div>
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setImageManager({ item: { ...item }, column: "Images", isOpen: true }); }}
+                className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/cell:opacity-100 bg-white border border-slate-300 rounded shadow-lg p-1.5 text-slate-500 hover:text-brand-primary transition-all z-20"
+              >
+                <ArrowUpRight className="h-3.5 w-3.5" />
+              </button>
+            </td>
+          );
+        }
+
+        // Tracks: FileLink — special link display
+        if (activeTable === 'Tracks' && col === 'FileLink') {
+          return (
+            <td key={col} className={cellCls} style={style}>
+              {item["FileLink"]
+                ? <a href={item["FileLink"]} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px]">Link</a>
+                : <span className="text-slate-300 italic text-[12px]">—</span>}
+            </td>
+          );
+        }
+
+        // ── PRIMARY COLUMN ────────────────────────────────────────────────
+        if (isPrimary) {
+          const val = item[col] || item[col.toLowerCase()];
+          return (
+            <td key={col} className={primaryCls} style={style}>
+              {val || primaryFallback}
+            </td>
+          );
+        }
+
+        // ── TYPE-DRIVEN for all other columns ─────────────────────────────
+        return (
+          <td key={col} className={cellCls} style={style}>
+            {renderCell(col, item)}
           </td>
-          {renderExtraCells()}
-        </>
-      );
-    case 'DyatraChecklist':
-      return (
-        <>
-          <td className={primaryCls} style={cellStyle(cols[0])}>{item["Task"]}</td>
-          <td className={cellCls} style={cellStyle(cols[1])}>{item["Details"]}</td>
-          <td className={cellCls} style={cellStyle(cols[2])}>{item["TaskGroup"] && <Badge className="bg-slate-100 text-slate-600 border-slate-300">{item["TaskGroup"]}</Badge>}</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[3])}>{item["OrderId"]}</td>
-          <td className={cellCls} style={cellStyle(cols[4])}>{item["People Involved"]}</td>
-          <td className={cellCls} style={cellStyle(cols[5])}>{item["Typical Timeline"]}</td>
-          <td className={cellCls} style={cellStyle(cols[6])}>{item["Category"] && <Badge className="bg-brand-primary text-white border-none">{item["Category"]}</Badge>}</td>
-          <td className={cellCls} style={cellStyle(cols[7])}>{item["Period"]}</td>
-          <td className={`${cellCls} text-brand-primary underline`} style={cellStyle(cols[8])}>{item["Attachment"]}</td>
-          {renderExtraCells()}
-        </>
-      );
-    case 'DataSharing':
-      return (
-        <>
-          <td className={primaryCls} style={cellStyle(cols[0])}>{item["Sevak"]}</td>
-          <td className={cellCls} style={cellStyle(cols[1])}>{item["Dept"] && <Badge className="bg-blue-600 text-white border-none text-[11px]">{item["Dept"]}</Badge>}</td>
-          <td className={cellCls} style={cellStyle(cols[2])}>{item["EmailId"]}</td>
-          <td className={cellCls} style={cellStyle(cols[3])}><Badge className={`${item["ShareFacts?"] === 'Yes' ? 'bg-green-500/10 text-green-500' : 'bg-slate-100 text-slate-400'} border-none text-[10px]`}>{item["ShareFacts?"] || 'No'}</Badge></td>
-          <td className={cellCls} style={cellStyle(cols[4])}>{item["ShareData"]}</td>
-          {renderExtraCells()}
-        </>
-      );
-    case 'Tracks':
-      return (
-        <>
-          <td className={primaryCls} style={cellStyle(cols[0])}>{item["Title"] || item.title}</td>
-          <td className={cellCls} style={cellStyle(cols[1])}>{item["Artist"] || item.artist }</td>
-          <td className={cellCls} style={cellStyle(cols[2])}>{item["Album"] || item.album }</td>
-          <td className={cellCls} style={cellStyle(cols[3])}>{item["Duration"] }</td>
-          <td className={cellCls} style={cellStyle(cols[4])}>{item["DurationTime"] }</td>
-          <td className={cellCls} style={cellStyle(cols[5])}>{item["BPM"] }</td>
-          <td className={cellCls} style={cellStyle(cols[6])}>{item["Key"] }</td>
-          <td className={cellCls} style={cellStyle(cols[7])}>{item["Source"] }</td>
-          <td className={`${cellCls} text-brand-primary truncate`} style={cellStyle(cols[8])}>{item["FileLink"] ? <a href={item["FileLink"]} target="_blank" rel="noopener noreferrer" className="underline">Link</a>: '-'}</td>
-          <td className={cellCls} style={cellStyle(cols[9])}><div className="flex gap-1">{item["Tags"] && String(item["Tags"]).split(',').map((tag: string, i: number) => (<Badge key={i} className="bg-purple-600 text-white border-none text-[10px]">{tag.trim()}</Badge>))}</div></td>
-          <td className={cellCls} style={cellStyle(cols[10])}>{item["Lyrics"] ? String(item["Lyrics"]).substring(0, 20) + '...' : '-'}</td>
-          <td className={cellCls} style={cellStyle(cols[11])}>{item["LexiconID"] }</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[12])}>{item["LastUpdated"] }</td>
-          <td className={`${cellCls} font-mono`} style={cellStyle(cols[13])}>{item["Plays"] }</td>
-          {renderExtraCells()}
-        </>
-      );
-    case 'VideoSetup':
-    return (
-        <>
-          <td className={primaryCls} style={cellStyle(cols[0])}>{item.name || item.item || '-'}</td>
-          <td className={cellCls} style={cellStyle(cols[1])}>{item.notes || '-'}</td>
-          <td className={cellCls} style={cellStyle(cols[2])}>{item.assignee || '-'}</td>
-          <td className={cellCls} style={cellStyle(cols[3])}><Badge className={`${item.status === 'Ready' ? 'bg-green-600' : item.status === 'Pending' ? 'bg-yellow-600' : 'bg-red-600'} text-white`}>{item.status || 'Unknown'}</Badge></td>
-          <td className={`${cellCls} text-brand-primary`} style={cellStyle(cols[4])}>{item.attachments ? <a href={item.attachments} target="_blank" rel="noopener noreferrer" className="underline">View</a> : '-'}</td>
-          <td className={cellCls} style={cellStyle(cols[5])}>{item.attachmentSummary || '-'}</td>
-          {renderExtraCells()}
-        </>
-      );
-    case 'AudioSetup':
-      return (
-        <>
-          <td className={primaryCls} style={cellStyle(cols[0])}>{item.name || item.item || '-'}</td>
-          <td className={cellCls} style={cellStyle(cols[1])}>{item.notes || '-'}</td>
-          <td className={cellCls} style={cellStyle(cols[2])}>{item.assignee || '-'}</td>
-          <td className={cellCls} style={cellStyle(cols[3])}><Badge className={`${item.status === 'Ready' ? 'bg-green-600' : item.status === 'Pending' ? 'bg-yellow-600' : 'bg-red-600'} text-white`}>{item.status || 'Unknown'}</Badge></td>
-          <td className={`${cellCls} text-brand-primary`} style={cellStyle(cols[4])}>{item.attachments ? <a href={item.attachments} target="_blank" rel="noopener noreferrer" className="underline">View</a> : '-'}</td>
-          <td className={cellCls} style={cellStyle(cols[5])}>{item.attachmentSummary || '-'}</td>
-          {renderExtraCells()}
-        </>
-      );
-    default:
-      return <td colSpan={10} className={cellCls}>No structure defined.</td>;
-  }
+        );
+      })}
+    </>
+  );
 };
 
 
@@ -1799,6 +1820,7 @@ const toggleGroup = (groupId: string) => {
 };
   const openAddModal = () => {
     setNewRecord({});
+    setAddWizardStep(0);
     setIsAddModalOpen(true);
   };
 
@@ -2307,33 +2329,12 @@ const renderEditInputs = (_item: any) => {
               return <div className={readonlyCls}>{editDraft[col] || 'auto'}</div>;
             }
 
-            // ── INACTIVE CELL — mirror renderRow formatting exactly ──────────
+            // ── INACTIVE CELL — use renderCell for type-driven formatting ──
             if (!isActiveCell(col)) {
-              const v = editDraft[col];
-              const empty = <span className="text-slate-300 italic text-[12px]">—</span>;
-
-              // Events: Occasion → blue badges
-              if (col === 'Occasion') return v
-                ? <div className="flex flex-wrap gap-1">{v.split(',').map((t: string, i: number) => <Badge key={i} className="bg-blue-600 text-white border-none text-[12px] px-2 py-0.5 rounded-sm">{t.trim()}</Badge>)}</div>
-                : empty;
-
-              // Events: City → orange badges  |  Session: City → blue badge
-              if (col === 'City') return v
-                ? <div className="flex flex-wrap gap-1">{v.split(',').map((t: string, i: number) => (
-                    isEv
-                      ? <Badge key={i} className="bg-orange-500 text-white border-none text-[12px] px-2 py-0.5 rounded-sm">{t.trim()}</Badge>
-                      : <Badge key={i} className="bg-blue-50 text-blue-600 border border-blue-100 text-[11px] font-bold px-2 py-0.5 rounded uppercase">{t.trim()}</Badge>
-                  ))}</div>
-                : empty;
-
-              // Events: Year → brand-primary badge
-              if (isEv && col === 'Year') return v
-                ? <Badge className="bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-black text-[12px] px-3 py-1 rounded-md shadow-sm tracking-tighter">{v}</Badge>
-                : empty;
-
-              // Events: Sessions → linked chips
+              // Sessions linked chips (Events)
               if (isEv && col === 'Sessions') {
-                const val = v || editDraft['Imported table'] || '';
+                const val = editDraft['Sessions'] || editDraft['Imported table'] || '';
+                const empty = <span className="text-slate-300 italic text-[12px]">—</span>;
                 const names = val.split(',').map((s: string) => s.trim()).filter(Boolean);
                 return names.length > 0
                   ? <div className="flex flex-wrap gap-1.5 overflow-hidden">{names.map((sName: string, i: number) => {
@@ -2342,34 +2343,19 @@ const renderEditInputs = (_item: any) => {
                     })}</div>
                   : empty;
               }
-
-              // Session: TimeOfDay → coloured badge
-              if (isSe && col === 'Time Of Day') return v
-                ? <Badge className={`${v.toLowerCase().includes('morn') ? 'bg-orange-50 text-orange-600 border-orange-100' : 'bg-blue-50 text-blue-600 border-blue-100'} text-[11px] font-bold px-2 py-0.5 rounded uppercase`}>{v}</Badge>
-                : empty;
-
-              // Session: SessionType → italic
-              if (isSe && col === 'SessionType') return <span className="text-[13px] text-slate-700 italic truncate block">{v || empty}</span>;
-
-              // Session: Notes → muted italic
-              if (isSe && col === 'Notes') return <span className="text-[13px] text-slate-500 italic truncate block">{v || empty}</span>;
-
-              // MusicLog / VideoLog: Session field → link style
-              if (isLinked && col === 'Session') return v
-                ? <span className="flex items-center gap-1 text-[13px] font-semibold text-slate-900 cursor-pointer hover:text-brand-primary hover:underline">{v}<ArrowUpRight className="h-3 w-3 shrink-0 opacity-40" /></span>
-                : empty;
-
-              // MusicLog: Track → brand-accent bold
-              if (isML && col === 'Track') return <span className="text-[13px] font-bold text-brand-accent truncate block">{v || empty}</span>;
-
-              // MusicLog: PlayID / VideoLog: VideoPlayId → mono colored
-              if ((isML && col === 'PlayID') || (isVL && col === 'VideoPlayId')) return <span className={`font-mono text-[13px] ${isVL ? 'text-indigo-500' : 'text-brand-primary'}`}>{v || empty}</span>;
-
-              // Date-like columns → mono
-              if (['DateFrom', 'DateTo', 'Date', 'PlayedAt', 'Duration'].includes(col) || col.startsWith('Date (')) return <span className="font-mono text-[13px] text-slate-700">{v || empty}</span>;
-
-              // Default → plain text
-              return <span className="text-[13px] text-slate-700 truncate block">{v || empty}</span>;
+              // Session link (MusicLog/VideoLog)
+              if (isLinked && col === 'Session') {
+                const v = editDraft[col];
+                return v
+                  ? <span className="flex items-center gap-1 text-[13px] font-semibold text-slate-900 cursor-pointer hover:text-brand-primary hover:underline">{v}<ArrowUpRight className="h-3 w-3 shrink-0 opacity-40" /></span>
+                  : <span className="text-slate-300 italic text-[12px]">—</span>;
+              }
+              // Track bold accent (MusicLog)
+              if (isML && col === 'Track') {
+                return <span className="text-[13px] font-bold text-brand-accent truncate block">{editDraft[col] || <span className="text-slate-300 italic text-[12px]">—</span>}</span>;
+              }
+              // Everything else: type-driven
+              return renderCell(col, editDraft);
             }
 
             // ── ACTIVE CELL BELOW ────────────────────────────────────────────
@@ -2438,6 +2424,38 @@ const renderEditInputs = (_item: any) => {
                 />
               );
             }
+            // ── EXTRA COLUMN — use field type ────────────────────────────────
+            const extraColType = (extraColumns[activeTable] || []).includes(col)
+              ? (columnTypes[activeTable]?.[col] || 'text')
+              : null;
+            if (extraColType === 'checkbox') {
+              return (
+                <input
+                  type="checkbox"
+                  checked={editDraft[col] === 'true' || editDraft[col] === true}
+                  onChange={e => commitField(col, e.target.checked ? 'true' : 'false')}
+                  className="h-4 w-4 rounded accent-brand-primary cursor-pointer"
+                />
+              );
+            }
+            if (extraColType === 'number') {
+              return <input type="number" autoFocus className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={handleUpdateRecord} onKeyDown={saveKeys} />;
+            }
+            if (extraColType === 'date') {
+              return <input type="date" autoFocus className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={handleUpdateRecord} onKeyDown={saveKeys} />;
+            }
+            if (extraColType === 'select') {
+              const allVals = (getActiveData() as any[]).map((r: any) => r[col]).filter(Boolean).map(String);
+              const selOpts = [...new Set(allVals)].sort();
+              return <CellDropdown value={editDraft[col] || ''} options={selOpts} onCommit={val => commitField(col, val)} onCancel={() => { setEditingId(null); setEditDraft(null); }} placeholder={`Select ${col}…`} />;
+            }
+            if (extraColType === 'email') {
+              return <input type="email" autoFocus className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={handleUpdateRecord} onKeyDown={saveKeys} />;
+            }
+            if (extraColType === 'url') {
+              return <input type="url" autoFocus className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={handleUpdateRecord} onKeyDown={saveKeys} />;
+            }
+
             // ── DEFAULT TEXT INPUT ───────────────────────────────────────────
             return (
               <input
@@ -3008,6 +3026,53 @@ if (!health?.mongodb) {
   </AnimatePresence>
 </div>
   </>}
+
+  {/* HIDE FIELDS */}
+  {activeTable !== 'Home' && viewMode === 'grid' && (
+  <div className="relative hidden sm:block">
+    <button
+      onClick={() => { setIsFieldsOpen(!isFieldsOpen); setIsGroupOpen(false); setIsSortOpen(false); }}
+      className={`flex items-center bg-white border rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[140px] relative ${(hiddenColumns[activeTable]?.length || 0) > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-300'}`}
+    >
+      <Eye className="h-4 w-4 mr-2 shrink-0" />
+      <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-6">
+        {(hiddenColumns[activeTable]?.length || 0) > 0 ? `${hiddenColumns[activeTable].length} hidden` : 'Fields'}
+      </span>
+      <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isFieldsOpen ? 'rotate-180' : ''}`} />
+    </button>
+    <AnimatePresence>
+      {isFieldsOpen && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setIsFieldsOpen(false)} />
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 5 }}
+            className="absolute top-full left-0 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 py-2"
+          >
+            <p className="px-4 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Toggle visibility</p>
+            {getTableColumns(true).map(col => {
+              const isHidden = (hiddenColumns[activeTable] || []).includes(col);
+              return (
+                <button
+                  key={col}
+                  onClick={() => toggleHideColumn(col)}
+                  className="w-full flex items-center justify-between px-4 py-2 hover:bg-slate-50 transition-colors"
+                >
+                  <span className={`text-[12px] font-semibold truncate ${isHidden ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{col}</span>
+                  {isHidden
+                    ? <EyeOff className="h-3.5 w-3.5 text-slate-400 shrink-0 ml-2" />
+                    : <Eye className="h-3.5 w-3.5 text-brand-primary shrink-0 ml-2" />}
+                </button>
+              );
+            })}
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  </div>
+  )}
+
   {/* 4. NEW RECORD BUTTON */}
   {activeTable !== 'Home' && <Button
     onClick={() => {
@@ -3973,11 +4038,10 @@ if (!health?.mongodb) {
     </th>
    {getTableColumns().map((col, i) => {
   const isSorted = sortBy?.field === col;
-  const baseColsCount = getTableColumns().length - (extraColumns[activeTable]?.length || 0);
-  
-  // Identify if this column is one of the custom added ones
-  const isExtraColumn = i >= baseColsCount;
-  const extraIndex = i - baseColsCount;
+  const extraIndex = (extraColumns[activeTable] || []).indexOf(col);
+  const isExtraColumn = extraIndex >= 0;
+  const fieldType = getColumnType(col);
+  const TypeIcon = FIELD_TYPES.find(f => f.id === fieldType)?.icon || AlignLeft;
 
   return (
   <th
@@ -3993,11 +4057,19 @@ if (!health?.mongodb) {
           onChange={(e) => setEditingHeader({ ...editingHeader, value: e.target.value })}
           onBlur={() => {
             if (editingHeader && editingHeader.value.trim() !== "") {
+              const oldName = (extraColumns[activeTable] || [])[extraIndex];
               const newExtras = [...(extraColumns[activeTable] || [])];
               newExtras[extraIndex] = editingHeader.value;
-              const newExtraObj = { ...extraColumns, [activeTable]: newExtras };
-              setExtraColumns(newExtraObj);
-              saveExtraColumns(newExtraObj);
+              const newCols = { ...extraColumns, [activeTable]: newExtras };
+              const tableTypes = { ...(columnTypes[activeTable] || {}) };
+              if (oldName && oldName !== editingHeader.value && tableTypes[oldName]) {
+                tableTypes[editingHeader.value] = tableTypes[oldName];
+                delete tableTypes[oldName];
+              }
+              const newTypes = { ...columnTypes, [activeTable]: tableTypes };
+              setExtraColumns(newCols);
+              setColumnTypes(newTypes);
+              saveSettings(newCols, newTypes, hiddenColumns);
             }
             setEditingHeader(null);
           }}
@@ -4009,28 +4081,34 @@ if (!health?.mongodb) {
       ) : (
         <div className="relative flex items-center h-full">
           {/* Main Sort/Label Area */}
-          <div 
+          <div
             onClick={() => setSortBy({ field: col, direction: sortBy?.field === col && sortBy.direction === 'asc' ? 'desc' : 'asc' })}
             onDoubleClick={() => isExtraColumn && setEditingHeader({ index: i, value: col })}
-            className="flex items-center gap-2 px-4 py-3 h-full w-full cursor-pointer hover:bg-black/5 transition-colors truncate pr-10"
+            className="flex items-center gap-2 px-4 py-3 h-full w-full cursor-pointer hover:bg-black/5 transition-colors truncate pr-16"
           >
-            {isSorted ? (sortBy.direction === 'asc' ? <ArrowUp className="h-3 w-3" /> : <ArrowDown className="h-3 w-3" />) : <LayoutGrid className="h-3.5 w-3.5 text-slate-400" />}
+            <TypeIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
             <span className="truncate">{col}</span>
           </div>
 
-          {/* DELETE BUTTON - Only shows for custom columns on hover */}
-          {isExtraColumn && (
+          {/* COLUMN ACTIONS — type picker for all columns, delete only for extra */}
+          <div className="absolute right-2 flex items-center gap-0.5 opacity-0 group-hover/header:opacity-100 transition-all">
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleDeleteColumn(col);
-              }}
-              className="absolute right-3 opacity-0 group-hover/header:opacity-100 p-1 hover:bg-red-100 text-slate-400 hover:text-red-600 rounded transition-all"
-              title="Remove Column"
+              onClick={(e) => { e.stopPropagation(); setEditColumnModal({ col, type: getColumnType(col), extraIndex }); }}
+              className="p-1 hover:bg-blue-100 text-slate-400 hover:text-brand-primary rounded transition-all"
+              title="Change field type"
             >
-              <X className="h-3.5 w-3.5" />
+              <Settings2 className="h-3 w-3" />
             </button>
-          )}
+            {isExtraColumn && (
+              <button
+                onClick={(e) => { e.stopPropagation(); handleDeleteColumn(col); }}
+                className="p-1 hover:bg-red-100 text-slate-400 hover:text-red-600 rounded transition-all"
+                title="Remove column"
+              >
+                <X className="h-3 w-3" />
+              </button>
+            )}
+          </div>
         </div>
       )}
       {/* Resizer Handle */}
@@ -4040,28 +4118,14 @@ if (!health?.mongodb) {
 })}
 
     {/* The Dynamic Column PLUS button */}
-    <th className="w-12 border-b border-slate-400 bg-slate-50 hover:bg-slate-200 cursor-pointer flex items-center justify-center">
-      <button 
-  onClick={() => {
-    const currentExtras = extraColumns[activeTable] || [];
-    const newName = `Field ${currentExtras.length + 1}`;
-    const totalColsBefore = getTableColumns().length;
-
-    // 1. Prepare the new state object
-    const newExtraObj = {
-      ...extraColumns,
-      [activeTable]: [...currentExtras, newName]
-    };
-
-    // 2. Update local state
-    setExtraColumns(newExtraObj);
-    
-    // 3. Save to Backend
-    saveExtraColumns(newExtraObj);
-
-    setTimeout(() => setEditingHeader({ index: totalColsBefore, value: newName }), 10);
-  }}
-        className="text-slate-400 hover:text-brand-primary"
+    <th className="w-12 border-b border-slate-200 bg-slate-50 hover:bg-slate-100 cursor-pointer">
+      <button
+        onClick={() => {
+          const currentExtras = extraColumns[activeTable] || [];
+          setAddColumnModal({ name: `Field ${currentExtras.length + 1}`, type: 'text' });
+        }}
+        className="w-full h-full flex items-center justify-center text-slate-400 hover:text-brand-primary transition-colors"
+        title="Add field"
       >
         <Plus className="h-5 w-5" />
       </button>
@@ -4179,6 +4243,10 @@ if (!health?.mongodb) {
           renderEditInputs(row.data)
         ) : (
           <div className="contents" onClick={(e) => {
+            if (isMobileView) {
+              setExpandedRecord(row.data);
+              return;
+            }
             // Detect which column cell was clicked via DOM position
             const td = (e.target as HTMLElement).closest('td');
             const tr = td?.closest('tr');
@@ -4297,8 +4365,88 @@ if (!health?.mongodb) {
         </div>
       </main>
 
-      {/* Add Record Modal */}
-      <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+      {/* ADD COLUMN MODAL */}
+      {addColumnModal && (
+        <>
+          <div className="fixed inset-0 z-[600] bg-black/20" onClick={() => setAddColumnModal(null)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[601] w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl p-6">
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide mb-4">Add field</h3>
+
+            <div className="mb-4">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Field name</label>
+              <input
+                autoFocus
+                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary outline-none"
+                value={addColumnModal.name}
+                onChange={e => setAddColumnModal({ ...addColumnModal, name: e.target.value })}
+                onKeyDown={e => { if (e.key === 'Enter') confirmAddColumn(); if (e.key === 'Escape') setAddColumnModal(null); }}
+              />
+            </div>
+
+            <div className="mb-5">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Field type</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {FIELD_TYPES.map(ft => (
+                  <button
+                    key={ft.id}
+                    onClick={() => setAddColumnModal({ ...addColumnModal, type: ft.id })}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-left ${addColumnModal.type === ft.id ? 'border-brand-primary bg-brand-primary/5 text-brand-primary' : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <ft.icon className="h-3.5 w-3.5 shrink-0" />
+                    <div>
+                      <div className="text-[11px] font-semibold leading-tight">{ft.label}</div>
+                      <div className="text-[9px] text-slate-400 leading-tight">{ft.desc}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => setAddColumnModal(null)} className="flex-1 py-2 border border-slate-200 rounded-lg text-[12px] font-semibold text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
+              <button onClick={confirmAddColumn} className="flex-1 py-2 bg-brand-primary text-white rounded-lg text-[12px] font-semibold hover:bg-brand-primary/90 transition-colors">Add field</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* EDIT COLUMN TYPE MODAL */}
+      {editColumnModal && (
+        <>
+          <div className="fixed inset-0 z-[600] bg-black/20" onClick={() => setEditColumnModal(null)} />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[601] w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl p-6">
+            <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide mb-1">Edit field</h3>
+            <p className="text-[11px] text-slate-500 mb-4 font-medium truncate">{editColumnModal.col}</p>
+
+            <div className="mb-5">
+              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Field type</label>
+              <div className="grid grid-cols-2 gap-1.5">
+                {FIELD_TYPES.map(ft => (
+                  <button
+                    key={ft.id}
+                    onClick={() => setEditColumnModal({ ...editColumnModal, type: ft.id })}
+                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-left ${editColumnModal.type === ft.id ? 'border-brand-primary bg-brand-primary/5 text-brand-primary' : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                  >
+                    <ft.icon className="h-3.5 w-3.5 shrink-0" />
+                    <div>
+                      <div className="text-[11px] font-semibold leading-tight">{ft.label}</div>
+                      <div className="text-[9px] text-slate-400 leading-tight">{ft.desc}</div>
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div className="flex gap-2">
+              <button onClick={() => setEditColumnModal(null)} className="flex-1 py-2 border border-slate-200 rounded-lg text-[12px] font-semibold text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
+              <button onClick={confirmEditColumnType} className="flex-1 py-2 bg-brand-primary text-white rounded-lg text-[12px] font-semibold hover:bg-brand-primary/90 transition-colors">Save</button>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Add Record Modal - Desktop only */}
+      {!isMobileView && <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
         <DialogContent className="bg-white border-none p-0 overflow-hidden flex flex-col max-h-[90vh] sm:max-w-[600px] rounded-[24px] shadow-2xl">
         <DialogHeader className="p-5 border-b border-slate-800">
   <DialogTitle className="text-xl font-black tracking-tight">
@@ -4831,7 +4979,515 @@ if (!health?.mongodb) {
       </Button>
     </DialogFooter>
         </DialogContent>
-      </Dialog>
+      </Dialog>}
+
+      {/* Mobile Add Wizard - bottom sheet wizard for new records */}
+      {isMobileView && isAddModalOpen && (() => {
+        const inputCls = "w-full h-11 bg-white border border-slate-200 rounded-xl px-3.5 text-[13px] font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all";
+        const labelCls = "text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] block mb-2";
+        const occasionOpts = [...new Set(events.map((e: any) => e.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+        const cityOpts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+        const yr = new Date().getFullYear();
+        const yearOpts = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
+        const sessionOpts = sessions.map((s: any) => s["Session Name"]).filter(Boolean);
+
+        type WizardStep = { label: string; content: React.ReactNode };
+        let wizardSteps: WizardStep[] = [];
+
+        if (activeTable === 'Events') {
+          const selectedSessions: string[] = newRecord.Sessions ? newRecord.Sessions.split(',').map((x: string) => x.trim()).filter(Boolean) : [];
+          wizardSteps = [
+            {
+              label: 'Event Info',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Event Name</label>
+                    <input className={inputCls} value={newRecord["Event Name"] || ''} onChange={e => setNewRecord({...newRecord, "Event Name": e.target.value})} placeholder="Enter event name…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Venue</label>
+                    <input className={inputCls} value={newRecord.Venue || ''} onChange={e => setNewRecord({...newRecord, Venue: e.target.value})} placeholder="Venue name…" />
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Schedule',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Date From</label>
+                    <input type="date" className={inputCls} value={newRecord.DateFrom || ''} onChange={e => setNewRecord({...newRecord, DateFrom: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Date To</label>
+                    <input type="date" className={inputCls} value={newRecord.DateTo || ''} onChange={e => setNewRecord({...newRecord, DateTo: e.target.value})} />
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Classification',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Occasion</label>
+                    <CellDropdown value={newRecord.Occasion || ''} options={occasionOpts} onCommit={val => setNewRecord({...newRecord, Occasion: val})} onCancel={() => {}} placeholder="Select occasion…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>City</label>
+                    <CellDropdown value={newRecord.City || ''} options={cityOpts} onCommit={val => setNewRecord({...newRecord, City: val})} onCancel={() => {}} placeholder="Select city…" tagClass="bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Year</label>
+                    <CellDropdown value={newRecord.Year || ''} options={yearOpts} onCommit={val => setNewRecord({...newRecord, Year: val})} onCancel={() => {}} placeholder="Select year…" tagClass="bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20" />
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Sessions',
+              content: (
+                <div className="space-y-3">
+                  <label className={labelCls}>Linked Sessions</label>
+                  <SessionPicker value={newRecord.Sessions || ''} allSessions={sessions} onCommit={val => setNewRecord({...newRecord, Sessions: val})} onCancel={() => {}} />
+                  {selectedSessions.length > 0 && (
+                    <div className="flex flex-wrap gap-1.5 mt-1">
+                      {selectedSessions.map((name: string, i: number) => (
+                        <span key={i} className="inline-flex items-center gap-1 bg-brand-primary/10 text-brand-primary text-[11px] font-bold px-2 py-1 rounded-sm border border-brand-primary/20">
+                          {name}
+                          <button onClick={() => setNewRecord({...newRecord, Sessions: selectedSessions.filter((_: any, fi: number) => fi !== i).join(', ')})} className="hover:text-red-500 font-bold">×</button>
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )
+            },
+          ];
+        } else if (activeTable === 'Session') {
+          const sessionCityOpts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+          const eventOpts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
+          const timeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
+          const sessionTypeOpts = [...new Set(sessions.map((s: any) => s.SessionType).filter(Boolean))].sort() as string[];
+          const sessOccasionOpts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+          wizardSteps = [
+            {
+              label: 'Session Info',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Session Name</label>
+                    <input className={inputCls} value={newRecord.name || ''} onChange={e => setNewRecord({...newRecord, name: e.target.value})} placeholder="Session name…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Parent Event</label>
+                    <CellDropdown value={newRecord.parentEvent || ''} options={eventOpts} onCommit={val => setNewRecord({...newRecord, parentEvent: val})} onCancel={() => {}} placeholder="Select event…" />
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Schedule',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Date</label>
+                    <input type="date" className={inputCls} value={newRecord.date || ''} onChange={e => setNewRecord({...newRecord, date: e.target.value})} />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Time Of Day</label>
+                    <CellDropdown value={newRecord.timeOfDay || ''} options={timeOpts} onCommit={val => setNewRecord({...newRecord, timeOfDay: val})} onCancel={() => {}} placeholder="Morning / Evening…" tagClass="bg-orange-500 text-white text-[11px] font-semibold px-2 py-0.5 rounded-sm" />
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Location',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>City</label>
+                    <CellDropdown value={newRecord.city || ''} options={sessionCityOpts} onCommit={val => setNewRecord({...newRecord, city: val})} onCancel={() => {}} placeholder="Select city…" tagClass="bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Venue</label>
+                    <input className={inputCls} value={newRecord.venue || ''} onChange={e => setNewRecord({...newRecord, venue: e.target.value})} placeholder="Venue…" />
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Type & Notes',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Occasion</label>
+                    <CellDropdown value={newRecord.occasion || ''} options={sessOccasionOpts} onCommit={val => setNewRecord({...newRecord, occasion: val})} onCancel={() => {}} placeholder="Select occasion…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Session Type</label>
+                    <CellDropdown value={newRecord.sessionType || ''} options={sessionTypeOpts} onCommit={val => setNewRecord({...newRecord, sessionType: val})} onCancel={() => {}} placeholder="Select type…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Notes</label>
+                    <textarea className={`${inputCls} h-24 resize-none py-2.5`} value={newRecord.notes || ''} onChange={e => setNewRecord({...newRecord, notes: e.target.value})} placeholder="Additional notes…" />
+                  </div>
+                </div>
+              )
+            },
+          ];
+        } else if (activeTable === 'MusicLog') {
+          wizardSteps = [
+            {
+              label: 'Session Context',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Session</label>
+                    <CellDropdown value={newRecord.session || ''} options={sessionOpts} onCommit={val => {
+                      const s = sessions.find((x: any) => x["Session Name"] === val);
+                      if (s) setNewRecord({...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["TimeOfDay"], occasion: s["Occasion"]});
+                      else setNewRecord({...newRecord, session: val});
+                    }} onCancel={() => {}} placeholder="Select session…" tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20" />
+                  </div>
+                  {newRecord.parentEvent && (
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Auto-filled</div>
+                      <div className="text-[12px] font-semibold text-slate-700">{newRecord.parentEvent}</div>
+                      {newRecord.date && <div className="text-[11px] text-slate-500">{String(newRecord.date).split('T')[0]}</div>}
+                    </div>
+                  )}
+                  <div>
+                    <label className={labelCls}>Play ID</label>
+                    <input className={inputCls} value={newRecord.playId || ''} onChange={e => setNewRecord({...newRecord, playId: e.target.value})} placeholder="Play ID…" />
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Track Details',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Track Name</label>
+                    <input className={inputCls} value={newRecord.track || ''} onChange={e => setNewRecord({...newRecord, track: e.target.value})} placeholder="Track name…" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Order</label>
+                      <input className={inputCls} value={newRecord.order || ''} onChange={e => setNewRecord({...newRecord, order: e.target.value})} placeholder="Order #" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Played At</label>
+                      <input className={inputCls} value={newRecord.playedAt || ''} onChange={e => setNewRecord({...newRecord, playedAt: e.target.value})} placeholder="Timestamp" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Theme</label>
+                      <input className={inputCls} value={newRecord.theme || ''} onChange={e => setNewRecord({...newRecord, theme: e.target.value})} placeholder="Theme" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Relevance</label>
+                      <input className={inputCls} value={newRecord.relevance || ''} onChange={e => setNewRecord({...newRecord, relevance: e.target.value})} placeholder="Relevance" />
+                    </div>
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Notes & Remarks',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Notes</label>
+                    <textarea className={`${inputCls} h-24 resize-none py-2.5`} value={newRecord.notes || ''} onChange={e => setNewRecord({...newRecord, notes: e.target.value})} placeholder="Notes…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>PPG Remarks</label>
+                    <input className={inputCls} value={newRecord.ppgRemarks || ''} onChange={e => setNewRecord({...newRecord, ppgRemarks: e.target.value})} placeholder="PPG remarks…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Pravachan Topic</label>
+                    <input className={inputCls} value={newRecord.topic || ''} onChange={e => setNewRecord({...newRecord, topic: e.target.value})} placeholder="Topic…" />
+                  </div>
+                </div>
+              )
+            },
+          ];
+        } else if (activeTable === 'VideoLog') {
+          wizardSteps = [
+            {
+              label: 'Session Context',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Session</label>
+                    <CellDropdown value={newRecord.session || ''} options={sessionOpts} onCommit={val => {
+                      const s = sessions.find((x: any) => x["Session Name"] === val);
+                      if (s) setNewRecord({...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], city: s["City"], venue: s["Venue"], timeOfDay: s["TimeOfDay"], occasion: s["Occasion"], sessionType: s["SessionType"]});
+                      else setNewRecord({...newRecord, session: val});
+                    }} onCancel={() => {}} placeholder="Select session…" tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20" />
+                  </div>
+                  {newRecord.parentEvent && (
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Auto-filled</div>
+                      <div className="text-[12px] font-semibold text-slate-700">{newRecord.parentEvent}</div>
+                      {newRecord.date && <div className="text-[11px] text-slate-500">{String(newRecord.date).split('T')[0]}</div>}
+                      {newRecord.city && <div className="text-[11px] text-slate-500">{newRecord.city}</div>}
+                    </div>
+                  )}
+                  <div>
+                    <label className={labelCls}>Video Play ID</label>
+                    <input className={inputCls} value={newRecord.VideoPlayId || ''} onChange={e => setNewRecord({...newRecord, VideoPlayId: e.target.value})} placeholder="Video Play ID…" />
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Video Details',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Video Title</label>
+                    <input className={inputCls} value={newRecord.VideoTitle || ''} onChange={e => setNewRecord({...newRecord, VideoTitle: e.target.value})} placeholder="Title…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Duration</label>
+                    <input className={inputCls} value={newRecord.duration || ''} onChange={e => setNewRecord({...newRecord, duration: e.target.value})} placeholder="MM:SS" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Proposals List</label>
+                    <textarea className={`${inputCls} h-24 resize-none py-2.5`} value={newRecord.proposalsList || ''} onChange={e => setNewRecord({...newRecord, proposalsList: e.target.value})} placeholder="Proposals…" />
+                  </div>
+                </div>
+              )
+            },
+          ];
+        } else if (activeTable === 'Guidance & Learning') {
+          wizardSteps = [
+            {
+              label: 'Basic Info',
+              content: (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Learning ID</label>
+                      <input className={inputCls} value={newRecord.LearningId || ''} onChange={e => setNewRecord({...newRecord, LearningId: e.target.value})} placeholder="ID…" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Year</label>
+                      <input className={inputCls} value={newRecord.year || ''} onChange={e => setNewRecord({...newRecord, year: e.target.value})} placeholder="Year" />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Event Name</label>
+                    <input className={inputCls} value={newRecord.event || ''} onChange={e => setNewRecord({...newRecord, event: e.target.value})} placeholder="Event name…" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Date From</label>
+                      <input type="date" className={inputCls} value={newRecord.dateFrom || ''} onChange={e => setNewRecord({...newRecord, dateFrom: e.target.value})} />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Date To</label>
+                      <input type="date" className={inputCls} value={newRecord.dateTo || ''} onChange={e => setNewRecord({...newRecord, dateTo: e.target.value})} />
+                    </div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>City</label>
+                    <input className={inputCls} value={newRecord.city || ''} onChange={e => setNewRecord({...newRecord, city: e.target.value})} placeholder="City…" />
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Content',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Guidance / Learning</label>
+                    <textarea className={`${inputCls} h-28 resize-none py-2.5`} value={newRecord.guidanceLearning || ''} onChange={e => setNewRecord({...newRecord, guidanceLearning: e.target.value})} placeholder="Content…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Guidance From</label>
+                    <input className={inputCls} value={newRecord.guidanceFrom || ''} onChange={e => setNewRecord({...newRecord, guidanceFrom: e.target.value})} placeholder="Source…" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Category</label>
+                      <input className={inputCls} value={newRecord.category || ''} onChange={e => setNewRecord({...newRecord, category: e.target.value})} placeholder="Category…" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Attachments</label>
+                      <input className={inputCls} value={newRecord.attachments || ''} onChange={e => setNewRecord({...newRecord, attachments: e.target.value})} placeholder="Link…" />
+                    </div>
+                  </div>
+                </div>
+              )
+            },
+          ];
+        } else if (activeTable === 'Tracks') {
+          wizardSteps = [
+            {
+              label: 'Track Info',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Title</label>
+                    <input className={inputCls} value={newRecord.title || ''} onChange={e => setNewRecord({...newRecord, title: e.target.value})} placeholder="Track title…" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Artist</label>
+                      <input className={inputCls} value={newRecord.artist || ''} onChange={e => setNewRecord({...newRecord, artist: e.target.value})} placeholder="Artist…" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Album</label>
+                      <input className={inputCls} value={newRecord.album || ''} onChange={e => setNewRecord({...newRecord, album: e.target.value})} placeholder="Album…" />
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div>
+                      <label className={labelCls}>Duration</label>
+                      <input className={inputCls} value={newRecord.duration || ''} onChange={e => setNewRecord({...newRecord, duration: e.target.value})} placeholder="3:45" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>BPM</label>
+                      <input className={inputCls} value={newRecord.bpm || ''} onChange={e => setNewRecord({...newRecord, bpm: e.target.value})} placeholder="BPM" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Key</label>
+                      <input className={inputCls} value={newRecord.key || ''} onChange={e => setNewRecord({...newRecord, key: e.target.value})} placeholder="Key" />
+                    </div>
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Source & Tags',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Source</label>
+                    <input className={inputCls} value={newRecord.source || ''} onChange={e => setNewRecord({...newRecord, source: e.target.value})} placeholder="Source…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>File Link</label>
+                    <input className={inputCls} value={newRecord.fileLink || ''} onChange={e => setNewRecord({...newRecord, fileLink: e.target.value})} placeholder="https://…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Tags</label>
+                    <input className={inputCls} value={newRecord.tags || ''} onChange={e => setNewRecord({...newRecord, tags: e.target.value})} placeholder="Comma separated…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Lexicon ID</label>
+                    <input className={inputCls} value={newRecord.lexiconID || ''} onChange={e => setNewRecord({...newRecord, lexiconID: e.target.value})} placeholder="ID…" />
+                  </div>
+                </div>
+              )
+            },
+          ];
+        } else if (activeTable === 'DyatraChecklist') {
+          wizardSteps = [
+            {
+              label: 'Task Details',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Task</label>
+                    <input className={inputCls} value={newRecord.task || ''} onChange={e => setNewRecord({...newRecord, task: e.target.value})} placeholder="Task description…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Category</label>
+                    <input className={inputCls} value={newRecord.category || ''} onChange={e => setNewRecord({...newRecord, category: e.target.value})} placeholder="Audio / Video…" />
+                  </div>
+                </div>
+              )
+            },
+          ];
+        } else {
+          // Generic: single step with all visible columns
+          wizardSteps = [
+            {
+              label: 'Details',
+              content: (
+                <div className="space-y-5">
+                  {getTableColumns().map((col: string) => (
+                    <div key={col}>
+                      <label className={labelCls}>{col}</label>
+                      <input className={inputCls} value={newRecord[col] || ''} onChange={e => setNewRecord({...newRecord, [col]: e.target.value})} placeholder={`${col}…`} />
+                    </div>
+                  ))}
+                </div>
+              )
+            },
+          ];
+        }
+
+        const totalSteps = wizardSteps.length;
+        const currentStep = wizardSteps[Math.min(addWizardStep, totalSteps - 1)];
+
+        return (
+          <div className="fixed inset-0 z-[600] flex items-end justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(2px)' }} onClick={() => setIsAddModalOpen(false)}>
+            <div className="w-full bg-white rounded-t-3xl shadow-2xl flex flex-col max-h-[92vh]" onClick={e => e.stopPropagation()}>
+              {/* Drag handle */}
+              <div className="flex justify-center pt-3 pb-1 shrink-0">
+                <div className="w-10 h-1 bg-slate-300 rounded-full" />
+              </div>
+
+              {/* Header */}
+              <div className="px-5 pt-2 pb-3 flex items-start justify-between shrink-0">
+                <div className="flex-1 min-w-0 pr-3">
+                  <div className="text-[9px] font-black text-brand-primary uppercase tracking-[0.2em] mb-0.5">{activeTable}</div>
+                  <h2 className="text-[17px] font-black text-slate-900 tracking-tight leading-snug">Add New Record</h2>
+                </div>
+                <button onClick={() => setIsAddModalOpen(false)} className="p-1.5 rounded-xl hover:bg-slate-100 mt-0.5 shrink-0">
+                  <X className="h-5 w-5 text-slate-400" />
+                </button>
+              </div>
+
+              {/* Step progress bar */}
+              <div className="px-5 pb-3 shrink-0">
+                <div className="flex items-center gap-1 mb-2">
+                  {wizardSteps.map((_, i) => (
+                    <div key={i} onClick={() => setAddWizardStep(i)} className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${i === addWizardStep ? 'bg-brand-primary flex-[2]' : i < addWizardStep ? 'bg-brand-primary/40 flex-1' : 'bg-slate-200 flex-1'}`} />
+                  ))}
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-[10px] font-black text-brand-primary uppercase tracking-[0.15em]">{currentStep?.label}</span>
+                  <span className="text-[10px] font-bold text-slate-400">{addWizardStep + 1} / {totalSteps}</span>
+                </div>
+              </div>
+
+              {/* Step content */}
+              <div className="flex-1 overflow-y-auto px-5 pb-2 min-h-0">
+                {currentStep?.content}
+              </div>
+
+              {/* Footer nav */}
+              <div className="px-5 py-4 border-t border-slate-100 shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+                <div className="flex items-center gap-3">
+                  <button onClick={() => { if (addWizardStep === 0) setIsAddModalOpen(false); else setAddWizardStep(s => s - 1); }} className="flex-1 h-12 border border-slate-300 rounded-2xl text-[12px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-colors">
+                    {addWizardStep === 0 ? 'Cancel' : 'Back'}
+                  </button>
+                  {addWizardStep < totalSteps - 1 ? (
+                    <button onClick={() => setAddWizardStep(s => s + 1)} className="flex-[2] h-12 bg-brand-primary text-white rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-brand-primary/90 transition-colors shadow-lg shadow-brand-primary/25">
+                      Next
+                    </button>
+                  ) : (
+                    <button onClick={handleAddRecord} disabled={isAdding} className="flex-[2] h-12 bg-green-600 text-white rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-green-700 transition-colors shadow-lg shadow-green-600/25 disabled:opacity-50">
+                      {isAdding ? 'Saving…' : 'Create Record'}
+                    </button>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       <AttachmentManagerDialog
     manager={imageManager}
