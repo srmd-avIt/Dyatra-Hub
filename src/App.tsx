@@ -74,11 +74,55 @@ import {
   Settings2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+
+const TAG_COLORS = [
+  "bg-indigo-500/20 text-indigo-800 border-indigo-500/30 dark:text-indigo-200",
+  "bg-blue-500/20 text-blue-800 border-blue-500/30 dark:text-blue-200",
+  "bg-cyan-500/20 text-cyan-800 border-cyan-500/30 dark:text-cyan-200",
+  "bg-teal-500/20 text-teal-800 border-teal-500/30 dark:text-teal-200",
+  "bg-emerald-500/20 text-emerald-800 border-emerald-500/30 dark:text-emerald-200",
+  "bg-green-500/20 text-green-800 border-green-500/30 dark:text-green-200",
+  "bg-lime-500/20 text-lime-800 border-lime-500/30 dark:text-lime-200",
+  "bg-yellow-500/20 text-yellow-800 border-yellow-500/30 dark:text-yellow-200",
+  "bg-orange-500/20 text-orange-800 border-orange-500/30 dark:text-orange-200",
+  "bg-red-500/20 text-red-800 border-red-500/30 dark:text-red-200",
+  "bg-pink-500/20 text-pink-800 border-pink-500/30 dark:text-pink-200",
+  "bg-fuchsia-500/20 text-fuchsia-800 border-fuchsia-500/30 dark:text-fuchsia-200",
+  "bg-purple-500/20 text-purple-800 border-purple-500/30 dark:text-purple-200",
+  "bg-violet-500/20 text-violet-800 border-violet-500/30 dark:text-violet-200",
+  "bg-stone-500/20 text-stone-800 border-stone-500/30 dark:text-stone-200",
+];
+// Helper to consistently assign a color to a string
+const getTagStyle = (val: any) => {
+  if (val === null || val === undefined || val === '') {
+    return "px-2.5 py-0.5 rounded-md border font-bold text-[12px] bg-slate-900 text-slate-500 border-slate-800 shadow-sm";
+  }
+
+  const str = String(val);
+  let hash = 0;
+  // Enhanced hashing to spread indices more effectively
+  for (let i = 0; i < str.length; i++) {
+    hash = str.charCodeAt(i) + ((hash << 5) - hash);
+    hash = hash & hash; // Convert to 32bit integer
+  }
+
+  const index = Math.abs(hash) % TAG_COLORS.length;
+
+  return `
+    px-2.5 py-0.5 
+    rounded-md border 
+    font-bold text-[11px] tracking-tight whitespace-nowrap inline-block
+    shadow-[0_2px_8px_rgba(0,0,0,0.3)]
+    ${TAG_COLORS[index]}
+  `;
+};
+
+const UNIFORM_DROPDOWN_STYLE = "bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-semibold text-[12px] px-3 py-1 rounded-md shadow-sm tracking-tighter whitespace-nowrap inline-block";
 const CardImageGallery = ({ imageString }: { imageString: string }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   
   // Extract all URLs from the Airtable string format
-  const urlRegex = /\((https?:\/\/[^)]+)\)/g;
+  const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
   const images: string[] = [];
   let match;
   while ((match = urlRegex.exec(imageString)) !== null) {
@@ -145,33 +189,65 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
 };
 
 /** Airtable-style searchable dropdown with free-type "Create" option */
+/** Airtable-style searchable dropdown with free-type "Create" option */
 const CellDropdown = React.memo(function CellDropdown({
-  value, options, onCommit, onCancel, placeholder = 'Select...', tagClass
+  value, options, onCommit, onCancel, onOutsideClick, 
+  placeholder = 'Select...', tagClass, isMinimal = false,
+  autoOpen = false, // CHANGE THIS FROM true TO false
+  isMulti = false 
 }: {
-  value: string; options: string[]; onCommit: (v: string) => void; onCancel: () => void; placeholder?: string; tagClass?: string;
+  value: string | string[]; options: string[]; onCommit: (v: string) => void; 
+  onCancel: () => void; onOutsideClick?: () => void;
+  placeholder?: string; tagClass?: string; isMinimal?: boolean;
+  autoOpen?: boolean; isMulti?: boolean;
 }) {
-  const [open, setOpen] = useState(false);
+  const [open, setOpen] = useState(autoOpen); 
   const [search, setSearch] = useState('');
   const [inputHighlight, setInputHighlight] = useState(false);
+  
   const ref = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const openRef = useRef(false);
+  const openRef = useRef(open);
   openRef.current = open;
 
+  // Normalize value to array
+  const selectedValues = useMemo(() => {
+    if (Array.isArray(value)) return value;
+    // Convert to string first to handle Numbers (like Year) or null values
+    const strVal = (value !== null && value !== undefined) ? String(value) : '';
+    return strVal.split(',').map(v => v.trim()).filter(Boolean);
+  }, [value]);
+
   useEffect(() => { if (open) setTimeout(() => searchRef.current?.focus(), 0); }, [open]);
+  
   useEffect(() => {
     const h = (e: MouseEvent) => {
-      if (openRef.current && ref.current && !ref.current.contains(e.target as Node)) {
-        setOpen(false); setSearch('');
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        if (openRef.current) { setOpen(false); setSearch(''); }
+        if (onOutsideClick) onOutsideClick();
       }
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
-  }, []);
+  }, [onOutsideClick]);
 
   const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
   const canCreate = !!search.trim() && !options.some(o => o.toLowerCase() === search.trim().toLowerCase());
-  const pick = (val: string) => { setSearch(''); setOpen(false); onCommit(val); };
+
+ const pick = (val: string) => {
+    if (isMulti) {
+      const next = selectedValues.includes(val) 
+        ? selectedValues.filter(v => v !== val) 
+        : [...selectedValues, val];
+      onCommit(next.join(', '));
+      setSearch(''); // Keep open for multi-select
+    } else {
+      setSearch('');
+      setOpen(false);
+      onCommit(String(val)); // Ensure we commit as a string
+    }
+  };
+
   const triggerAddNew = (e: React.MouseEvent) => {
     e.preventDefault();
     setSearch('');
@@ -181,64 +257,80 @@ const CellDropdown = React.memo(function CellDropdown({
   };
 
   return (
-    <div ref={ref} className="relative w-full">
-      {/* Trigger — value centred, chevron pinned right */}
-      <div className="w-full h-8 relative flex items-center justify-center px-6 bg-white border-2 border-blue-500 rounded-md cursor-pointer select-none" onClick={() => setOpen(v => !v)}>
-        {value && tagClass
-          ? <span className={`${tagClass} truncate max-w-full`}>{value}</span>
-          : <span className={`text-[12px] font-medium truncate ${value ? 'text-slate-900' : 'text-slate-400'}`}>{value || placeholder}</span>
-        }
-        <ChevronDown className={`absolute right-2 h-3.5 w-3.5 text-slate-400 transition-transform duration-150 ${open ? 'rotate-180' : ''}`} />
+    <div ref={ref} className="relative w-full h-full flex items-center">
+      {/* Standardized Trigger Area */}
+      <div 
+        className={`w-full min-h-full relative flex items-center flex-wrap gap-1 transition-all group cursor-pointer ${
+          isMinimal ? 'bg-transparent px-1 py-1' : 'px-8 bg-white border border-slate-200 rounded-xl shadow-sm'
+        }`} 
+        onClick={() => setOpen(v => !v)}
+      >
+        {selectedValues.length > 0 ? (
+          selectedValues.map((v, i) => (
+            <span key={i} className={getTagStyle(v)}>
+              {v}
+              {isMulti && (
+                <button 
+                  onMouseDown={(e) => { e.stopPropagation(); pick(v); }}
+                  className="ml-1 hover:text-black/50"
+                >
+                  &times;
+                </button>
+              )}
+            </span>
+          ))
+        ) : (
+          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest pl-2">{placeholder}</span>
+        )}
+        <ChevronDown className={`absolute right-1.5 h-3.5 w-3.5 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
       </div>
 
       {open && (
-        <div className="absolute z-[9999] top-full left-0 mt-1 w-full min-w-[220px] bg-white border border-slate-200 rounded-xl shadow-2xl" style={{ overflow: 'visible' }}>
-          {/* Search input — always white */}
+        <div className="absolute z-[9999] top-full left-0 mt-1 min-w-[200px] w-full bg-white border border-slate-200 rounded-xl shadow-2xl">
           <div className="p-2 border-b border-slate-100">
-            <input
-              ref={searchRef}
-              className={`w-full text-[12px] px-2.5 py-1.5 rounded-lg border bg-white outline-none placeholder:text-slate-400 transition-all ${inputHighlight ? 'border-blue-400 ring-2 ring-blue-200' : 'border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100'}`}
-              placeholder={inputHighlight ? 'Type name for new option…' : 'Search or type new value…'}
-              value={search}
-              onChange={e => setSearch(e.target.value)}
-              onKeyDown={e => {
-                if (e.key === 'Escape') { setOpen(false); onCancel(); }
-                if (e.key === 'Enter') { canCreate ? pick(search.trim()) : filtered.length > 0 && pick(filtered[0]); }
-              }}
-            />
+           <input
+  ref={searchRef}
+  className={`w-full text-[12px] px-2.5 py-1.5 rounded-lg border bg-white outline-none text-black placeholder:text-slate-400 transition-all ${
+    inputHighlight
+      ? 'border-blue-400 ring-2 ring-blue-200'
+      : 'border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
+  }`}
+  placeholder={inputHighlight ? 'Type name for new option…' : 'Search or type new…'}
+  value={search}
+  onChange={e => setSearch(e.target.value)}
+  onKeyDown={e => {
+    if (e.key === 'Escape') { setOpen(false); onCancel(); }
+    if (e.key === 'Enter') { 
+      if (canCreate) pick(search.trim());
+      else if (filtered.length > 0) pick(filtered[0]);
+    }
+  }}
+/>
           </div>
 
           <div className="max-h-52 overflow-y-auto py-1">
-            {/* Deselect row — only shown when a value is currently selected */}
-            {value && !search.trim() && (
-              <div className="px-3 py-2 text-[12px] cursor-pointer text-slate-400 hover:bg-red-50 hover:text-red-500 flex items-center gap-2.5 transition-colors border-b border-slate-100" onMouseDown={e => { e.preventDefault(); pick(''); }}>
-                <X className="h-3.5 w-3.5 shrink-0" />
-                <span>Clear selection</span>
-              </div>
-            )}
-            {filtered.map(opt => (
-              <div key={opt} className={`px-3 py-2 text-[12px] cursor-pointer flex items-center gap-2.5 transition-colors hover:bg-slate-50 ${value === opt ? 'bg-blue-50' : ''}`} onMouseDown={e => { e.preventDefault(); pick(opt); }}>
-                <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${value === opt ? 'bg-blue-500 border-blue-500' : 'border-slate-200'}`}>
-                  {value === opt && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
+            {filtered.map(opt => {
+              const isSelected = selectedValues.includes(opt);
+              return (
+                <div 
+                  key={opt} 
+                  className={`px-3 py-2 text-[12px] cursor-pointer flex items-center gap-2.5 transition-colors hover:bg-slate-50 ${isSelected ? 'bg-slate-50' : ''}`} 
+                  onMouseDown={e => { e.preventDefault(); pick(opt); }}
+                >
+                  <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-slate-200'}`}>
+                    {isSelected && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
+                  </div>
+                  <span className={getTagStyle(opt)}>{opt}</span> 
                 </div>
-                <span className={value === opt ? 'text-blue-700 font-semibold' : 'text-slate-700'}>{opt}</span>
-              </div>
-            ))}
-            {filtered.length === 0 && !canCreate && !search.trim() && <div className="px-3 py-4 text-[12px] text-slate-400 text-center">No options yet</div>}
-            {filtered.length === 0 && !canCreate && search.trim() && <div className="px-3 py-4 text-[12px] text-slate-400 text-center">No match</div>}
+              );
+            })}
           </div>
 
-          {/* Create / add-new footer */}
           <div className="border-t border-slate-100">
-            {canCreate ? (
-              <div className="px-3 py-2 text-[12px] cursor-pointer text-blue-600 font-semibold hover:bg-blue-50 flex items-center gap-1.5" onMouseDown={e => { e.preventDefault(); pick(search.trim()); }}>
-                <Plus className="h-3.5 w-3.5" />Create &ldquo;{search.trim()}&rdquo;
-              </div>
-            ) : (
-              <div className="px-3 py-2 text-[12px] cursor-pointer text-blue-600 font-medium hover:bg-blue-50 flex items-center gap-1.5 transition-colors" onMouseDown={triggerAddNew}>
-                <Plus className="h-3.5 w-3.5" />Add new option…
-              </div>
-            )}
+            <div className="px-3 py-2 text-[12px] cursor-pointer text-blue-600 font-medium hover:bg-blue-50 flex items-center gap-1.5 transition-colors" onMouseDown={canCreate ? (e) => { e.preventDefault(); pick(search.trim()); } : triggerAddNew}>
+              <Plus className="h-3.5 w-3.5" />
+              {canCreate ? `Create "${search.trim()}"` : "Add new option…"}
+            </div>
           </div>
         </div>
       )}
@@ -506,24 +598,20 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     else if (isSe && col === 'Parent Event')
       opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
 
-    const tagClass =
-      col === 'Occasion' ? 'bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm' :
-      col === 'City'     ? 'bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm' :
-      col === 'Year'     ? 'bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20' :
-      undefined;
+  const tagClass = UNIFORM_DROPDOWN_STYLE;
 
-    if (opts.length > 0 || (isEv && (col === 'Occasion' || col === 'City' || col === 'Year')) || (isSe && (col === 'City' || col === 'Occasion' || col === 'Time Of Day' || col === 'SessionType' || col === 'Parent Event'))) {
-      return (
-        <CellDropdown
-          value={draft[col] || ''}
-          options={opts}
-          onCommit={val => commit(col, val)}
-          onCancel={onClose}
-          placeholder={`Select ${col}…`}
-          tagClass={tagClass}
-        />
-      );
-    }
+if (opts.length > 0 || (isEv && (col === 'Occasion' || col === 'City' || col === 'Year')) || (isSe && (col === 'City' || col === 'Occasion' || col === 'Time Of Day' || col === 'SessionType' || col === 'Parent Event'))) {
+  return (
+    <CellDropdown
+      value={draft[col] || ''} // Changed from editDraft to draft
+      options={opts}
+      onCommit={val => commit(col, val)} // Changed from commitField to commit
+      onCancel={onClose}
+      placeholder={`Select ${col}…`}
+      tagClass={tagClass}
+    />
+  );
+}
     if (col === 'Notes' || col === 'notes' || col === 'proposalsList' || col === 'Details' || col === 'guidanceLearning') {
       return (
         <textarea className={`${inputCls} h-28 resize-none py-2.5`}
@@ -747,41 +835,46 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], onS
                     {/* UPDATED VALUE COLOR: Changed from slate-800 to slate-900 to stand out */}
                     <div className="text-[15px] font-bold text-slate-900 break-words leading-relaxed">
                       {(() => {
-                        const val = item[col];
-                        
-                        // Sessions column in Events detail view — clickable chips
-                        if ((col === "Sessions" || col === "Imported table") && typeof val === 'string') {
-                          return (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {val.split(',').map((tag, i) => {
-                                const sName = tag.trim();
-                                const linked = sessions.find((s: any) => s["Session Name"] === sName);
-                                return (
-                                  <Badge
-                                    key={i}
-                                    className={`text-[10px] px-2 py-0.5 uppercase ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-600 border border-slate-200 cursor-default'}`}
-                                    onClick={() => { if (linked) onSessionClick?.(linked); }}
-                                  >
-                                    {sName}
-                                  </Badge>
-                                );
-                              })}
-                            </div>
-                          );
-                        }
+                       const val = item[col];
 
+// Change this line to include "Session" and "🕘 Session"
+const sessionFieldNames = ["Sessions", "Imported table", "Session", "🕘 Session"];
+if (sessionFieldNames.includes(col) && typeof val === 'string') {
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {val.split(',').map((tag, i) => {
+        const sName = tag.trim();
+        const linked = sessions.find((s: any) => s["Session Name"] === sName);
+        return (
+          <Badge
+            key={i}
+            className={`text-[10px] px-2 py-0.5 uppercase ${
+              linked 
+                ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' 
+                : 'bg-slate-100 text-slate-600 border border-slate-200 cursor-default'
+            }`}
+            onClick={() => { if (linked) onSessionClick?.(linked); }}
+          >
+            {sName}
+            {linked && <ArrowUpRight className="h-3 w-3 ml-1 opacity-50" />}
+          </Badge>
+        );
+      })}
+    </div>
+  );
+}
                         // Special Rendering for "Occasion" or "City" Tags (Unchanged as requested)
-                        if ((col === "Occasion" || col === "City") && typeof val === 'string') {
-                          return (
-                            <div className="flex flex-wrap gap-1 mt-1">
-                              {val.split(',').map((tag, i) => (
-                                <Badge key={i} className={`${col === 'City' ? 'bg-orange-500' : 'bg-blue-600'} text-white text-[10px] px-2 py-0.5 uppercase border-none`}>
-                                  {tag.trim()}
-                                </Badge>
-                              ))}
-                            </div>
-                          );
-                        }
+         if ((col === "Occasion" || col === "City") && typeof val === 'string') {
+  return (
+    <div className="flex flex-wrap gap-1 mt-1">
+      {val.split(',').map((tag, i) => (
+        <span key={i} className={getTagStyle(tag.trim())}>
+          {tag.trim()}
+        </span>
+      ))}
+    </div>
+  );
+}
 
                         // Default rendering
                         if (!val || val === 'undefined') return <span className="text-slate-300 italic font-normal">—</span>;
@@ -833,6 +926,7 @@ const FIELD_TYPES = [
 type FieldType = typeof FIELD_TYPES[number]['id'];
 
 export default function App() {
+  const gridContainerRef = useRef<HTMLDivElement>(null);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -867,7 +961,7 @@ const [editingHeader, setEditingHeader] = useState<{ index: number, value: strin
 const [isSortOpen, setIsSortOpen] = useState(false);
   const [activeTable, setActiveTable] = useState('Home');
   const [isAdding, setIsAdding] = useState(false);
-  const [viewMode, setViewMode] = useState<'visual' | 'grid' | 'card'>('card');
+ const [viewMode, setViewMode] = useState<'visual' | 'grid' | 'card'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isMobileView, setIsMobileView] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
@@ -1130,7 +1224,7 @@ const AttachmentManagerDialog = ({ manager, onClose, onUpdate }: any) => {
   // Load images into local state when modal opens
   useEffect(() => {
     if (manager?.isOpen && manager?.item) {
-      const urlRegex = /\((https?:\/\/[^)]+)\)/g;
+      const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
       const images: string[] = [];
       let match;
       const rawValue = manager.item[manager.column] || "";
@@ -1386,7 +1480,7 @@ const getColumnType = (col: string): FieldType => {
   // Smart defaults by column name
   if (['PlayID', 'VideoPlayId', 'LedId', 'LearningId'].includes(col) || (col.toLowerCase().endsWith('id') && !col.includes(' '))) return 'id';
   if (['DateFrom', 'DateTo', 'Date', 'PlayedAt', 'LastUpdated'].includes(col) || col.startsWith('Date (') || col.startsWith('DateFrom (') || col.startsWith('DateTo (')) return 'date';
-  if (['Year', 'Year (from Event)'].includes(col)) return 'year';
+ if (['Year', 'Year (from Event)'].includes(col)) return 'year';
   if (['Occasion', 'Occasion (from Session)', 'Tags'].includes(col)) return 'badge_multi';
   if (['City', 'City (from Session)', 'City (from 🕘 Session)', 'Dept', 'TaskGroup', 'Indoor/Outdoor LED?'].includes(col)) return 'badge';
   if (['SessionType', 'SessionType (from Session)', 'Category', 'Time Of Day', 'TimeOfDay', 'TimeOfDay (from Session)'].includes(col)) return 'badge';
@@ -1409,48 +1503,70 @@ const renderCell = (col: string, item: any): React.ReactNode => {
   switch (type) {
     case 'id':
       return <span className={`font-mono text-[13px] ${activeTable === 'VideoLog' ? 'text-indigo-500' : 'text-brand-primary'}`}>{val || empty}</span>;
+    
     case 'date':
       return <span className="font-mono text-slate-700 text-[13px]">{val || empty}</span>;
-    case 'year':
-      return val
-        ? <Badge className="bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-black text-[12px] px-3 py-1 rounded-md shadow-sm tracking-tighter">{val}</Badge>
-        : empty;
+    
     case 'number':
       return <span className="font-mono text-slate-700 text-[13px] block text-center">{val || empty}</span>;
+case 'phone':
+case 'text':
+
+  return <span className="text-[13px] text-slate-700 truncate block">{val || empty}</span>;
+    // --- UNIFIED DROPDOWN / BADGE / TEXT STYLE ---
+    case 'year':
     case 'badge':
-      return val
-        ? <Badge className="bg-blue-50 text-blue-600 border border-blue-100 text-[11px] font-bold px-2 py-0.5 rounded uppercase">{val}</Badge>
-        : empty;
+    case 'select':
+      return val ? (
+        <div className="flex justify-center">
+          <span className={getTagStyle(String(val))}>{val}</span>
+        </div>
+      ) : empty;
+
     case 'badge_multi':
-      return val
-        ? <div className="flex flex-wrap gap-1">{String(val).split(',').map((t: string, i: number) => <Badge key={i} className="bg-blue-600 text-white border-none text-[12px] px-2 py-0.5 rounded-sm">{t.trim()}</Badge>)}</div>
-        : empty;
+      return val ? (
+        <div className="flex flex-wrap gap-1 justify-center">
+          {String(val).split(',').map((t: string, i: number) => (
+            <span key={i} className={getTagStyle(t.trim())}>
+              {t.trim()}
+            </span>
+          ))}
+        </div>
+      ) : empty;
+    // ----------------------------------------------
+
     case 'yes_no':
       return val === 'Yes'
         ? <Badge className="bg-green-100 text-green-700 border border-green-200 text-[11px] px-2">Yes</Badge>
         : <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[11px] px-2">No</Badge>;
+
     case 'status':
       return val
         ? <Badge className={`${val === 'Ready' ? 'bg-green-100 text-green-700 border-green-200' : val === 'Pending' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' : 'bg-red-100 text-red-700 border-red-200'} text-[11px] px-2`}>{val}</Badge>
         : empty;
+        
     case 'email':
       return val ? <span className="text-brand-primary underline text-[13px]">{val}</span> : empty;
+    
     case 'url':
       return val
         ? <a href={val} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px]">Link</a>
         : empty;
+    
     case 'long_text':
       return <span className="text-slate-500 italic text-[13px] truncate block">{val ? (String(val).length > 60 ? String(val).substring(0, 60) + '…' : String(val)) : empty}</span>;
+    
     case 'checkbox':
       return (val === 'true' || val === true)
         ? <Check className="h-4 w-4 text-green-500 mx-auto" />
         : empty;
-    case 'select':
-      return val ? <Badge className="bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-[11px] px-2">{val}</Badge> : empty;
-    case 'phone':
-    case 'text':
+
     default:
-      return <span className="text-[13px] text-slate-700 truncate block">{val || empty}</span>;
+      return val ? (
+        <div className="flex justify-center">
+          <span className={UNIFORM_DROPDOWN_STYLE}>{val}</span>
+        </div>
+      ) : empty;
   }
 };
 
@@ -1539,37 +1655,41 @@ const renderRow = (item: any) => {
   const primaryFallback = primaryFallbacks[activeTable] || '—';
 
   return (
-    <>
-      {cols.map((col, i) => {
-        const isPrimary = col === primaryKey;
-        const style = cellStyle(col);
+  <>
+    {cols.map((col, i) => {
+      const isPrimary = col === primaryKey;
+      const style = cellStyle(col);
 
-        // ── SPECIAL CASES (behaviour beyond just display type) ─────────────
-
-        // Events: Sessions — multi-chip linked records
-        if (activeTable === 'Events' && col === 'Sessions') {
-          const val = item["Sessions"] || item["Imported table"] || '';
-          return (
-            <td key={col} className={cellCls} style={style}>
-              <div className="flex flex-wrap gap-1.5 overflow-hidden">
-                {val ? val.split(',').map((sessionName: string, idx: number) => {
-                  const sName = sessionName.trim();
-                  const linked = sessions.find((s: any) => s["Session Name"] === sName);
-                  return (
-                    <Badge
-                      key={idx}
-                      className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm shadow-sm transition-all ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-700 border border-slate-300 cursor-default'}`}
-                      onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
-                    >
-                      {sName}{linked && <ArrowUpRight className="inline h-3 w-3 ml-0.5 opacity-60" />}
-                    </Badge>
-                  );
-                }) : <span className="text-slate-300 italic text-[12px]">—</span>}
-              </div>
-            </td>
-          );
-        }
-
+      // ── UNIFIED SESSION LINK LOGIC (Covers all tables) ──
+      const sessionFieldNames = ['Sessions', 'Session', 'Imported table', '🕘 Session'];
+      if (sessionFieldNames.includes(col)) {
+        const val = item[col] || '';
+        const names = typeof val === 'string' ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
+        
+        return (
+          <td key={col} className={cellCls} style={style}>
+            <div className="flex flex-wrap gap-1.5 justify-center overflow-hidden">
+              {names.length > 0 ? names.map((sName, idx) => {
+                const linked = sessions.find((s: any) => s["Session Name"] === sName);
+                return (
+                  <Badge
+                    key={idx}
+                    className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm shadow-sm transition-all ${
+                      linked 
+                        ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' 
+                        : 'bg-slate-100 text-slate-700 border border-slate-300 cursor-default'
+                    }`}
+                    onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
+                  >
+                    {sName}
+                    {linked && <ArrowUpRight className="inline h-3 w-3 ml-0.5 opacity-60" />}
+                  </Badge>
+                );
+              }) : <span className="text-slate-300 italic text-[12px]">—</span>}
+            </div>
+          </td>
+        );
+      }
         // MusicLog / VideoLog: Session field — clickable link to session
         if ((activeTable === 'MusicLog' || activeTable === 'VideoLog') && col === 'Session') {
           return (
@@ -1833,6 +1953,30 @@ const toggleGroup = (groupId: string) => {
     
  
 }, [activeTable]);
+
+useEffect(() => {
+  const handleClickOutside = (event: MouseEvent) => {
+    // Only proceed if we are currently editing a row
+    if (editingId) {
+      // Check if the click was outside the grid container
+      if (gridContainerRef.current && !gridContainerRef.current.contains(event.target as Node)) {
+        // Option A: Save and Close (Recommended)
+        handleUpdateRecord(); 
+        
+        // Option B: Just Close (Cancel changes)
+        // setEditingId(null);
+        // setEditDraft(null);
+        // setEditingCell(null);
+      }
+    }
+  };
+
+  document.addEventListener('mousedown', handleClickOutside);
+  return () => {
+    document.removeEventListener('mousedown', handleClickOutside);
+  };
+}, [editingId, editDraft]);
+
 
 useEffect(() => {
   if (!user) return;
@@ -2197,7 +2341,11 @@ const renderEditableRow = () => {
 
 const handleUpdateRecord = async (draftOverride?: any) => {
   const draft = draftOverride ?? editDraft;
-  if (!editingId || !draft) return;
+    if (!editingId || !draft) {
+    setEditingId(null);
+    setEditingCell(null);
+    return;
+  }
 
   let collection = '';
   switch (activeTable) {
@@ -2316,11 +2464,15 @@ const renderEditInputs = (_item: any) => {
 
   return (
     <>
-      {cols.map((col, i) => (
+       {cols.map((col, i) => (
         <td
           key={i}
-          className={`border-r border-b bg-white cursor-text transition-colors ${isActiveCell(col) ? 'px-1.5 py-1 border-blue-400 ring-2 ring-inset ring-blue-300 overflow-visible' : `px-4 py-3 border-slate-200 hover:bg-slate-50/60 overflow-hidden${i > 0 ? ' text-center' : ''}`}`}
-          style={{ width: gw(col), minWidth: gw(col), maxWidth: gw(col) }}
+          className={`border-r border-b bg-white cursor-text transition-colors ${
+            isActiveCell(col) 
+              ? 'p-0 border-blue-400 ring-2 ring-inset ring-blue-300 overflow-visible' 
+              : `px-4 py-3 border-slate-200 hover:bg-slate-50/60 overflow-hidden${i > 0 ? ' text-center' : ''}`
+          }`}
+          style={{ width: gw(col), minWidth: gw(col), maxWidth: gw(col), height: '40px' }}
           onClick={() => setEditingCell(col)}
         >
           {(() => {
@@ -2331,25 +2483,25 @@ const renderEditInputs = (_item: any) => {
 
             // ── INACTIVE CELL — use renderCell for type-driven formatting ──
             if (!isActiveCell(col)) {
-              // Sessions linked chips (Events)
-              if (isEv && col === 'Sessions') {
-                const val = editDraft['Sessions'] || editDraft['Imported table'] || '';
-                const empty = <span className="text-slate-300 italic text-[12px]">—</span>;
-                const names = val.split(',').map((s: string) => s.trim()).filter(Boolean);
-                return names.length > 0
-                  ? <div className="flex flex-wrap gap-1.5 overflow-hidden">{names.map((sName: string, i: number) => {
-                      const linked = sessions.find((s: any) => s["Session Name"] === sName);
-                      return <Badge key={i} className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30' : 'bg-slate-100 text-slate-700 border border-slate-300'}`}>{sName}{linked && <ArrowUpRight className="inline h-3 w-3 ml-0.5 opacity-60" />}</Badge>;
-                    })}</div>
-                  : empty;
-              }
-              // Session link (MusicLog/VideoLog)
-              if (isLinked && col === 'Session') {
-                const v = editDraft[col];
-                return v
-                  ? <span className="flex items-center gap-1 text-[13px] font-semibold text-slate-900 cursor-pointer hover:text-brand-primary hover:underline">{v}<ArrowUpRight className="h-3 w-3 shrink-0 opacity-40" /></span>
-                  : <span className="text-slate-300 italic text-[12px]">—</span>;
-              }
+  // 1. UNIFIED SESSION LINK LOGIC (Add this here)
+  const sessionFieldNames = ['Sessions', 'Session', 'Imported table', '🕘 Session'];
+  if (sessionFieldNames.includes(col)) {
+    const val = editDraft[col] || '';
+    const names = typeof val === 'string' ? val.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+    return names.length > 0
+      ? <div className="flex flex-wrap gap-1.5 justify-center overflow-hidden">
+          {names.map((sName: string, i: number) => {
+            const linked = sessions.find((s: any) => s["Session Name"] === sName);
+            return (
+              <Badge key={i} className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30' : 'bg-slate-100 text-slate-700 border border-slate-300'}`}>
+                {sName}
+                {linked && <ArrowUpRight className="inline h-3 w-3 ml-0.5 opacity-60" />}
+              </Badge>
+            );
+          })}
+        </div>
+      : <span className="text-slate-300 italic text-[12px]">—</span>;
+  }
               // Track bold accent (MusicLog)
               if (isML && col === 'Track') {
                 return <span className="text-[13px] font-bold text-brand-accent truncate block">{editDraft[col] || <span className="text-slate-300 italic text-[12px]">—</span>}</span>;
@@ -2406,24 +2558,30 @@ const renderEditInputs = (_item: any) => {
             else if (isSe && col === 'Parent Event')
               opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
 
-            const tagClass =
-              col === 'Occasion' ? 'bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm' :
-              col === 'City'     ? 'bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm' :
-              col === 'Year'     ? 'bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20' :
-              undefined;
+            const tagClass = UNIFORM_DROPDOWN_STYLE;
 
-            if (opts.length > 0 || ((isEv && (col === 'Occasion' || col === 'City' || col === 'Year')) || (isSe && (col === 'City' || col === 'Occasion' || col === 'Time Of Day' || col === 'SessionType' || col === 'Parent Event')))) {
-              return (
-                <CellDropdown
-                  value={editDraft[col] || ''}
-                  options={opts}
-                  onCommit={val => commitField(col, val)}
-                  onCancel={() => { setEditingId(null); setEditDraft(null); }}
-                  placeholder={`Select ${col}…`}
-                  tagClass={tagClass}
-                />
-              );
-            }
+if (opts.length > 0 || isEv || isSe) {
+  const colType = getColumnType(col);
+  const isMulti = colType === 'badge_multi';
+
+  return (
+    <CellDropdown
+      value={editDraft[col] || ''}
+      options={opts}
+      onCommit={val => commitField(col, val)}
+      onCancel={() => { 
+        setEditingId(null); 
+        setEditDraft(null); 
+        setEditingCell(null); 
+      }}
+      onOutsideClick={() => handleUpdateRecord()}
+      placeholder={`Select ${col}…`}
+      isMinimal={true}
+      autoOpen={true} // <--- KEEP THIS TRUE HERE
+      isMulti={isMulti}
+    />
+  );
+}
             // ── EXTRA COLUMN — use field type ────────────────────────────────
             const extraColType = (extraColumns[activeTable] || []).includes(col)
               ? (columnTypes[activeTable]?.[col] || 'text')
@@ -2815,43 +2973,7 @@ if (!health?.mongodb) {
       </div>
 
       {/* SECTION 2: QUICK ACTIONS */}
-      <div>
-        {isSidebarOpen && (
-          <motion.span 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-            className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 block mb-4 whitespace-nowrap"
-          >
-            Quick Actions
-          </motion.span>
-        )}
-        
-        <div className="space-y-1">
-          {[
-            { icon: Truck, label: 'Export Base' },
-            { icon: Search, label: 'Airtable Sync' },
-          ].map((item) => (
-            <button
-              key={item.label}
-              title={!isSidebarOpen ? item.label : ""}
-              className={`w-full flex items-center rounded-xl transition-all duration-200 group
-              ${isSidebarOpen ? 'px-4 py-3 gap-4' : 'p-3 justify-center'}
-              text-slate-400 hover:text-white hover:bg-slate-800/40`}
-            >
-              <item.icon className="h-5 w-5 shrink-0 group-hover:scale-110 transition-transform" />
-              {isSidebarOpen && (
-                <motion.span 
-                  initial={{ opacity: 0, x: -10 }} 
-                  animate={{ opacity: 1, x: 0 }}
-                  className="text-sm font-medium whitespace-nowrap"
-                >
-                  {item.label}
-                </motion.span>
-              )}
-            </button>
-          ))}
-        </div>
-      </div>
+      
     </div>
   </ScrollArea>
 
@@ -2909,15 +3031,15 @@ if (!health?.mongodb) {
 
     {/* Search Input (Placed on the far left) */}
     {activeTable !== 'Home' && (
-    <div className="relative hidden sm:block">
-      <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
-      <Input
-        placeholder="Search..."
-        value={searchQuery}
-        onChange={(e) => setSearchQuery(e.target.value)}
-        className="bg-brand-bg w-[120px] md:w-[180px] pl-8 h-9 text-xs"
-      />
-    </div>
+   <div className="relative hidden sm:block">
+  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
+  <Input
+    placeholder="Search..."
+    value={searchQuery}
+    onChange={(e) => setSearchQuery(e.target.value)}
+    className="bg-brand-bg w-[120px] md:w-[180px] pl-8 h-9 text-xs text-black dark:text-white"
+  />
+</div>
     )}
   </div>
 
@@ -3075,18 +3197,13 @@ if (!health?.mongodb) {
 
   {/* 4. NEW RECORD BUTTON */}
   {activeTable !== 'Home' && <Button
-    onClick={() => {
-      setInlineRecord({});
-      setIsInlineAdding(true);
-      setTimeout(() => {
-        const container = document.querySelector('.overflow-auto');
-        if (container) container.scrollTop = container.scrollHeight;
-      }, 100);
-    }}
+    onClick={handleAddBlankRow} // Changed from inline-adding state to the direct DB function
     className="bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-4 shadow-md flex items-center gap-2 transition-transform active:scale-95 ml-1"
   >
     <Plus className="h-4 w-4" />
-    <span className="hidden md:inline uppercase text-xs font-bold tracking-wide">Add Record</span>
+    <span className="hidden md:inline uppercase text-xs font-bold tracking-wide">
+      Add Record
+    </span>
   </Button>}
 
 </div>
@@ -4026,7 +4143,10 @@ if (!health?.mongodb) {
                   <div className="md:hidden bg-blue-50 text-[10px] text-center py-1 text-blue-600 font-bold uppercase">
                     ← Scroll horizontally to see all columns →
                   </div>
-                  <div className="overflow-auto thin-scrollbar flex-1 bg-white">
+                 <div 
+  ref={gridContainerRef} // Add this line
+  className="overflow-auto thin-scrollbar flex-1 bg-white"
+>
                     <table 
                       className="border-collapse text-left text-[11px] table-fixed" 
                       style={{ width: 'max-content' }} 
