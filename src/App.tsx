@@ -46,6 +46,7 @@ import {
   SkipBack,
   Menu,
   X,
+  Star,
   Zap,
   PanelLeftClose,
   PanelLeftOpen,
@@ -190,11 +191,14 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
 
 /** Airtable-style searchable dropdown with free-type "Create" option */
 /** Airtable-style searchable dropdown with free-type "Create" option */
+/** Airtable-style multi-select: Click cell to see tags, click Plus to see options */
+/** Airtable-style multi-select vs Single-select UI */
+/** Airtable-style multi-select vs Single-select UI with Create Option */
+/** Airtable-style multi-select vs Single-select UI */
 const CellDropdown = React.memo(function CellDropdown({
   value, options, onCommit, onCancel, onOutsideClick, 
   placeholder = 'Select...', tagClass, isMinimal = false,
-  autoOpen = false, // CHANGE THIS FROM true TO false
-  isMulti = false 
+  autoOpen = false, isMulti = false 
 }: {
   value: string | string[]; options: string[]; onCommit: (v: string) => void; 
   onCancel: () => void; onOutsideClick?: () => void;
@@ -203,17 +207,12 @@ const CellDropdown = React.memo(function CellDropdown({
 }) {
   const [open, setOpen] = useState(autoOpen); 
   const [search, setSearch] = useState('');
-  const [inputHighlight, setInputHighlight] = useState(false);
-  
   const ref = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
-  const openRef = useRef(open);
-  openRef.current = open;
 
-  // Normalize value to array
+  // Parse the current value into a clean array
   const selectedValues = useMemo(() => {
     if (Array.isArray(value)) return value;
-    // Convert to string first to handle Numbers (like Year) or null values
     const strVal = (value !== null && value !== undefined) ? String(value) : '';
     return strVal.split(',').map(v => v.trim()).filter(Boolean);
   }, [value]);
@@ -223,121 +222,130 @@ const CellDropdown = React.memo(function CellDropdown({
   useEffect(() => {
     const h = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
-        if (openRef.current) { setOpen(false); setSearch(''); }
+        if (open) { setOpen(false); setSearch(''); }
         if (onOutsideClick) onOutsideClick();
       }
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
-  }, [onOutsideClick]);
+  }, [open, onOutsideClick]);
+
+  const pick = (val: string) => {
+    const trimmedVal = val.trim();
+    if (!trimmedVal) return;
+
+    if (isMulti) {
+      // Toggle logic: If exists, remove it. If not, add it.
+      const isSelected = selectedValues.includes(trimmedVal);
+      const nextArray = isSelected
+        ? selectedValues.filter(v => v !== trimmedVal)
+        : [...selectedValues, trimmedVal];
+      
+      onCommit(nextArray.join(', '));
+      // Menu stays open for multi-select
+    } else {
+      onCommit(trimmedVal);
+      setOpen(false);
+      setSearch('');
+    }
+  };
 
   const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
-  const canCreate = !!search.trim() && !options.some(o => o.toLowerCase() === search.trim().toLowerCase());
-
- const pick = (val: string) => {
-    if (isMulti) {
-      const next = selectedValues.includes(val) 
-        ? selectedValues.filter(v => v !== val) 
-        : [...selectedValues, val];
-      onCommit(next.join(', '));
-      setSearch(''); // Keep open for multi-select
-    } else {
-      setSearch('');
-      setOpen(false);
-      onCommit(String(val)); // Ensure we commit as a string
-    }
-  };
-
-  const triggerAddNew = (e: React.MouseEvent) => {
-    e.preventDefault();
-    setSearch('');
-    setInputHighlight(true);
-    setTimeout(() => { searchRef.current?.focus(); }, 0);
-    setTimeout(() => setInputHighlight(false), 800);
-  };
+  const canCreate = search.trim() !== '' && !options.some(o => o.toLowerCase() === search.toLowerCase().trim());
 
   return (
-    <div ref={ref} className="relative w-full h-full flex items-center">
-      {/* Standardized Trigger Area */}
-      <div 
-        className={`w-full min-h-full relative flex items-center flex-wrap gap-1 transition-all group cursor-pointer ${
-          isMinimal ? 'bg-transparent px-1 py-1' : 'px-8 bg-white border border-slate-200 rounded-xl shadow-sm'
-        }`} 
-        onClick={() => setOpen(v => !v)}
-      >
-        {selectedValues.length > 0 ? (
-          selectedValues.map((v, i) => (
-            <span key={i} className={getTagStyle(v)}>
+    <div ref={ref} className="relative w-full h-full flex items-center min-h-[36px]">
+      
+      {/* ─── TRIGGER AREA ─── */}
+      {isMulti ? (
+        <div className="w-full h-full flex items-center flex-wrap gap-1.5 px-2 py-1">
+          {selectedValues.map((v, i) => (
+            <span key={i} className={`${getTagStyle(v)} flex items-center gap-1 shadow-none border-slate-200`}>
               {v}
-              {isMulti && (
-                <button 
-                  onMouseDown={(e) => { e.stopPropagation(); pick(v); }}
-                  className="ml-1 hover:text-black/50"
-                >
-                  &times;
-                </button>
-              )}
+              <button onMouseDown={(e) => { e.stopPropagation(); pick(v); }} className="hover:bg-black/10 rounded-full p-0.5">
+                <X className="h-2.5 w-2.5" />
+              </button>
             </span>
-          ))
-        ) : (
-          <span className="text-[11px] font-bold text-slate-400 uppercase tracking-widest pl-2">{placeholder}</span>
-        )}
-        <ChevronDown className={`absolute right-1.5 h-3.5 w-3.5 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
-      </div>
+          ))}
+          <button 
+            className={`flex items-center justify-center h-6 w-6 rounded-md border transition-all ${open ? 'bg-blue-600 border-blue-700 text-white' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600'}`}
+            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setOpen(!open); }}
+          >
+            <Plus className={`h-3.5 w-3.5 ${open ? 'rotate-45' : ''}`} />
+          </button>
+          {selectedValues.length === 0 && !open && <span className="text-[11px] text-slate-300 italic ml-1">Select multiple...</span>}
+        </div>
+      ) : (
+        <div className="w-full h-full flex items-center justify-between px-3 py-1 cursor-pointer" onClick={() => setOpen(!open)}>
+          <div className="flex-1 truncate">
+            {selectedValues.length > 0 ? (
+              <span className={getTagStyle(selectedValues[0])}>{selectedValues[0]}</span>
+            ) : (
+              <span className="text-[11px] text-slate-400 uppercase tracking-widest font-bold">{placeholder}</span>
+            )}
+          </div>
+          <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform ${open ? 'rotate-180' : ''}`} />
+        </div>
+      )}
 
+      {/* ─── DROPDOWN MENU ─── */}
       {open && (
-        <div className="absolute z-[9999] top-full left-0 mt-1 min-w-[200px] w-full bg-white border border-slate-200 rounded-xl shadow-2xl">
-          <div className="p-2 border-b border-slate-100">
-           <input
-  ref={searchRef}
-  className={`w-full text-[12px] px-2.5 py-1.5 rounded-lg border bg-white outline-none text-black placeholder:text-slate-400 transition-all ${
-    inputHighlight
-      ? 'border-blue-400 ring-2 ring-blue-200'
-      : 'border-slate-200 focus:border-blue-400 focus:ring-2 focus:ring-blue-100'
-  }`}
-  placeholder={inputHighlight ? 'Type name for new option…' : 'Search or type new…'}
-  value={search}
-  onChange={e => setSearch(e.target.value)}
-  onKeyDown={e => {
-    if (e.key === 'Escape') { setOpen(false); onCancel(); }
-    if (e.key === 'Enter') { 
-      if (canCreate) pick(search.trim());
-      else if (filtered.length > 0) pick(filtered[0]);
-    }
-  }}
-/>
+        <div className="absolute z-[9999] top-full left-0 mt-1 min-w-[240px] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+          {/* Search Header */}
+          <div className="p-2 border-b border-slate-100 bg-slate-50/50">
+            <input
+              ref={searchRef}
+              className="w-full text-[12px] text-black px-2.5 py-1.5 rounded-lg border border-slate-200 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 bg-white"
+              placeholder="Search options..."
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onKeyDown={(e) => {
+                if (e.key === 'Enter' && canCreate) pick(search);
+                if (e.key === 'Escape') setOpen(false);
+              }}
+            />
           </div>
 
-          <div className="max-h-52 overflow-y-auto py-1">
+          {/* Scrollable List */}
+          <div className="max-h-60 overflow-y-auto py-1 thin-scrollbar">
             {filtered.map(opt => {
               const isSelected = selectedValues.includes(opt);
               return (
                 <div 
                   key={opt} 
-                  className={`px-3 py-2 text-[12px] cursor-pointer flex items-center gap-2.5 transition-colors hover:bg-slate-50 ${isSelected ? 'bg-slate-50' : ''}`} 
+                  className={`px-3 py-2 text-[12px] cursor-pointer flex items-center justify-between hover:bg-slate-50 transition-colors ${isSelected ? 'bg-blue-50/50 font-bold text-blue-700' : 'text-slate-700'}`} 
                   onMouseDown={e => { e.preventDefault(); pick(opt); }}
                 >
-                  <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${isSelected ? 'bg-blue-500 border-blue-500' : 'border-slate-200'}`}>
-                    {isSelected && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
-                  </div>
-                  <span className={getTagStyle(opt)}>{opt}</span> 
+                  <span className={getTagStyle(opt)}>{opt}</span>
+                  {isSelected && <Check className="h-3.5 w-3.5 text-blue-600" strokeWidth={3} />}
                 </div>
               );
             })}
+            
+            {filtered.length === 0 && !canCreate && (
+              <div className="px-4 py-8 text-center text-[11px] text-slate-400 italic">No matches found</div>
+            )}
           </div>
 
-          <div className="border-t border-slate-100">
-            <div className="px-3 py-2 text-[12px] cursor-pointer text-blue-600 font-medium hover:bg-blue-50 flex items-center gap-1.5 transition-colors" onMouseDown={canCreate ? (e) => { e.preventDefault(); pick(search.trim()); } : triggerAddNew}>
+          {/* Persistent Create Footer */}
+          <div className="border-t border-slate-100 bg-slate-50/80 p-1">
+            <button 
+              className={`w-full flex items-center gap-2 px-3 py-2 text-[12px] rounded-lg transition-colors ${canCreate ? 'text-blue-600 font-bold hover:bg-blue-100' : 'text-slate-400 cursor-not-allowed'}`}
+              onMouseDown={e => { 
+                e.preventDefault(); 
+                if (canCreate) pick(search);
+              }}
+              disabled={!canCreate}
+            >
               <Plus className="h-3.5 w-3.5" />
-              {canCreate ? `Create "${search.trim()}"` : "Add new option…"}
-            </div>
+              {canCreate ? `Create "${search}"` : "Type to add new tag"}
+            </button>
           </div>
         </div>
       )}
     </div>
   );
 });
-
 /** Airtable-style multi-chip linked-record picker */
 const SessionPicker = React.memo(function SessionPicker({
   value, allSessions, onCommit, onCancel
@@ -525,7 +533,24 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   const inputCls = "w-full h-10 bg-white border border-slate-200 rounded-xl px-3.5 text-[13px] font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all";
   const readonlyCls = "w-full h-10 bg-slate-50 border border-slate-100 rounded-xl px-3.5 text-[13px] text-slate-400 flex items-center italic";
 
-  const renderField = (col: string) => {
+ const renderField = (col: string) => {
+  // Check for ANY auto-filled columns (Session or Event)
+  const isAutoFilled = 
+    col.includes('(from Session)') || 
+    col.includes('(from 🕘 Session)') || 
+    col.toLowerCase().includes('(from event)'); // <--- Added this
+
+  if (isAutoFilled) {
+    return (
+      <div className="w-full h-10 bg-slate-100 border border-slate-200 rounded-xl px-3.5 text-[13px] font-semibold text-slate-500 flex items-center gap-2 group/readonly">
+        <span className="truncate">{draft[col] || '—'}</span>
+        <div className="ml-auto opacity-0 group-hover/readonly:opacity-100 transition-opacity">
+           <Badge variant="outline" className="text-[8px] border-slate-300 text-slate-400 uppercase tracking-tighter">Auto-Filled</Badge>
+        </div>
+      </div>
+    );
+  }
+  
     if (isLinked && col === 'Session') {
       return (
         <CellDropdown
@@ -559,9 +584,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
         />
       );
     }
-    if (isLinked && col.includes('(from Session)')) {
-      return <div className={readonlyCls}>{draft[col] || '—'}</div>;
-    }
+   
     if ((isEv && (col === 'DateFrom' || col === 'DateTo')) || (isSe && col === 'Date')) {
       return (
         <input type="date" className={inputCls}
@@ -1484,6 +1507,14 @@ const getColumnType = (col: string): FieldType => {
   if (['Occasion', 'Occasion (from Session)', 'Tags'].includes(col)) return 'badge_multi';
   if (['City', 'City (from Session)', 'City (from 🕘 Session)', 'Dept', 'TaskGroup', 'Indoor/Outdoor LED?'].includes(col)) return 'badge';
   if (['SessionType', 'SessionType (from Session)', 'Category', 'Time Of Day', 'TimeOfDay', 'TimeOfDay (from Session)'].includes(col)) return 'badge';
+ if ([
+    'SessionType', 'Category', 'Time Of Day', 'TimeOfDay', 
+    'Typical Timeline', 'Period', 'PlayedAt', 'GuidanceFrom', 'City','People Involved',
+    'Indoor/Outdoor LED?', 'CntrPitch', 'SidePitch', 'OtherLed1', 'OtherLed2', 'Vendor',
+    'Dept', 'Status',
+    'Source', 'Plays' // <--- Added Tracks fields
+  ].includes(col)) return 'badge';
+if (['Status', 'status'].includes(col)) return 'status';
   if (['Notes', 'Details', 'Guidance/Learning', 'ShareData', 'ProposalsList', 'attachmentSummary', 'Lyrics', 'notes'].includes(col)) return 'long_text';
   if (['Attachments', 'Attachment', 'FileLink', 'TrackID (link)'].includes(col)) return 'url';
   if (['EmailId'].includes(col)) return 'email';
@@ -1535,10 +1566,10 @@ case 'text':
       ) : empty;
     // ----------------------------------------------
 
-    case 'yes_no':
-      return val === 'Yes'
-        ? <Badge className="bg-green-100 text-green-700 border border-green-200 text-[11px] px-2">Yes</Badge>
-        : <Badge className="bg-slate-100 text-slate-500 border border-slate-200 text-[11px] px-2">No</Badge>;
+   case 'yes_no':
+  return (val === 'Yes' || val === true || val === 'true') ? (
+    <Check className="h-4 w-4 text-green-600 mx-auto" strokeWidth={4} />
+  ) : null;
 
     case 'status':
       return val
@@ -1553,8 +1584,12 @@ case 'text':
         ? <a href={val} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px]">Link</a>
         : empty;
     
-    case 'long_text':
-      return <span className="text-slate-500 italic text-[13px] truncate block">{val ? (String(val).length > 60 ? String(val).substring(0, 60) + '…' : String(val)) : empty}</span>;
+   case 'long_text':
+  return val ? (
+    <div className="text-[13px] text-slate-700 leading-normal whitespace-normal break-words text-left px-1">
+      {String(val)}
+    </div>
+  ) : empty;
     
     case 'checkbox':
       return (val === 'true' || val === true)
@@ -1618,6 +1653,97 @@ const getTableColumns = (includeHidden = false) => {
   const hidden = hiddenColumns[activeTable] || [];
   return all.filter(col => !hidden.includes(col));
 };
+const handleToggleYesNo = async (item: any, col: string) => {
+  const val = item[col];
+  const isChecked = val === 'Yes' || val === true || val === 'true';
+  const nextVal = isChecked ? 'No' : 'Yes';
+  const updatedItem = { ...item, [col]: nextVal };
+
+  let collection = '';
+  switch (activeTable) {
+    case 'Events': collection = 'events'; break;
+    case 'Session': collection = 'sessions'; break;
+    case 'MusicLog': collection = 'musiclog'; break;
+    case 'Tracks': collection = 'media'; break;
+    case 'VideoLog': collection = 'videolog'; break;
+    case 'LED': collection = 'led_details'; break;
+    case 'DyatraChecklist': collection = 'checklist'; break;
+    case 'DataSharing': collection = 'locations'; break;
+    default: collection = activeTable.toLowerCase();
+  }
+
+  try {
+    const id = item._id || item.id;
+    await window.fetch(`/api/${collection}/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedItem)
+    });
+    fetchAllData(); // Refresh table
+  } catch (error) {
+    console.error("Toggle Error:", error);
+  }
+};
+
+
+// 1. Database Update Helper for Ratings
+// Helper to update ratings in the database
+// 1. Rating Update Helper
+const handleSetRating = async (item: any, col: string, newValue: number) => {
+  const updatedItem = { ...item, [col]: newValue };
+  try {
+    const id = item._id || item.id;
+    await window.fetch(`/api/musiclog/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedItem)
+    });
+    fetchAllData(); 
+  } catch (error) {
+    console.error("Rating Update Error:", error);
+  }
+};
+
+// 2. Exact Design Star Component
+const StarRating = ({ value, onSave }: { value: any; onSave: (val: number) => void }) => {
+  const [hover, setHover] = useState<number | null>(null);
+  const currentRating = Number(value) || 0;
+
+  return (
+    <div 
+      className="flex items-center justify-center gap-0.5 h-full w-full group/rating"
+      onMouseLeave={() => setHover(null)}
+    >
+      {[1, 2, 3, 4, 5].map((index) => {
+        const isHoveringCell = hover !== null;
+        const isYellow = index <= (hover ?? currentRating);
+        
+        // This is the faint color from your image: a light grayish-blue
+        const faintColorCls = "text-[#dee2e6] fill-[#dee2e6]"; 
+        const yellowColorCls = "text-yellow-400 fill-yellow-400 scale-110";
+
+        return (
+          <Star
+            key={index}
+            size={14}
+            className={`transition-all duration-150 cursor-pointer ${
+              isYellow 
+                ? yellowColorCls 
+                : isHoveringCell 
+                  ? faintColorCls 
+                  : 'text-transparent fill-transparent'
+            }`}
+            onMouseEnter={() => setHover(index)}
+            onClick={(e) => {
+              e.stopPropagation();
+              onSave(index);
+            }}
+          />
+        );
+      })}
+    </div>
+  );
+};
 
 const renderRow = (item: any) => {
   const cols = getTableColumns();
@@ -1659,6 +1785,41 @@ const renderRow = (item: any) => {
     {cols.map((col, i) => {
       const isPrimary = col === primaryKey;
       const style = cellStyle(col);
+      const val = item[col];
+       const type = getColumnType(col);
+      const isLongText = type === 'long_text';
+
+         if (activeTable === 'MusicLog' && col === 'Relevance') {
+          return (
+            <td key={col} style={style} className="border-r border-b border-slate-200 text-center bg-white h-[40px]">
+              <StarRating value={val} onSave={(newVal) => handleSetRating(item, col, newVal)} />
+            </td>
+          );
+        }
+      // ── 1. INTERACTIVE YES/NO CHECKBOX (NEW LOGIC) ──
+        if (type === 'yes_no') {
+          const isChecked = val === 'Yes' || val === true || val === 'true';
+          return (
+            <td
+              key={col}
+              style={style}
+              className="border-r border-b border-slate-200 text-center relative group/checkbox cursor-pointer hover:bg-slate-50 transition-colors h-[40px]"
+              onClick={(e) => {
+                e.stopPropagation();
+                handleToggleYesNo(item, col); 
+              }}
+            >
+              <div className="flex items-center justify-center h-full w-full">
+                {isChecked ? (
+                  <Check className="h-4 w-4 text-green-600" strokeWidth={4} />
+                ) : (
+                  <div className="h-3.5 w-3.5 rounded border border-slate-300 bg-white opacity-0 group-hover/checkbox:opacity-100 transition-opacity shadow-sm" />
+                )}
+              </div>
+            </td>
+          );
+        }
+
 
       // ── UNIFIED SESSION LINK LOGIC (Covers all tables) ──
       const sessionFieldNames = ['Sessions', 'Session', 'Imported table', '🕘 Session'];
@@ -1667,7 +1828,11 @@ const renderRow = (item: any) => {
         const names = typeof val === 'string' ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
         
         return (
-          <td key={col} className={cellCls} style={style}>
+          <td 
+          key={col} 
+          className={`${isLongText ? 'px-4 py-2' : cellCls} ${isLongText ? 'whitespace-normal' : ''}`} 
+          style={style}
+        >
             <div className="flex flex-wrap gap-1.5 justify-center overflow-hidden">
               {names.length > 0 ? names.map((sName, idx) => {
                 const linked = sessions.find((s: any) => s["Session Name"] === sName);
@@ -1759,21 +1924,29 @@ const renderRow = (item: any) => {
         }
 
         // ── PRIMARY COLUMN ────────────────────────────────────────────────
-        if (isPrimary) {
-          const val = item[col] || item[col.toLowerCase()];
+       if (isPrimary) {
+          const primaryVal = item[col] || item[col.toLowerCase()] || '';
           return (
             <td key={col} className={primaryCls} style={style}>
-              {val || primaryFallback}
+              {primaryVal || primaryFallback}
             </td>
           );
         }
 
         // ── TYPE-DRIVEN for all other columns ─────────────────────────────
         return (
-          <td key={col} className={cellCls} style={style}>
-            {renderCell(col, item)}
-          </td>
-        );
+  <td 
+    key={col} 
+    className={`${
+      getColumnType(col) === 'long_text' 
+        ? 'px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] whitespace-normal text-left align-top' 
+        : cellCls
+    }`} 
+    style={style}
+  >
+    {renderCell(col, item)}
+  </td>
+);
       })}
     </>
   );
@@ -2425,17 +2598,14 @@ const renderEditInputs = (_item: any) => {
   const isLinked = isML || isVL;
 
   const inputCls    = (col: string) => `w-full h-8 bg-white border-2 border-blue-500 rounded-md px-2.5 text-[12px] font-medium text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-200 outline-none${editingCell === col ? ' text-center' : ''}`;
-  const readonlyCls = "w-full h-8 bg-slate-50 border border-slate-200 rounded-md px-2.5 text-[12px] text-slate-400 flex items-center italic select-none cursor-not-allowed";
   const saveKeys    = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleUpdateRecord(); if (e.key === 'Escape') { setEditingId(null); setEditDraft(null); setEditingCell(null); } };
 
-  // Commit a single-field change and save immediately (avoids React async state issue)
   const commitField = (col: string, val: string) => {
     const nd = { ...editDraft, [col]: val };
     setEditDraft(nd);
     handleUpdateRecord(nd);
   };
 
-  // Compute session auto-fill patch and save
   const commitSession = (sessionName: string) => {
     const s = sessions.find((x: any) => x["Session Name"] === sessionName);
     const patch: any = { Session: sessionName };
@@ -2464,174 +2634,154 @@ const renderEditInputs = (_item: any) => {
 
   return (
     <>
-       {cols.map((col, i) => (
-        <td
-          key={i}
-          className={`border-r border-b bg-white cursor-text transition-colors ${
-            isActiveCell(col) 
-              ? 'p-0 border-blue-400 ring-2 ring-inset ring-blue-300 overflow-visible' 
-              : `px-4 py-3 border-slate-200 hover:bg-slate-50/60 overflow-hidden${i > 0 ? ' text-center' : ''}`
-          }`}
-          style={{ width: gw(col), minWidth: gw(col), maxWidth: gw(col), height: '40px' }}
-          onClick={() => setEditingCell(col)}
-        >
-          {(() => {
-            // ── AUTO-FILLED "from Session" — always readonly ─────────────────
-            if (isLinked && col.includes('(from Session)')) {
-              return <div className={readonlyCls}>{editDraft[col] || 'auto'}</div>;
-            }
-
-            // ── INACTIVE CELL — use renderCell for type-driven formatting ──
-            if (!isActiveCell(col)) {
-  // 1. UNIFIED SESSION LINK LOGIC (Add this here)
-  const sessionFieldNames = ['Sessions', 'Session', 'Imported table', '🕘 Session'];
-  if (sessionFieldNames.includes(col)) {
-    const val = editDraft[col] || '';
-    const names = typeof val === 'string' ? val.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
-    return names.length > 0
-      ? <div className="flex flex-wrap gap-1.5 justify-center overflow-hidden">
-          {names.map((sName: string, i: number) => {
-            const linked = sessions.find((s: any) => s["Session Name"] === sName);
-            return (
-              <Badge key={i} className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30' : 'bg-slate-100 text-slate-700 border border-slate-300'}`}>
-                {sName}
-                {linked && <ArrowUpRight className="inline h-3 w-3 ml-0.5 opacity-60" />}
-              </Badge>
-            );
-          })}
-        </div>
-      : <span className="text-slate-300 italic text-[12px]">—</span>;
-  }
-              // Track bold accent (MusicLog)
-              if (isML && col === 'Track') {
-                return <span className="text-[13px] font-bold text-brand-accent truncate block">{editDraft[col] || <span className="text-slate-300 italic text-[12px]">—</span>}</span>;
-              }
-              // Everything else: type-driven
-              return renderCell(col, editDraft);
-            }
-
-            // ── ACTIVE CELL BELOW ────────────────────────────────────────────
-
-            // ── LINKED SESSION (MusicLog / VideoLog) ─────────────────────────
-            if (isLinked && col === 'Session') {
-              return (
-                <CellDropdown
-                  value={editDraft['Session'] || ''}
-                  options={sessions.map((s: any) => s["Session Name"])}
-                  onCommit={commitSession}
-                  onCancel={() => { setEditingId(null); setEditDraft(null); }}
-                  placeholder="Select session…"
-                  tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20"
-                />
-              );
-            }
-            // ── DATE FIELDS ─────────────────────────────────────────────────
-            if ((isEv && (col === 'DateFrom' || col === 'DateTo')) || (isSe && col === 'Date')) {
-              return <input type="date" className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={handleUpdateRecord} onKeyDown={saveKeys} autoFocus />;
-            }
-            // ── EVENTS: SESSIONS multi-chip ──────────────────────────────────
-            if (isEv && col === 'Sessions') {
-              return (
-                <SessionPicker
-                  value={editDraft['Sessions'] || ''}
-                  allSessions={sessions}
-                  onCommit={val => commitField('Sessions', val)}
-                  onCancel={() => { setEditingId(null); setEditDraft(null); }}
-                />
-              );
-            }
-            // ── DROPDOWN FIELDS ──────────────────────────────────────────────
-            let opts: string[] = [];
-            if (isEv && col === 'Occasion')
-              opts = [...new Set(events.map((e: any) => e.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
-            else if ((isEv || isSe) && col === 'City')
-              opts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
-            else if (isEv && col === 'Year') {
-              const yr = new Date().getFullYear();
-              opts = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
-            } else if (isSe && col === 'Occasion')
-              opts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
-            else if (isSe && col === 'Time Of Day')
-              opts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
-            else if (isSe && col === 'SessionType')
-              opts = [...new Set(sessions.map((s: any) => s.SessionType).filter(Boolean))].sort() as string[];
-            else if (isSe && col === 'Parent Event')
-              opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
-
-            const tagClass = UNIFORM_DROPDOWN_STYLE;
-
-if (opts.length > 0 || isEv || isSe) {
-  const colType = getColumnType(col);
-  const isMulti = colType === 'badge_multi';
-
+      {cols.map((col, i) => {
+        const isAutoFilled = col.includes('(from Session)') || col.includes('(from 🕘 Session)') || col.toLowerCase().includes('(from event)');
+        const isActuallyActive = editingCell === col && !isAutoFilled;
+        
+        // 1. Get the Type first
+        const colType = getColumnType(col);
+        const isMulti = colType === 'badge_multi';
+        const isSingleBadge = colType === 'badge' || colType === 'status' || colType === 'select';
+if (getColumnType(col) === 'long_text') {
   return (
-    <CellDropdown
+    <textarea
+      autoFocus
+      className={`${inputCls(col)} h-24 py-2 resize-none whitespace-normal text-left align-top`}
       value={editDraft[col] || ''}
-      options={opts}
-      onCommit={val => commitField(col, val)}
-      onCancel={() => { 
-        setEditingId(null); 
-        setEditDraft(null); 
-        setEditingCell(null); 
+      onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
+      onBlur={() => handleUpdateRecord()}
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' && !e.shiftKey) { 
+          e.preventDefault();
+          handleUpdateRecord();
+        }
       }}
-      onOutsideClick={() => handleUpdateRecord()}
-      placeholder={`Select ${col}…`}
-      isMinimal={true}
-      autoOpen={true} // <--- KEEP THIS TRUE HERE
-      isMulti={isMulti}
     />
   );
 }
-            // ── EXTRA COLUMN — use field type ────────────────────────────────
-            const extraColType = (extraColumns[activeTable] || []).includes(col)
-              ? (columnTypes[activeTable]?.[col] || 'text')
-              : null;
-            if (extraColType === 'checkbox') {
+        return (
+          <td
+            key={i}
+            className={`border-r border-b bg-white transition-colors ${
+              isActuallyActive 
+                ? 'p-0 border-blue-400 ring-2 ring-inset ring-blue-300 overflow-visible' 
+                : isAutoFilled 
+                  ? 'px-4 py-3 bg-slate-50/50 cursor-not-allowed' 
+                  : `px-4 py-3 border-slate-200 hover:bg-slate-50/60 overflow-hidden${i > 0 ? ' text-center' : ''}`
+            }`}
+            style={{ width: gw(col), minWidth: gw(col), maxWidth: gw(col), height: '40px' }}
+            onClick={() => !isAutoFilled && setEditingCell(col)}
+          >
+            {(() => {
+              if (isAutoFilled) {
+                return (
+                  <div className="flex items-center justify-center h-full opacity-60 italic select-none">
+                    {renderCell(col, editDraft)}
+                  </div>
+                );
+              }
+
+              if (!isActuallyActive) {
+                const sessionFieldNames = ['Sessions', 'Session', 'Imported table', '🕘 Session'];
+                if (sessionFieldNames.includes(col)) {
+                  const val = editDraft[col] || '';
+                  const names = typeof val === 'string' ? val.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
+                  return names.length > 0
+                    ? <div className="flex flex-wrap gap-1.5 justify-center overflow-hidden">
+                        {names.map((sName: string, idx: number) => {
+                          const linked = sessions.find((s: any) => s["Session Name"] === sName);
+                          return (
+                            <Badge key={idx} className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30' : 'bg-slate-100 text-slate-700 border border-slate-300'}`}>
+                              {sName}
+                            </Badge>
+                          );
+                        })}
+                      </div>
+                    : <span className="text-slate-300 italic text-[12px]">—</span>;
+                }
+                return renderCell(col, editDraft);
+              }
+
+              // ── DROPDOWN OPTIONS LOGIC ──
+              let opts: string[] = [];
+
+              if (activeTable === 'Tracks' && ['Source', 'Plays'].includes(col)) {
+                opts = [...new Set(media.filter((m: any) => m.type === 'track' || m.Type === 'track' || m["Title"]).map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
+              }
+              else if ((activeTable === 'VideoSetup' || activeTable === 'AudioSetup') && col === 'Status') {
+                opts = [...new Set([...videoSetup.map((item: any) => item['Status']), ...audioSetup.map((item: any) => item['Status'])].filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
+              }
+              else if (activeTable === 'DataSharing' && col === 'Dept') {
+                opts = [...new Set(locations.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
+              }
+              else if (activeTable === 'LED' && ['Indoor/Outdoor LED?', 'CntrPitch', 'SidePitch', 'OtherLed1', 'OtherLed2', 'Vendor'].includes(col)) {
+                opts = [...new Set(ledDetails.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
+              }
+              else if (activeTable === 'Guidance & Learning' && ['City', 'GuidanceFrom', 'Category'].includes(col)) {
+                opts = [...new Set(guidance.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
+              }
+              else if (activeTable === 'DyatraChecklist' && ['Typical Timeline', 'Category', 'Period', 'People Involved'].includes(col)) {
+                opts = [...new Set(checklist.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
+              }
+              else if (activeTable === 'MusicLog' && col === 'PlayedAt') {
+                opts = [...new Set(musicLogs.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
+              }
+              else if (isEv && (col === 'Occasion' || col === 'City' || col === 'Year')) {
+                 if (col === 'Year') {
+                   const yr = new Date().getFullYear();
+                   opts = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
+                 } else {
+                   opts = [...new Set(events.map((e: any) => e[col]).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort();
+                 }
+              }
+              else if (isSe && ['City', 'Occasion', 'Time Of Day', 'SessionType', 'Parent Event'].includes(col)) {
+                 if (col === 'Parent Event') opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort();
+                 else opts = [...new Set(sessions.map((s: any) => s[col]).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort();
+              }
+
+              // ── RENDER CONDITION: ONLY IF TYPE IS BADGE OR MULTI-BADGE ──
+              if (isMulti || isSingleBadge || (isLinked && col === 'Session')) {
+                return (
+                  <CellDropdown
+                    value={editDraft[col] || ''}
+                    options={opts}
+                    isMulti={isMulti}
+                    onCommit={val => col === 'Session' ? commitSession(val) : commitField(col, val)}
+                    onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
+                    onOutsideClick={() => handleUpdateRecord()}
+                    placeholder={`Select ${col}…`}
+                    isMinimal={true}
+                    autoOpen={false}  
+                  />
+                );
+              }
+
+              // ── Standard Inputs for everything else (Notes, Details, etc.) ──
+              if (colType === 'checkbox') {
+                return <input type="checkbox" checked={editDraft[col] === 'true' || editDraft[col] === true} onChange={e => commitField(col, e.target.checked ? 'true' : 'false')} className="h-4 w-4 rounded accent-brand-primary cursor-pointer" />;
+              }
+              
+              if (colType === 'date') {
+                 return <input type="date" className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => handleUpdateRecord()} onKeyDown={saveKeys} autoFocus />;
+              }
+
               return (
                 <input
-                  type="checkbox"
-                  checked={editDraft[col] === 'true' || editDraft[col] === true}
-                  onChange={e => commitField(col, e.target.checked ? 'true' : 'false')}
-                  className="h-4 w-4 rounded accent-brand-primary cursor-pointer"
+                  autoFocus
+                  className={inputCls(col)}
+                  value={editDraft[col] || ''}
+                  onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
+                  onBlur={() => handleUpdateRecord()}
+                  onKeyDown={saveKeys}
                 />
               );
-            }
-            if (extraColType === 'number') {
-              return <input type="number" autoFocus className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={handleUpdateRecord} onKeyDown={saveKeys} />;
-            }
-            if (extraColType === 'date') {
-              return <input type="date" autoFocus className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={handleUpdateRecord} onKeyDown={saveKeys} />;
-            }
-            if (extraColType === 'select') {
-              const allVals = (getActiveData() as any[]).map((r: any) => r[col]).filter(Boolean).map(String);
-              const selOpts = [...new Set(allVals)].sort();
-              return <CellDropdown value={editDraft[col] || ''} options={selOpts} onCommit={val => commitField(col, val)} onCancel={() => { setEditingId(null); setEditDraft(null); }} placeholder={`Select ${col}…`} />;
-            }
-            if (extraColType === 'email') {
-              return <input type="email" autoFocus className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={handleUpdateRecord} onKeyDown={saveKeys} />;
-            }
-            if (extraColType === 'url') {
-              return <input type="url" autoFocus className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={handleUpdateRecord} onKeyDown={saveKeys} />;
-            }
-
-            // ── DEFAULT TEXT INPUT ───────────────────────────────────────────
-            return (
-              <input
-                autoFocus
-                className={inputCls(col)}
-                value={editDraft[col] || ''}
-                onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
-                onBlur={handleUpdateRecord}
-                onKeyDown={saveKeys}
-              />
-            );
-          })()}
-        </td>
-      ))}
+            })()}
+          </td>
+        );
+      })}
     </>
   );
 };
-
 const startInlineAdd = () => {
   setInlineRecord({});
   setIsInlineAdding(true);
