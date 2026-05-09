@@ -210,7 +210,6 @@ const CellDropdown = React.memo(function CellDropdown({
   const ref = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
 
-  // Parse the current value into a clean array
   const selectedValues = useMemo(() => {
     if (Array.isArray(value)) return value;
     const strVal = (value !== null && value !== undefined) ? String(value) : '';
@@ -222,8 +221,11 @@ const CellDropdown = React.memo(function CellDropdown({
   useEffect(() => {
     const h = (e: MouseEvent) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
-        if (open) { setOpen(false); setSearch(''); }
-        if (onOutsideClick) onOutsideClick();
+        if (open) { 
+          setOpen(false); 
+          setSearch(''); 
+          if (onOutsideClick) onOutsideClick(); // Final save happens here
+        }
       }
     };
     document.addEventListener('mousedown', h);
@@ -235,14 +237,13 @@ const CellDropdown = React.memo(function CellDropdown({
     if (!trimmedVal) return;
 
     if (isMulti) {
-      // Toggle logic: If exists, remove it. If not, add it.
       const isSelected = selectedValues.includes(trimmedVal);
       const nextArray = isSelected
         ? selectedValues.filter(v => v !== trimmedVal)
         : [...selectedValues, trimmedVal];
       
+      // Update parent draft but don't close
       onCommit(nextArray.join(', '));
-      // Menu stays open for multi-select
     } else {
       onCommit(trimmedVal);
       setOpen(false);
@@ -256,9 +257,9 @@ const CellDropdown = React.memo(function CellDropdown({
   return (
     <div ref={ref} className="relative w-full h-full flex items-center min-h-[36px]">
       
-      {/* ─── TRIGGER AREA ─── */}
+      {/* TRIGGER AREA */}
       {isMulti ? (
-        <div className="w-full h-full flex items-center flex-wrap gap-1.5 px-2 py-1">
+        <div className="w-full h-full flex items-center flex-wrap gap-1.5 px-2 py-1 cursor-text" onClick={() => setOpen(true)}>
           {selectedValues.map((v, i) => (
             <span key={i} className={`${getTagStyle(v)} flex items-center gap-1 shadow-none border-slate-200`}>
               {v}
@@ -288,10 +289,9 @@ const CellDropdown = React.memo(function CellDropdown({
         </div>
       )}
 
-      {/* ─── DROPDOWN MENU ─── */}
+      {/* DROPDOWN MENU */}
       {open && (
         <div className="absolute z-[9999] top-full left-0 mt-1 min-w-[240px] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden flex flex-col">
-          {/* Search Header */}
           <div className="p-2 border-b border-slate-100 bg-slate-50/50">
             <input
               ref={searchRef}
@@ -306,7 +306,6 @@ const CellDropdown = React.memo(function CellDropdown({
             />
           </div>
 
-          {/* Scrollable List */}
           <div className="max-h-60 overflow-y-auto py-1 thin-scrollbar">
             {filtered.map(opt => {
               const isSelected = selectedValues.includes(opt);
@@ -316,25 +315,24 @@ const CellDropdown = React.memo(function CellDropdown({
                   className={`px-3 py-2 text-[12px] cursor-pointer flex items-center justify-between hover:bg-slate-50 transition-colors ${isSelected ? 'bg-blue-50/50 font-bold text-blue-700' : 'text-slate-700'}`} 
                   onMouseDown={e => { e.preventDefault(); pick(opt); }}
                 >
-                  <span className={getTagStyle(opt)}>{opt}</span>
-                  {isSelected && <Check className="h-3.5 w-3.5 text-blue-600" strokeWidth={3} />}
+                  <div className="flex items-center gap-2">
+                    {isMulti && (
+                       <div className={`h-3.5 w-3.5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
+                         {isSelected && <Check className="h-2.5 w-2.5 text-white" strokeWidth={4} />}
+                       </div>
+                    )}
+                    <span className={getTagStyle(opt)}>{opt}</span>
+                  </div>
                 </div>
               );
             })}
-            
-            {filtered.length === 0 && !canCreate && (
-              <div className="px-4 py-8 text-center text-[11px] text-slate-400 italic">No matches found</div>
-            )}
+            {filtered.length === 0 && !canCreate && <div className="px-4 py-8 text-center text-[11px] text-slate-400 italic">No matches found</div>}
           </div>
 
-          {/* Persistent Create Footer */}
           <div className="border-t border-slate-100 bg-slate-50/80 p-1">
             <button 
               className={`w-full flex items-center gap-2 px-3 py-2 text-[12px] rounded-lg transition-colors ${canCreate ? 'text-blue-600 font-bold hover:bg-blue-100' : 'text-slate-400 cursor-not-allowed'}`}
-              onMouseDown={e => { 
-                e.preventDefault(); 
-                if (canCreate) pick(search);
-              }}
+              onMouseDown={e => { e.preventDefault(); if (canCreate) pick(search); }}
               disabled={!canCreate}
             >
               <Plus className="h-3.5 w-3.5" />
@@ -1690,15 +1688,23 @@ const handleToggleYesNo = async (item: any, col: string) => {
 // Helper to update ratings in the database
 // 1. Rating Update Helper
 const handleSetRating = async (item: any, col: string, newValue: number) => {
-  const updatedItem = { ...item, [col]: newValue };
+  // If user clicks the same rating that already exists, toggle it off (optional, Airtable style)
+  const currentVal = Number(item[col]) || 0;
+  const finalVal = currentVal === newValue ? 0 : newValue;
+
+  const updatedItem = { ...item, [col]: finalVal };
   try {
     const id = item._id || item.id;
-    await window.fetch(`/api/musiclog/${id}`, {
+    const response = await window.fetch(`/api/musiclog/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedItem)
     });
-    fetchAllData(); 
+
+    if (response.ok) {
+      // Local state update for immediate feedback
+      setMusicLogs(prev => prev.map(m => (m._id === id || m.id === id) ? updatedItem : m));
+    }
   } catch (error) {
     console.error("Rating Update Error:", error);
   }
@@ -1706,38 +1712,34 @@ const handleSetRating = async (item: any, col: string, newValue: number) => {
 
 // 2. Exact Design Star Component
 const StarRating = ({ value, onSave }: { value: any; onSave: (val: number) => void }) => {
-  const [hover, setHover] = useState<number | null>(null);
+  const [hoverIdx, setHoverIdx] = useState<number>(0);
   const currentRating = Number(value) || 0;
 
   return (
     <div 
-      className="flex items-center justify-center gap-0.5 h-full w-full group/rating"
-      onMouseLeave={() => setHover(null)}
+      className="flex items-center justify-center gap-1 h-full w-full group/rating-box cursor-pointer"
+      onMouseLeave={() => setHoverIdx(0)}
     >
-      {[1, 2, 3, 4, 5].map((index) => {
-        const isHoveringCell = hover !== null;
-        const isYellow = index <= (hover ?? currentRating);
-        
-        // This is the faint color from your image: a light grayish-blue
-        const faintColorCls = "text-[#dee2e6] fill-[#dee2e6]"; 
-        const yellowColorCls = "text-yellow-400 fill-yellow-400 scale-110";
+      {[1, 2, 3, 4, 5].map((star) => {
+        const isYellow = star <= (hoverIdx || currentRating);
+        // "Ghost" stars appear when hovering the container, but not yet specific stars
+        const isGhost = !isYellow; 
 
         return (
           <Star
-            key={index}
+            key={star}
             size={14}
-            className={`transition-all duration-150 cursor-pointer ${
-              isYellow 
-                ? yellowColorCls 
-                : isHoveringCell 
-                  ? faintColorCls 
-                  : 'text-transparent fill-transparent'
-            }`}
-            onMouseEnter={() => setHover(index)}
+            onMouseEnter={() => setHoverIdx(star)}
             onClick={(e) => {
               e.stopPropagation();
-              onSave(index);
+              onSave(star);
             }}
+            // We use standard colors that are definitely visible
+            className={`transition-all duration-75 ${
+              isYellow 
+                ? "text-yellow-400 fill-yellow-400 scale-110" 
+                : "text-transparent fill-transparent group-hover/rating-box:text-slate-200 group-hover/rating-box:fill-slate-200"
+            }`}
           />
         );
       })}
@@ -1789,13 +1791,20 @@ const renderRow = (item: any) => {
        const type = getColumnType(col);
       const isLongText = type === 'long_text';
 
-         if (activeTable === 'MusicLog' && col === 'Relevance') {
-          return (
-            <td key={col} style={style} className="border-r border-b border-slate-200 text-center bg-white h-[40px]">
-              <StarRating value={val} onSave={(newVal) => handleSetRating(item, col, newVal)} />
-            </td>
-          );
-        }
+      if (activeTable === 'MusicLog' && col === 'Relevance') {
+  return (
+    <td 
+      key={col} 
+      style={style} 
+      className="border-r border-b border-slate-200 text-center bg-white h-[40px] group/star-cell p-0"
+    >
+      <StarRating 
+        value={val} 
+        onSave={(newVal) => handleSetRating(item, col, newVal)} 
+      />
+    </td>
+  );
+}
       // ── 1. INTERACTIVE YES/NO CHECKBOX (NEW LOGIC) ──
         if (type === 'yes_no') {
           const isChecked = val === 'Yes' || val === true || val === 'true';
@@ -2597,15 +2606,23 @@ const renderEditInputs = (_item: any) => {
   const isVL = activeTable === 'VideoLog';
   const isLinked = isML || isVL;
 
-  const inputCls    = (col: string) => `w-full h-8 bg-white border-2 border-blue-500 rounded-md px-2.5 text-[12px] font-medium text-slate-900 placeholder:text-slate-400 focus:ring-2 focus:ring-blue-200 outline-none${editingCell === col ? ' text-center' : ''}`;
-  const saveKeys    = (e: React.KeyboardEvent) => { if (e.key === 'Enter') handleUpdateRecord(); if (e.key === 'Escape') { setEditingId(null); setEditDraft(null); setEditingCell(null); } };
+  const inputCls = (col: string) => 
+  `w-full h-full bg-transparent border-none focus:border-none focus:ring-0 
+   px-2 py-0 text-[12px] font-bold text-slate-900 outline-none shadow-none
+   ${editingCell === col ? 'text-center' : ''}`;
+  const saveKeys    = (e: React.KeyboardEvent) => { 
+    if (e.key === 'Enter') handleUpdateRecord(); 
+    if (e.key === 'Escape') { setEditingId(null); setEditDraft(null); setEditingCell(null); } 
+  };
 
   const commitField = (col: string, val: string) => {
     const nd = { ...editDraft, [col]: val };
     setEditDraft(nd);
     handleUpdateRecord(nd);
   };
-
+const updateDraftOnly = (col: string, val: string) => {
+    setEditDraft({ ...editDraft, [col]: val }); // Only updates UI state, keeps edit mode open
+  };
   const commitSession = (sessionName: string) => {
     const s = sessions.find((x: any) => x["Session Name"] === sessionName);
     const patch: any = { Session: sessionName };
@@ -2630,35 +2647,30 @@ const renderEditInputs = (_item: any) => {
     handleUpdateRecord(nd);
   };
 
-  const isActiveCell = (col: string) => editingCell === col;
-
   return (
     <>
       {cols.map((col, i) => {
+
+        if (activeTable === 'MusicLog' && col === 'Relevance') {
+          return (
+            <td key={col} style={{ width: gw(col) }} className="border-r border-b border-slate-200 text-center bg-white h-[40px]">
+              <StarRating 
+                value={editDraft[col]} 
+                onSave={(newVal) => {
+                  const nd = { ...editDraft, [col]: newVal };
+                  setEditDraft(nd);
+                  handleUpdateRecord(nd);
+                }} 
+              />
+            </td>
+          );
+        }
         const isAutoFilled = col.includes('(from Session)') || col.includes('(from 🕘 Session)') || col.toLowerCase().includes('(from event)');
         const isActuallyActive = editingCell === col && !isAutoFilled;
-        
-        // 1. Get the Type first
         const colType = getColumnType(col);
         const isMulti = colType === 'badge_multi';
         const isSingleBadge = colType === 'badge' || colType === 'status' || colType === 'select';
-if (getColumnType(col) === 'long_text') {
-  return (
-    <textarea
-      autoFocus
-      className={`${inputCls(col)} h-24 py-2 resize-none whitespace-normal text-left align-top`}
-      value={editDraft[col] || ''}
-      onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
-      onBlur={() => handleUpdateRecord()}
-      onKeyDown={(e) => {
-        if (e.key === 'Enter' && !e.shiftKey) { 
-          e.preventDefault();
-          handleUpdateRecord();
-        }
-      }}
-    />
-  );
-}
+
         return (
           <td
             key={i}
@@ -2681,6 +2693,9 @@ if (getColumnType(col) === 'long_text') {
                 );
               }
 
+
+
+              // Only show the input/editor if THIS specific cell is active
               if (!isActuallyActive) {
                 const sessionFieldNames = ['Sessions', 'Session', 'Imported table', '🕘 Session'];
                 if (sessionFieldNames.includes(col)) {
@@ -2702,9 +2717,30 @@ if (getColumnType(col) === 'long_text') {
                 return renderCell(col, editDraft);
               }
 
-              // ── DROPDOWN OPTIONS LOGIC ──
-              let opts: string[] = [];
+              // --- RENDER EDITORS (Only for isActuallyActive) ---
+              
+              // Handle Long Text (Moved inside the proper gate)
+              if (colType === 'long_text') {
+                return (
+                  <textarea
+                    autoFocus
+                    className={`${inputCls(col)} h-24 py-2 resize-none whitespace-normal text-left align-top`}
+                    value={editDraft[col] || ''}
+                    onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
+                    onBlur={() => handleUpdateRecord()}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter' && !e.shiftKey) { 
+                        e.preventDefault();
+                        handleUpdateRecord();
+                      }
+                      if (e.key === 'Escape') { setEditingId(null); setEditingCell(null); }
+                    }}
+                  />
+                );
+              }
 
+              let opts: string[] = [];
+              // ... (Keep all your existing 'opts' logic exactly as it is)
               if (activeTable === 'Tracks' && ['Source', 'Plays'].includes(col)) {
                 opts = [...new Set(media.filter((m: any) => m.type === 'track' || m.Type === 'track' || m["Title"]).map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
               }
@@ -2739,24 +2775,24 @@ if (getColumnType(col) === 'long_text') {
                  else opts = [...new Set(sessions.map((s: any) => s[col]).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort();
               }
 
-              // ── RENDER CONDITION: ONLY IF TYPE IS BADGE OR MULTI-BADGE ──
               if (isMulti || isSingleBadge || (isLinked && col === 'Session')) {
                 return (
                   <CellDropdown
                     value={editDraft[col] || ''}
                     options={opts}
                     isMulti={isMulti}
-                    onCommit={val => col === 'Session' ? commitSession(val) : commitField(col, val)}
+                     onCommit={val => {
+                      if (isMulti) updateDraftOnly(col, val); 
+                      else col === 'Session' ? commitSession(val) : commitField(col, val);
+                    }}
                     onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
                     onOutsideClick={() => handleUpdateRecord()}
                     placeholder={`Select ${col}…`}
                     isMinimal={true}
-                    autoOpen={false}  
                   />
                 );
               }
 
-              // ── Standard Inputs for everything else (Notes, Details, etc.) ──
               if (colType === 'checkbox') {
                 return <input type="checkbox" checked={editDraft[col] === 'true' || editDraft[col] === true} onChange={e => commitField(col, e.target.checked ? 'true' : 'false')} className="h-4 w-4 rounded accent-brand-primary cursor-pointer" />;
               }
@@ -4518,14 +4554,20 @@ if (!health?.mongodb) {
               return;
             }
             // Detect which column cell was clicked via DOM position
-            const td = (e.target as HTMLElement).closest('td');
-            const tr = td?.closest('tr');
-            if (td && tr) {
-              const tds = Array.from(tr.querySelectorAll('td'));
-              const tdIdx = tds.indexOf(td as HTMLTableCellElement) - 1; // -1 for checkbox col
-              const clickedCol = getTableColumns()[tdIdx];
-              if (clickedCol) setEditingCell(clickedCol);
-            }
+      const td = (e.target as HTMLElement).closest('td');
+  const tr = td?.closest('tr');
+  if (td && tr) {
+    const tds = Array.from(tr.querySelectorAll('td'));
+    const tdIdx = tds.indexOf(td as HTMLTableCellElement) - 1; 
+    const clickedCol = getTableColumns()[tdIdx];
+
+    // FIX: If clicking the star column, STOP and do not setEditingId
+    if (activeTable === 'MusicLog' && clickedCol === 'Relevance') {
+      return; 
+    }
+    
+    if (clickedCol) setEditingCell(clickedCol);
+  }
             setEditingId(row.data?._id || row.data?.id);
             const d: any = { ...row.data };
             ['DateFrom', 'DateTo', 'Date'].forEach(k => {

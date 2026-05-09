@@ -6,6 +6,7 @@ export type RentalStatus = 'booked' | 'delivered' | 'returned';
 export type MediaType = 'music' | 'video';
 
 export interface Event {
+  
   id: string;
   name: string;
   date: string;
