@@ -468,6 +468,12 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   const isML = tableName === 'MusicLog';
   const isVL = tableName === 'VideoLog';
   const isLinked = isML || isVL;
+  const isGuide = tableName === 'Guidance & Learning';
+  const isTracks = tableName === 'Tracks';
+  const isLED = tableName === 'LED';
+  const isDS = tableName === 'DataSharing';
+  const isVSetup = tableName === 'VideoSetup';
+  const isASetup = tableName === 'AudioSetup';
 
   const commit = (col: string, val: string) => {
     const nd = { ...draftRef.current, [col]: val };
@@ -507,7 +513,37 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     if (isML) return makeGroups([
       { label: 'Session Context', fields: ['Session', 'Parent Event (from Session)', 'Date (from Session)'] },
       { label: 'Track Details', fields: ['Track', 'Order', 'PlayedAt', 'Theme', 'Relevance'] },
-      { label: 'Notes & Remarks', fields: ['notes', 'ppgRemarks', 'topic', 'cue'] },
+      { label: 'Notes & Remarks', fields: ['Notes', 'PPG', 'Topic', 'Cue'] },
+    ]);
+    if (isVL) return makeGroups([
+      { label: 'Session Context', fields: ['Session', 'VideoPlayId'] },
+      { label: 'Auto-filled', fields: ['Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)'] },
+      { label: 'Video Details', fields: ['VideoTitle', 'Duration', 'ProposalsList'] },
+    ]);
+    if (isGuide) return makeGroups([
+      { label: 'Basic Info', fields: ['LearningId', 'Event', 'City'] },
+      { label: 'Auto-filled', fields: ['DateFrom (from Event)', 'DateTo (from Event)', 'Year (from Event)'] },
+      { label: 'Content', fields: ['GuidanceFrom', 'Guidance/Learning', 'Category', 'Attachments'] },
+    ]);
+    if (isTracks) return makeGroups([
+      { label: 'Track Info', fields: ['Title', 'Artist', 'Album'] },
+      { label: 'Specs', fields: ['Duration', 'DurationTime', 'BPM', 'Key'] },
+      { label: 'Source & Tags', fields: ['Source', 'FileLink', 'Tags', 'LexiconID', 'Lyrics'] },
+    ]);
+    if (isLED) return makeGroups([
+      { label: 'Session Link', fields: ['🕘 Session', 'LedId', 'Indoor/Outdoor LED?', 'is Led Required?'] },
+      { label: 'Centre LED', fields: ['CentreLed', 'CntrPitch', 'CntrWdth', 'CntrHt', 'CntrRiser', 'Stageht'] },
+      { label: 'Side LED', fields: ['SideLed', 'SidePitch', 'SideWdth', 'SideHt'] },
+      { label: 'Aux LED', fields: ['OtherLed1', 'OtherPitch', 'OtherWdth', 'OtherHt', 'OtherLed2', 'Other2Wdth', 'Other2Ht'] },
+      { label: 'Power & Vendor', fields: ['DGUseedKva', 'BackupPower', 'Vendor', 'Images'] },
+    ]);
+    if (isDS) return makeGroups([
+      { label: 'Contact Info', fields: ['Sevak', 'Dept', 'EmailId'] },
+      { label: 'Data Sharing', fields: ['ShareFacts?', 'ShareData'] },
+    ]);
+    if (isVSetup || isASetup) return makeGroups([
+      { label: 'Setup Details', fields: ['Name', 'Assignee', 'Status'] },
+      { label: 'Notes & Links', fields: ['Notes', 'Attachments', 'Attachment Summary'] },
     ]);
     // Generic: chunk into groups of 3
     const chunks: { label: string; fields: string[] }[] = [];
@@ -602,6 +638,56 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
         />
       );
     }
+    if (isLED && col === '🕘 Session') {
+      return (
+        <CellDropdown
+          value={draft['🕘 Session'] || ''}
+          options={sessions.map((s: any) => s["Session Name"])}
+          onCommit={val => commit('🕘 Session', val)}
+          onCancel={onClose}
+          placeholder="Select session…"
+          tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20"
+        />
+      );
+    }
+    if (col === 'Indoor/Outdoor LED?') {
+      const curVal = draft[col];
+      return (
+        <div className="flex gap-2">
+          {['Indoor', 'Outdoor'].map(opt => (
+            <button key={opt} type="button" onClick={() => commit(col, opt)}
+              className={`flex-1 h-11 rounded-xl border text-[12px] font-black uppercase tracking-widest transition-all ${
+                curVal === opt ? 'bg-slate-800 text-white border-slate-800 shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+              }`}>{opt}</button>
+          ))}
+        </div>
+      );
+    }
+    if (col.endsWith('?')) {
+      const curVal = draft[col];
+      return (
+        <div className="flex gap-2">
+          {['Yes', 'No'].map(opt => (
+            <button key={opt} type="button" onClick={() => commit(col, opt)}
+              className={`flex-1 h-11 rounded-xl border text-[12px] font-black uppercase tracking-widest transition-all ${
+                curVal === opt ? 'bg-brand-primary text-white border-brand-primary shadow-sm' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'
+              }`}>{opt}</button>
+          ))}
+        </div>
+      );
+    }
+    if (col === 'Relevance' && isML) {
+      const val = Number(draft[col]) || 0;
+      return (
+        <div className="flex gap-1.5 py-1">
+          {[1,2,3,4,5].map(star => (
+            <button key={star} type="button" onClick={() => commit(col, String(star))}
+              className={`text-3xl transition-all active:scale-90 ${val >= star ? 'text-yellow-400' : 'text-slate-200'}`}
+            >★</button>
+          ))}
+        </div>
+      );
+    }
     let opts: string[] = [];
     if (isEv && col === 'Occasion')
       opts = [...new Set(events.map((e: any) => e.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
@@ -618,22 +704,38 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
       opts = [...new Set(sessions.map((s: any) => s.SessionType).filter(Boolean))].sort() as string[];
     else if (isSe && col === 'Parent Event')
       opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
+    else if ((isVSetup || isASetup) && col === 'Status')
+      opts = ['Ready', 'Pending', 'In Progress', 'Done'];
+    else if (isML && col === 'Theme')
+      opts = [...new Set(sessions.flatMap((s: any) => (s.Theme || '').split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+    else if (isGuide && col === 'City')
+      opts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+    else if (isGuide && col === 'Category')
+      opts = ['Satsang', 'Kirtan', 'Discourse', 'Meditation', 'Prayer', 'Other'];
+    else if (isGuide && col === 'Event')
+      opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
 
   const tagClass = UNIFORM_DROPDOWN_STYLE;
 
-if (opts.length > 0 || (isEv && (col === 'Occasion' || col === 'City' || col === 'Year')) || (isSe && (col === 'City' || col === 'Occasion' || col === 'Time Of Day' || col === 'SessionType' || col === 'Parent Event'))) {
+const hasDropdown = opts.length > 0
+  || (isEv && (col === 'Occasion' || col === 'City' || col === 'Year'))
+  || (isSe && (col === 'City' || col === 'Occasion' || col === 'Time Of Day' || col === 'SessionType' || col === 'Parent Event'))
+  || ((isVSetup || isASetup) && col === 'Status')
+  || (isGuide && (col === 'City' || col === 'Category' || col === 'Event'));
+if (hasDropdown) {
   return (
     <CellDropdown
-      value={draft[col] || ''} // Changed from editDraft to draft
+      value={draft[col] || ''}
       options={opts}
-      onCommit={val => commit(col, val)} // Changed from commitField to commit
+      onCommit={val => commit(col, val)}
       onCancel={onClose}
       placeholder={`Select ${col}…`}
       tagClass={tagClass}
     />
   );
 }
-    if (col === 'Notes' || col === 'notes' || col === 'proposalsList' || col === 'Details' || col === 'guidanceLearning') {
+    const longTextCols = new Set(['Notes', 'notes', 'proposalsList', 'Details', 'guidanceLearning', 'ShareData', 'Guidance/Learning', 'Lyrics', 'ProposalsList', 'Attachment Summary', 'attachmentSummary', 'Topic', 'Cue', 'PPG']);
+    if (longTextCols.has(col)) {
       return (
         <textarea className={`${inputCls} h-28 resize-none py-2.5`}
           value={draft[col] || ''}
@@ -988,6 +1090,8 @@ const [isSortOpen, setIsSortOpen] = useState(false);
   const [isMobileView, setIsMobileView] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
   const [addWizardStep, setAddWizardStep] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
+  const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
+  const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
   const [newRecord, setNewRecord] = useState<any>({});
   const [loginError, setLoginError] = useState<string | null>(null);
   const [health, setHealth] = useState<{ mongodb: boolean, mongodbError?: string } | null>(null);
@@ -3135,7 +3239,7 @@ if (!health?.mongodb) {
           ].map((item) => (
             <button
               key={item.label}
-              onClick={() => { setActiveTable(item.label); setViewingRecord(null); }}
+              onClick={() => { setActiveTable(item.label); setViewingRecord(null); if (isMobileView) setIsSidebarOpen(false); }}
               title={!isSidebarOpen ? item.label : ""}
               className={`w-full flex items-center rounded-xl transition-all duration-200 group
               ${isSidebarOpen ? 'px-4 py-3 gap-4' : 'p-3 justify-center'}
@@ -3215,17 +3319,27 @@ if (!health?.mongodb) {
       <Menu className="h-6 w-6" />
     </Button>
 
-    {/* Search Input (Placed on the far left) */}
+    {/* Search Input — desktop always visible, mobile toggle */}
     {activeTable !== 'Home' && (
-   <div className="relative hidden sm:block">
-  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
-  <Input
-    placeholder="Search..."
-    value={searchQuery}
-    onChange={(e) => setSearchQuery(e.target.value)}
-    className="bg-brand-bg w-[120px] md:w-[180px] pl-8 h-9 text-xs text-black dark:text-white"
-  />
-</div>
+      <>
+        {/* Desktop search */}
+        <div className="relative hidden sm:block">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
+          <Input
+            placeholder="Search..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="bg-brand-bg w-[120px] md:w-[180px] pl-8 h-9 text-xs text-black dark:text-white"
+          />
+        </div>
+        {/* Mobile search icon toggle */}
+        <button
+          className="sm:hidden p-2 rounded-lg text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10 transition-colors"
+          onClick={() => setMobileSearchOpen(v => !v)}
+        >
+          {mobileSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
+        </button>
+      </>
     )}
   </div>
 
@@ -3381,9 +3495,20 @@ if (!health?.mongodb) {
   </div>
   )}
 
+  {/* Mobile filter/sort button */}
+  {activeTable !== 'Home' && (
+    <button
+      className="sm:hidden p-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-brand-primary hover:border-brand-primary/30 transition-colors relative"
+      onClick={() => setMobileFilterOpen(true)}
+    >
+      <Layers className="h-4 w-4" />
+      {(groupByField || sortBy) && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
+    </button>
+  )}
+
   {/* 4. NEW RECORD BUTTON */}
   {activeTable !== 'Home' && <Button
-    onClick={handleAddBlankRow} // Changed from inline-adding state to the direct DB function
+    onClick={handleAddBlankRow}
     className="bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-4 shadow-md flex items-center gap-2 transition-transform active:scale-95 ml-1"
   >
     <Plus className="h-4 w-4" />
@@ -3394,6 +3519,27 @@ if (!health?.mongodb) {
 
 </div>
 </header>
+
+      {/* Mobile search bar (expands below header when toggled) */}
+      {activeTable !== 'Home' && mobileSearchOpen && (
+        <div className="sm:hidden px-4 py-2.5 bg-white border-b border-slate-200 shrink-0">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <input
+              autoFocus
+              placeholder={`Search ${activeTable}…`}
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              className="w-full h-10 bg-slate-50 border border-slate-200 rounded-xl pl-9 pr-10 text-[13px] font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all"
+            />
+            {searchQuery && (
+              <button onClick={() => setSearchQuery('')} className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600">
+                <X className="h-4 w-4" />
+              </button>
+            )}
+          </div>
+        </div>
+      )}
 
       {/* Mobile-only active filter bar */}
       {activeTable !== 'Home' && (groupByField || sortBy) && (
@@ -3419,6 +3565,57 @@ if (!health?.mongodb) {
               <X className="h-3 w-3" />
             </button>
           )}
+        </div>
+      )}
+
+      {/* Mobile Filter / Sort bottom sheet */}
+      {mobileFilterOpen && (
+        <div className="fixed inset-0 z-[600] flex items-end" style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }} onClick={() => setMobileFilterOpen(false)}>
+          <div className="w-full bg-white rounded-t-3xl shadow-2xl" onClick={e => e.stopPropagation()} style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}>
+            {/* Handle */}
+            <div className="flex justify-center pt-3 pb-1">
+              <div className="w-10 h-1 bg-slate-300 rounded-full" />
+            </div>
+            {/* Header */}
+            <div className="px-5 pt-2 pb-3 flex items-center justify-between border-b border-slate-100">
+              <h2 className="text-[15px] font-black text-slate-900 tracking-tight">Filter & Sort</h2>
+              <button onClick={() => setMobileFilterOpen(false)} className="p-1.5 rounded-xl hover:bg-slate-100">
+                <X className="h-4 w-4 text-slate-400" />
+              </button>
+            </div>
+            {/* Group By */}
+            <div className="px-5 py-4 border-b border-slate-100">
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                <Layers className="h-3 w-3" /> Group By
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <button onClick={() => setGroupByField(null)} className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase border transition-all ${!groupByField ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>None</button>
+                {getTableColumns().map(col => (
+                  <button key={col} onClick={() => setGroupByField(col)} className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase border transition-all ${groupByField === col ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>{col}</button>
+                ))}
+              </div>
+            </div>
+            {/* Sort By */}
+            <div className="px-5 py-4">
+              <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
+                <ArrowUpDown className="h-3 w-3" /> Sort By
+              </div>
+              <div className="flex flex-wrap gap-2 mb-3">
+                <button onClick={() => setSortBy(null)} className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase border transition-all ${!sortBy ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}>None</button>
+                {getTableColumns().map(col => (
+                  <button key={col} onClick={() => setSortBy(s => s?.field === col ? { field: col, direction: s.direction === 'asc' ? 'desc' : 'asc' } : { field: col, direction: 'asc' })} className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase border transition-all ${sortBy?.field === col ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}>
+                    {col}{sortBy?.field === col ? (sortBy.direction === 'asc' ? ' ↑' : ' ↓') : ''}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Apply button */}
+            <div className="px-5 pt-2">
+              <button onClick={() => setMobileFilterOpen(false)} className="w-full h-12 bg-brand-primary text-white rounded-2xl text-[12px] font-black uppercase tracking-widest shadow-lg shadow-brand-primary/25 hover:bg-brand-primary/90 transition-colors">
+                Apply
+              </button>
+            </div>
+          </div>
         </div>
       )}
 
@@ -3620,208 +3817,151 @@ if (!health?.mongodb) {
                 {viewMode === 'visual' ? (
                   activeTable === 'Events' ? (
   /* --- RESPONSIVE EVENTS GALLERY (Airtable Style) --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 py-6">
+  <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-6 py-4 sm:py-6">
     {[...filteredData]
-      .sort((a, b) => new Date(a.DateFrom).getTime() - new Date(b.DateFrom).getTime()) // Ascending by Date
+      .sort((a, b) => new Date(a.DateFrom).getTime() - new Date(b.DateFrom).getTime())
       .map((item: any) => (
-        <motion.div 
-          key={item.id || item._id} 
+        <motion.div
+          key={item.id || item._id}
           onClick={() => setViewingRecord(item)}
           whileHover={{ y: -4 }}
-          className="bg-white border border-slate-200 rounded-[20px] p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[300px]"
+          className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[180px] sm:min-h-[300px] overflow-hidden"
         >
-          {/* 1. EVENT NAME HEADER */}
-          <div className="text-l font-black text-slate-900 mb-6 leading-tight line-clamp-2">
+          {/* EVENT NAME */}
+          <div className="text-[13px] sm:text-base font-black text-slate-900 mb-2 sm:mb-6 leading-tight line-clamp-2">
             {item["Event Name"] || item.EventName || "Untitled Event"}
           </div>
 
-          {/* 2. FIELDS LIST (MATCHING SCREENSHOT) */}
-          <div className="space-y-5 flex-1">
-            {/* EventID Field */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                EventID
-              </label>
-              <div className="text-[13px] font-medium text-slate-600 pl-0.5">
-                — {/* Replace with item.EventID if available in your data */}
-              </div>
+          {/* FIELDS */}
+          <div className="space-y-2 sm:space-y-5 flex-1">
+            <div className="space-y-0.5">
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">DateFrom</label>
+              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateFrom || "—"}</div>
             </div>
-
-            {/* DateFrom Field */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                DateFrom
-              </label>
-              <div className="text-[13px] font-bold text-slate-800 pl-0.5">
-                {item.DateFrom || "—"}
-              </div>
+            <div className="space-y-0.5">
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">DateTo</label>
+              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateTo || "—"}</div>
             </div>
-
-            {/* DateTo Field */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                DateTo
-              </label>
-              <div className="text-[13px] font-bold text-slate-800 pl-0.5">
-                {item.DateTo || "—"}
+            {item.Occasion && (
+              <div className="space-y-0.5">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Occasion</label>
+                <div className="flex flex-wrap gap-1 overflow-hidden">
+                  {String(item.Occasion).split(',').map((t: string, i: number) => (
+                    <span key={i} className={getTagStyle(t.trim())} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{t.trim()}</span>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
+            {item.Venue && (
+              <div className="hidden sm:block space-y-0.5">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Venue</label>
+                <div className="text-[11px] font-semibold text-slate-600 truncate">{item.Venue}</div>
+              </div>
+            )}
           </div>
-
-         
-         
         </motion.div>
       ))}
 
     {/* ADD EVENT CARD */}
-    <motion.div 
-      onClick={openAddModal} 
-      className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[300px]"
+    <motion.div
+      onClick={openAddModal}
+      className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"
     >
-      <Plus className="h-8 w-8 mb-2" />
-      <span className="text-[11px] font-black uppercase tracking-widest">New Event</span>
+      <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
+      <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Event</span>
     </motion.div>
   </div>
 ) : activeTable === 'Tracks' ? (
   /* --- TRACKS GALLERY VIEW (Airtable Style) --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 py-6">
+  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 py-4 sm:py-6">
     {filteredData.map((item: any) => (
-      <motion.div 
-        key={item.id || item._id} 
+      <motion.div
+        key={item.id || item._id}
         onClick={() => setViewingRecord(item)}
         whileHover={{ y: -2 }}
-        className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[220px]"
+        className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[150px] sm:min-h-[220px] overflow-hidden"
       >
-        {/* 1. TRACK TITLE */}
-        <div className="text-[14px] font-bold text-slate-900 mb-5 leading-tight line-clamp-2 border-b border-slate-50 pb-2">
+        {/* TRACK TITLE */}
+        <div className="text-[12px] sm:text-[14px] font-bold text-slate-900 mb-2 sm:mb-5 leading-tight line-clamp-2 border-b border-slate-50 pb-1 sm:pb-2">
           {item["Title"] || item.title || "Unknown Track"}
         </div>
 
-        {/* 2. CARD FIELDS */}
-        <div className="space-y-4 flex-1">
-          {/* Artist Field */}
+        {/* CARD FIELDS */}
+        <div className="space-y-2 sm:space-y-4 flex-1">
           <div className="space-y-0.5">
-            <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
-              Artist
-            </label>
-            <div className="text-[12px] font-semibold text-slate-700 truncate">
-              {item["Artist"] || item.artist || "—"}
-            </div>
+            <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Artist</label>
+            <div className="text-[11px] sm:text-[12px] font-semibold text-slate-700 truncate">{item["Artist"] || item.artist || "—"}</div>
           </div>
-
-          {/* Album Field */}
-          <div className="space-y-0.5">
-            <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
-              Album
-            </label>
-            <div className="text-[12px] font-semibold text-slate-500 truncate">
-              {item["Album"] || item.album || "—"}
-            </div>
+          <div className="hidden sm:block space-y-0.5">
+            <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Album</label>
+            <div className="text-[11px] font-semibold text-slate-500 truncate">{item["Album"] || item.album || "—"}</div>
           </div>
-
-          {/* Duration Field */}
           <div className="space-y-0.5">
-            <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
-              Duration
-            </label>
-            <div className="text-[12px] font-semibold text-slate-500 truncate">
-              {item["Duration"] || item.duration || "—"}
-            </div>
+            <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Duration</label>
+            <div className="text-[11px] font-semibold text-slate-500 font-mono">{item["Duration"] || item.duration || "—"}</div>
           </div>
         </div>
       </motion.div>
     ))}
 
     {/* ADD TRACK CARD */}
-    <motion.div 
-      onClick={openAddModal} 
-      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[220px]"
+    <motion.div
+      onClick={openAddModal}
+      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[150px] sm:min-h-[220px]"
     >
-      <Plus className="h-6 w-6 mb-2" />
-      <span className="text-[10px] font-black uppercase tracking-widest">Add track</span>
+      <Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" />
+      <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add track</span>
     </motion.div>
   </div>
 ) : activeTable === 'DataSharing' ? (
   /* --- DATA SHARING GALLERY VIEW (Airtable Style) --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 py-6">
-    {filteredData.map((item: any) => {
-      // Helper to match colors from the screenshot
-      const getDeptStyles = (dept: string) => {
-        const d = dept?.toLowerCase() || "";
-        if (d.includes("mgmt")) return "bg-amber-100 text-amber-700 border-amber-200";
-        if (d.includes("qc")) return "bg-cyan-100 text-cyan-700 border-cyan-200";
-        if (d.includes("mm")) return "bg-rose-100 text-rose-700 border-rose-200";
-        if (d.includes("lrd")) return "bg-slate-100 text-slate-700 border-slate-200";
-        if (d.includes("editing")) return "bg-blue-100 text-blue-700 border-blue-200";
-        return "bg-slate-50 text-slate-500 border-slate-200";
-      };
-
-      return (
-        <motion.div 
-          key={item.id || item._id} 
+  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 py-4 sm:py-6">
+    {filteredData.map((item: any) => (
+        <motion.div
+          key={item.id || item._id}
           onClick={() => setViewingRecord(item)}
           whileHover={{ y: -2 }}
-          className="bg-white border border-slate-200 rounded-xl p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[240px]"
+          className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[160px] sm:min-h-[240px] overflow-hidden"
         >
-          {/* 1. SEVAK NAME (HEADER) */}
-          <div className="text-[15px] font-bold text-slate-900 mb-4 truncate">
+          {/* SEVAK NAME */}
+          <div className="text-[13px] sm:text-[15px] font-bold text-slate-900 mb-2 sm:mb-4 truncate">
             {item["Sevak"] || "Unknown Sevak"}
           </div>
 
-          {/* 2. CARD FIELDS */}
-          <div className="space-y-4 flex-1">
-            {/* Dept Field */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
-                Dept
-              </label>
-              <Badge className={`px-2.5 py-0.5 text-[11px] font-bold rounded-full border shadow-sm ${getDeptStyles(item["Dept"])}`}>
-                {item["Dept"] || "—"}
-              </Badge>
+          {/* CARD FIELDS */}
+          <div className="space-y-2 sm:space-y-4 flex-1">
+            <div className="space-y-0.5 overflow-hidden">
+              <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Dept</label>
+              {item["Dept"] ? <span className={getTagStyle(item["Dept"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["Dept"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
             </div>
-
-            {/* Email Field */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
-                EmailId
-              </label>
-              <div className="text-[12px] font-medium text-slate-600 truncate">
-                {item["EmailId"] || "—"}
-              </div>
+            <div className="space-y-0.5 hidden sm:block">
+              <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Email</label>
+              <div className="text-[11px] font-medium text-slate-600 truncate">{item["EmailId"] || "—"}</div>
             </div>
-
-            {/* ShareFacts Field */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
-                ShareFacts?
-              </label>
+            <div className="space-y-0.5">
+              <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">ShareFacts?</label>
               <div className="pt-0.5">
-                {item["ShareFacts?"] === 'Yes' ? (
-                  <div className="flex items-center text-green-600">
-                     <CheckSquare className="h-4 w-4 fill-green-50" strokeWidth={3} />
-                  </div>
-                ) : (
-                  <span className="text-slate-300 italic text-[11px]">Yes</span>
-                )}
+                {item["ShareFacts?"] === 'Yes'
+                  ? <span className={getTagStyle('Yes')}>Yes</span>
+                  : <span className="text-slate-300 italic text-[10px]">No</span>}
               </div>
             </div>
           </div>
         </motion.div>
-      );
-    })}
+    ))}
 
     {/* ADD RECORD CARD */}
-    <motion.div 
-      onClick={openAddModal} 
-      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[240px]"
+    <motion.div
+      onClick={openAddModal}
+      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[160px] sm:min-h-[240px]"
     >
-      <Plus className="h-6 w-6 mb-2" />
-      <span className="text-[10px] font-black uppercase tracking-widest">Add record</span>
+      <Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" />
+      <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add record</span>
     </motion.div>
   </div>
 ) : activeTable === 'Guidance & Learning' ? (
   /* --- GUIDANCE & LEARNING GALLERY VIEW --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-4 py-6">
+  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 py-4 sm:py-6">
     {filteredData.map((item: any) => {
       // Logic to extract URL from Airtable format: (https://...)
       const attachmentString = item["Attachments"] || "";
@@ -3833,10 +3973,10 @@ if (!health?.mongodb) {
           key={item.id || item._id} 
           onClick={() => setViewingRecord(item)}
           whileHover={{ y: -2 }}
-          className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[380px]"
+          className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[240px] sm:min-h-[380px]"
         >
-          {/* 1. IMAGE AREA (Correctly parsing the Airtable URL) */}
-          <div className="h-48 w-full bg-slate-50 border-b border-slate-100 flex items-center justify-center overflow-hidden">
+          {/* IMAGE AREA */}
+          <div className="h-28 sm:h-48 w-full bg-slate-50 border-b border-slate-100 flex items-center justify-center overflow-hidden">
             {imageUrl ? (
               <img 
                 src={imageUrl} 
@@ -3859,13 +3999,11 @@ if (!health?.mongodb) {
 
             <div className="space-y-4 flex-1">
               {/* Event Field */}
-              <div className="space-y-1">
+              <div className="space-y-1 overflow-hidden">
                 <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
                   Event
                 </label>
-                <div className="inline-flex bg-slate-100 text-slate-700 px-2 py-0.5 rounded text-[12px] font-semibold border border-slate-200">
-                  {item["Event"] || "—"}
-                </div>
+                {item["Event"] ? <span className={getTagStyle(item["Event"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["Event"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
               </div>
 
               {/* DateFrom Field */}
@@ -3964,125 +4102,95 @@ if (!health?.mongodb) {
                     </div>
                   ) :activeTable === 'MusicLog' ? (
   /* --- RESPONSIVE MUSIC LOG GALLERY --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 py-6">
+  <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-6 py-4 sm:py-6">
     {filteredData.map((item: any) => (
-      <motion.div 
-        key={item.id || item._id} 
+      <motion.div
+        key={item.id || item._id}
         onClick={() => setViewingRecord(item)}
         whileHover={{ y: -4 }}
-        className="bg-white border border-slate-200 rounded-[24px] p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[340px]"
+        className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[24px] p-3 sm:p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[200px] sm:min-h-[340px] overflow-hidden"
       >
-        {/* 1. PLAY ID HEADER */}
-        <div className="text-4xl font-bold text-slate-900 mb-6">
+        {/* PLAY ID HEADER */}
+        <div className="text-2xl sm:text-4xl font-bold text-slate-900 mb-2 sm:mb-6">
           {item["PlayID"] || "0"}
         </div>
 
-        {/* 2. FIELDS CONTENT */}
-        <div className="space-y-5 flex-1">
-          {/* Session Field */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-              Session
-            </label>
-            <div className="inline-flex bg-slate-100 text-slate-700 px-3 py-1 rounded-lg text-[12px] font-bold border border-slate-200/50">
-              {item["Session"] || "—"}
+        {/* FIELDS CONTENT */}
+        <div className="space-y-2 sm:space-y-5 flex-1">
+          <div className="space-y-0.5 sm:space-y-1.5 overflow-hidden">
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Session</label>
+            {item["Session"] ? <span className={getTagStyle(item["Session"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["Session"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
+          </div>
+          <div className="space-y-0.5 sm:space-y-1.5">
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Track</label>
+            <div className="text-[11px] sm:text-[13px] font-bold text-brand-accent truncate">
+              {item["Track"] || "—"}
             </div>
           </div>
-
-          {/* Parent Event Field */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-              Parent Event (from Session)
-            </label>
-            <div className="inline-flex bg-blue-50 text-blue-600 px-3 py-1.5 rounded-lg text-[12px] font-bold border border-blue-100/60 leading-tight">
-              {item["Parent Event (from Session)"] || "—"}
-            </div>
+          <div className="hidden sm:block space-y-1.5 overflow-hidden">
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Parent Event</label>
+            {item["Parent Event (from Session)"] ? <span className={getTagStyle(item["Parent Event (from Session)"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["Parent Event (from Session)"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
           </div>
-
-          {/* Date Field */}
-          <div className="space-y-1.5">
-            <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-              Date (from Session)
-            </label>
-            <div className="text-[13px] font-bold text-slate-600 pl-1">
+          <div className="space-y-0.5 sm:space-y-1.5">
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Date</label>
+            <div className="text-[11px] font-bold text-slate-600 font-mono">
               {item["Date (from Session)"] || "—"}
             </div>
           </div>
         </div>
-
-       
       </motion.div>
     ))}
-                      <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-700 h-16 rounded-2xl text-slate-500 hover:text-brand-primary hover:border-brand-primary bg-slate-900/10 transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-5 w-5 mr-2" /> New Music Entry</Button>
+    <div className="col-span-2 md:col-span-1">
+      <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-700 h-14 sm:h-16 rounded-2xl text-slate-500 hover:text-brand-primary hover:border-brand-primary bg-slate-900/10 transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-5 w-5 mr-2" /> New Music Entry</Button>
+    </div>
                     </div>
                   ) : activeTable === 'VideoLog' ? (
   /* --- RESPONSIVE VIDEOLOG GALLERY (Airtable Style) --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-6 py-6">
-    {filteredData.map((item: any) => {
-      // Logic for City pill colors based on your screenshot
-      const getCityColor = (city: string) => {
-        const c = city?.toLowerCase() || "";
-        if (c.includes("dharampur")) return "bg-purple-100 text-purple-600 border-purple-200";
-        if (c.includes("ahmedabad")) return "bg-blue-100 text-blue-600 border-blue-200";
-        if (c.includes("mumbai")) return "bg-orange-100 text-orange-600 border-orange-200";
-        return "bg-slate-100 text-slate-600 border-slate-200";
-      };
-
-      return (
-        <motion.div 
-          key={item.id || item._id} 
+  <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-6 py-4 sm:py-6">
+    {filteredData.map((item: any) => (
+        <motion.div
+          key={item.id || item._id}
           onClick={() => setViewingRecord(item)}
           whileHover={{ y: -4 }}
-          className="bg-white border border-slate-200 rounded-[20px] p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[320px]"
+          className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[200px] sm:min-h-[320px] overflow-hidden"
         >
-          {/* 1. VIDEOPLAY ID */}
-          <div className="text-3xl font-bold text-slate-800 mb-6">
+          {/* VIDEOPLAY ID */}
+          <div className="text-xl sm:text-3xl font-bold text-slate-800 mb-2 sm:mb-6">
             {item["VideoPlayId"] || "0"}
           </div>
 
-          {/* 2. LABELED CONTENT */}
-          <div className="space-y-5 flex-1">
-            {/* Session Field */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                Session
-              </label>
-              <div className="inline-flex bg-slate-50 text-slate-700 px-3 py-1 rounded-md text-[12px] font-bold border border-slate-200/60">
-                {item["Session"] || "—"}
-              </div>
+          {/* LABELED CONTENT */}
+          <div className="space-y-2 sm:space-y-5 flex-1">
+            <div className="space-y-0.5 sm:space-y-1 overflow-hidden">
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Session</label>
+              {item["Session"] ? <span className={getTagStyle(item["Session"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["Session"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
             </div>
-
-            {/* Date Field */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                Date (from Session)
-              </label>
-              <div className="text-[13px] font-bold text-slate-600 pl-1">
+            <div className="space-y-0.5 sm:space-y-1">
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Date</label>
+              <div className="text-[11px] font-bold text-slate-600 font-mono">
                 {item["Date (from Session)"] || "—"}
               </div>
             </div>
-
-            {/* City Field (Colored Pill) */}
-            <div className="space-y-1">
-              <label className="text-[10px] font-bold text-slate-400 uppercase tracking-widest block">
-                City (from Session)
-              </label>
-              <div className={`inline-flex px-3 py-1 rounded-full text-[11px] font-black uppercase tracking-tight border ${getCityColor(item["City (from Session)"])}`}>
-                {item["City (from Session)"] || "—"}
-              </div>
+            <div className="space-y-0.5 sm:space-y-1 overflow-hidden">
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">City</label>
+              {item["City (from Session)"] ? <span className={getTagStyle(item["City (from Session)"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["City (from Session)"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
             </div>
+            {item["VideoTitle"] && (
+              <div className="hidden sm:block space-y-1">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Video Title</label>
+                <div className="text-[12px] font-semibold text-slate-700 truncate">{item["VideoTitle"]}</div>
+              </div>
+            )}
           </div>
-
-          {/* 3. VIDEO TITLE PILL (BOTTOM) */}
-          
         </motion.div>
-      );
-    })}
-                    <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-700 h-16 rounded-2xl text-slate-500 hover:text-indigo-400 hover:border-indigo-400 bg-slate-900/10 transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-5 w-5 mr-2" /> New Video Entry</Button>
+    ))}
+    <div className="col-span-2 lg:col-span-1">
+      <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-700 h-14 sm:h-16 rounded-2xl text-slate-500 hover:text-indigo-400 hover:border-indigo-400 bg-slate-900/10 transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-5 w-5 mr-2" /> New Video Entry</Button>
+    </div>
                   </div>
                   ) : (
                     /* --- 2. STANDARD GRID VIEW (Darker Borders) --- */
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
                   {filteredData.map((item: any) => (
                     <motion.div 
                       key={item.id || item._id} 
@@ -4237,9 +4345,7 @@ if (!health?.mongodb) {
                       </div>
                       <div className="space-y-1">
                         <p className="text-[8px] font-black text-slate-400 uppercase">Category</p>
-                        <Badge className="bg-brand-primary/10 text-brand-primary border-none text-[9px] px-2 py-0">
-                          {item["Category"]}
-                        </Badge>
+                        {item["Category"] ? <span className={getTagStyle(item["Category"])}>{item["Category"]}</span> : <span className="text-slate-500 italic text-[9px]">—</span>}
                       </div>
                     </div>
                   </div>
@@ -4254,9 +4360,7 @@ if (!health?.mongodb) {
                           <h3 className="text-lg font-black text-brand-text-main uppercase tracking-tight leading-tight">
                             {item["Sevak"]}
                           </h3>
-                          <span className="text-[10px] font-bold text-brand-primary uppercase tracking-widest">
-                            {item["Dept"]}
-                          </span>
+                          {item["Dept"] ? <span className={getTagStyle(item["Dept"])}>{item["Dept"]}</span> : null}
                        </div>
                     </div>
 
@@ -4276,9 +4380,7 @@ if (!health?.mongodb) {
                     <div className="pt-1">
                        <div className="flex items-center gap-2">
                           <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Facts Sharing:</span>
-                          <Badge className={`${item["ShareFacts?"] === 'Yes' ? 'bg-green-600' : 'bg-slate-400'} text-white border-none text-[8px] px-2 py-0`}>
-                            {item["ShareFacts?"] || 'DISABLED'}
-                          </Badge>
+                          <span className={getTagStyle(item["ShareFacts?"] || 'No')}>{item["ShareFacts?"] || 'No'}</span>
                        </div>
                     </div>
                   </div>
@@ -4292,9 +4394,9 @@ if (!health?.mongodb) {
                      
                     </div>
                     {item["Tags"] && (
-                       <div className="flex gap-1 overflow-hidden">
-                         {String(item["Tags"]).split(',').slice(0, 2).map((tag, i) => (
-                           <Badge key={i} className="bg-slate-800 text-[8px] px-1 py-0 border-none">{tag.trim()}</Badge>
+                       <div className="flex flex-wrap gap-1 overflow-hidden">
+                         {String(item["Tags"]).split(',').slice(0, 3).map((tag: string, i: number) => (
+                           <span key={i} className={getTagStyle(tag.trim())}>{tag.trim()}</span>
                          ))}
                        </div>
                     )}
@@ -5703,6 +5805,8 @@ if (!health?.mongodb) {
             },
           ];
         } else if (activeTable === 'DyatraChecklist') {
+          const checklistCategoryOpts = [...new Set(checklist.map((c: any) => c.Category).filter(Boolean))].sort() as string[];
+          const taskGroupOpts = [...new Set(checklist.map((c: any) => c.TaskGroup).filter(Boolean))].sort() as string[];
           wizardSteps = [
             {
               label: 'Task Details',
@@ -5710,12 +5814,200 @@ if (!health?.mongodb) {
                 <div className="space-y-5">
                   <div>
                     <label className={labelCls}>Task</label>
-                    <input className={inputCls} value={newRecord.task || ''} onChange={e => setNewRecord({...newRecord, task: e.target.value})} placeholder="Task description…" />
+                    <input className={inputCls} value={newRecord["Task"] || ''} onChange={e => setNewRecord({...newRecord, "Task": e.target.value})} placeholder="Task name…" />
                   </div>
                   <div>
-                    <label className={labelCls}>Category</label>
-                    <input className={inputCls} value={newRecord.category || ''} onChange={e => setNewRecord({...newRecord, category: e.target.value})} placeholder="Audio / Video…" />
+                    <label className={labelCls}>Details</label>
+                    <textarea className={`${inputCls} h-24 resize-none py-2.5`} value={newRecord["Details"] || ''} onChange={e => setNewRecord({...newRecord, "Details": e.target.value})} placeholder="Full task description…" />
                   </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className={labelCls}>Category</label>
+                      <CellDropdown value={newRecord["Category"] || ''} options={checklistCategoryOpts} onCommit={val => setNewRecord({...newRecord, "Category": val})} onCancel={() => {}} placeholder="Category…" />
+                    </div>
+                    <div>
+                      <label className={labelCls}>Task Group</label>
+                      <CellDropdown value={newRecord["TaskGroup"] || ''} options={taskGroupOpts} onCommit={val => setNewRecord({...newRecord, "TaskGroup": val})} onCancel={() => {}} placeholder="Group…" />
+                    </div>
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Scheduling',
+              content: (
+                <div className="space-y-5">
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className={labelCls}>Order ID</label><input className={inputCls} value={newRecord["OrderId"] || ''} onChange={e => setNewRecord({...newRecord, "OrderId": e.target.value})} placeholder="#" /></div>
+                    <div><label className={labelCls}>Period</label><input className={inputCls} value={newRecord["Period"] || ''} onChange={e => setNewRecord({...newRecord, "Period": e.target.value})} placeholder="Pre / During…" /></div>
+                  </div>
+                  <div><label className={labelCls}>People Involved</label><input className={inputCls} value={newRecord["People Involved"] || ''} onChange={e => setNewRecord({...newRecord, "People Involved": e.target.value})} placeholder="Names…" /></div>
+                  <div><label className={labelCls}>Typical Timeline</label><input className={inputCls} value={newRecord["Typical Timeline"] || ''} onChange={e => setNewRecord({...newRecord, "Typical Timeline": e.target.value})} placeholder="e.g. 2 days before…" /></div>
+                  <div><label className={labelCls}>Attachment</label><input className={inputCls} value={newRecord["Attachment"] || ''} onChange={e => setNewRecord({...newRecord, "Attachment": e.target.value})} placeholder="https://…" /></div>
+                </div>
+              )
+            },
+          ];
+        } else if (activeTable === 'LED') {
+          const sessionOpts2 = sessions.map((s: any) => s["Session Name"]).filter(Boolean);
+          wizardSteps = [
+            {
+              label: 'Session Link',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>LED ID</label>
+                    <input className={inputCls} value={newRecord["LedId"] || ''} onChange={e => setNewRecord({...newRecord, "LedId": e.target.value})} placeholder="LED ID…" />
+                  </div>
+                  <div>
+                    <label className={labelCls}>Session</label>
+                    <CellDropdown value={newRecord["🕘 Session"] || ''} options={sessionOpts2} onCommit={val => {
+                      const s = sessions.find((x: any) => x["Session Name"] === val);
+                      if (s) setNewRecord({...newRecord, "🕘 Session": s["Session Name"], "Parent Event (from 🕘 Session)": s["Parent Event"], "Date (from 🕘 Session)": s["Date"], "City (from 🕘 Session)": s["City"], "Venue (from 🕘 Session)": s["Venue"]});
+                      else setNewRecord({...newRecord, "🕘 Session": val});
+                    }} onCancel={() => {}} placeholder="Select session…" tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20" />
+                  </div>
+                  {newRecord["Parent Event (from 🕘 Session)"] && (
+                    <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                      <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Auto-filled</div>
+                      <div className="text-[12px] font-semibold text-slate-700">{newRecord["Parent Event (from 🕘 Session)"]}</div>
+                      {newRecord["Date (from 🕘 Session)"] && <div className="text-[11px] text-slate-500">{String(newRecord["Date (from 🕘 Session)"]).split('T')[0]}</div>}
+                      {newRecord["City (from 🕘 Session)"] && <div className="text-[11px] text-slate-500">{newRecord["City (from 🕘 Session)"]}</div>}
+                    </div>
+                  )}
+                  <div>
+                    <label className={labelCls}>Indoor / Outdoor?</label>
+                    <div className="flex gap-2">
+                      {['Indoor', 'Outdoor'].map(opt => (
+                        <button key={opt} type="button" onClick={() => setNewRecord({...newRecord, "Indoor/Outdoor LED?": opt})} className={`flex-1 h-11 rounded-xl border text-[12px] font-black uppercase tracking-widest transition-all ${newRecord["Indoor/Outdoor LED?"] === opt ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>{opt}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Centre LED',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Centre LED Name</label>
+                    <input className={inputCls} value={newRecord["CentreLed"] || ''} onChange={e => setNewRecord({...newRecord, "CentreLed": e.target.value})} placeholder="Centre LED model…" />
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className={labelCls}>Pitch</label><input className={inputCls} value={newRecord["CntrPitch"] || ''} onChange={e => setNewRecord({...newRecord, "CntrPitch": e.target.value})} placeholder="mm" /></div>
+                    <div><label className={labelCls}>Width</label><input className={inputCls} value={newRecord["CntrWdth"] || ''} onChange={e => setNewRecord({...newRecord, "CntrWdth": e.target.value})} placeholder="ft" /></div>
+                    <div><label className={labelCls}>Height</label><input className={inputCls} value={newRecord["CntrHt"] || ''} onChange={e => setNewRecord({...newRecord, "CntrHt": e.target.value})} placeholder="ft" /></div>
+                    <div><label className={labelCls}>Riser</label><input className={inputCls} value={newRecord["CntrRiser"] || ''} onChange={e => setNewRecord({...newRecord, "CntrRiser": e.target.value})} placeholder="ft" /></div>
+                  </div>
+                  <div><label className={labelCls}>Stage Height</label><input className={inputCls} value={newRecord["Stageht"] || ''} onChange={e => setNewRecord({...newRecord, "Stageht": e.target.value})} placeholder="Stage ht…" /></div>
+                </div>
+              )
+            },
+            {
+              label: 'Side & Aux LED',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Side LED Name</label>
+                    <input className={inputCls} value={newRecord["SideLed"] || ''} onChange={e => setNewRecord({...newRecord, "SideLed": e.target.value})} placeholder="Side LED model…" />
+                  </div>
+                  <div className="grid grid-cols-3 gap-3">
+                    <div><label className={labelCls}>Pitch</label><input className={inputCls} value={newRecord["SidePitch"] || ''} onChange={e => setNewRecord({...newRecord, "SidePitch": e.target.value})} placeholder="mm" /></div>
+                    <div><label className={labelCls}>Width</label><input className={inputCls} value={newRecord["SideWdth"] || ''} onChange={e => setNewRecord({...newRecord, "SideWdth": e.target.value})} placeholder="ft" /></div>
+                    <div><label className={labelCls}>Height</label><input className={inputCls} value={newRecord["SideHt"] || ''} onChange={e => setNewRecord({...newRecord, "SideHt": e.target.value})} placeholder="ft" /></div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className={labelCls}>Other LED 1</label><input className={inputCls} value={newRecord["OtherLed1"] || ''} onChange={e => setNewRecord({...newRecord, "OtherLed1": e.target.value})} placeholder="Other LED 1…" /></div>
+                    <div><label className={labelCls}>Other LED 2</label><input className={inputCls} value={newRecord["OtherLed2"] || ''} onChange={e => setNewRecord({...newRecord, "OtherLed2": e.target.value})} placeholder="Other LED 2…" /></div>
+                    <div><label className={labelCls}>Oth Width</label><input className={inputCls} value={newRecord["OtherWdth"] || ''} onChange={e => setNewRecord({...newRecord, "OtherWdth": e.target.value})} placeholder="ft" /></div>
+                    <div><label className={labelCls}>Oth Height</label><input className={inputCls} value={newRecord["OtherHt"] || ''} onChange={e => setNewRecord({...newRecord, "OtherHt": e.target.value})} placeholder="ft" /></div>
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Power & Vendor',
+              content: (
+                <div className="space-y-5">
+                  <div><label className={labelCls}>Vendor</label><input className={inputCls} value={newRecord["Vendor"] || ''} onChange={e => setNewRecord({...newRecord, "Vendor": e.target.value})} placeholder="Vendor name…" /></div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div><label className={labelCls}>DG Used (KVA)</label><input className={inputCls} value={newRecord["DGUseedKva"] || ''} onChange={e => setNewRecord({...newRecord, "DGUseedKva": e.target.value})} placeholder="KVA" /></div>
+                    <div><label className={labelCls}>Backup Power</label><input className={inputCls} value={newRecord["BackupPower"] || ''} onChange={e => setNewRecord({...newRecord, "BackupPower": e.target.value})} placeholder="Backup…" /></div>
+                  </div>
+                  <div>
+                    <label className={labelCls}>Is LED Required?</label>
+                    <div className="flex gap-2">
+                      {['Yes', 'No'].map(opt => (
+                        <button key={opt} type="button" onClick={() => setNewRecord({...newRecord, "is Led Required?": opt})} className={`flex-1 h-11 rounded-xl border text-[12px] font-black uppercase tracking-widest transition-all ${newRecord["is Led Required?"] === opt ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>{opt}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )
+            },
+          ];
+        } else if (activeTable === 'DataSharing') {
+          const deptOpts = [...new Set(locations.map((l: any) => l.Dept).filter(Boolean).flatMap((d: string) => d.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+          wizardSteps = [
+            {
+              label: 'Contact Info',
+              content: (
+                <div className="space-y-5">
+                  <div><label className={labelCls}>Sevak Name</label><input className={inputCls} value={newRecord["Sevak"] || ''} onChange={e => setNewRecord({...newRecord, "Sevak": e.target.value})} placeholder="Full name…" /></div>
+                  <div>
+                    <label className={labelCls}>Department</label>
+                    <CellDropdown value={newRecord["Dept"] || ''} options={deptOpts} onCommit={val => setNewRecord({...newRecord, "Dept": val})} onCancel={() => {}} placeholder="Select dept…" />
+                  </div>
+                  <div><label className={labelCls}>Email ID</label><input className={inputCls} type="email" value={newRecord["EmailId"] || ''} onChange={e => setNewRecord({...newRecord, "EmailId": e.target.value})} placeholder="email@example.com" /></div>
+                </div>
+              )
+            },
+            {
+              label: 'Data Sharing',
+              content: (
+                <div className="space-y-5">
+                  <div>
+                    <label className={labelCls}>Share Facts?</label>
+                    <div className="flex gap-2">
+                      {['Yes', 'No'].map(opt => (
+                        <button key={opt} type="button" onClick={() => setNewRecord({...newRecord, "ShareFacts?": opt})} className={`flex-1 h-11 rounded-xl border text-[12px] font-black uppercase tracking-widest transition-all ${newRecord["ShareFacts?"] === opt ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>{opt}</button>
+                      ))}
+                    </div>
+                  </div>
+                  <div><label className={labelCls}>Share Data</label><textarea className={`${inputCls} h-28 resize-none py-2.5`} value={newRecord["ShareData"] || ''} onChange={e => setNewRecord({...newRecord, "ShareData": e.target.value})} placeholder="Describe data to share…" /></div>
+                </div>
+              )
+            },
+          ];
+        } else if (activeTable === 'VideoSetup' || activeTable === 'AudioSetup') {
+          const statusOpts = ['Ready', 'Pending', 'In Progress', 'Done'];
+          const setupLabel = activeTable === 'VideoSetup' ? 'Video' : 'Audio';
+          wizardSteps = [
+            {
+              label: `${setupLabel} Setup`,
+              content: (
+                <div className="space-y-5">
+                  <div><label className={labelCls}>Name</label><input className={inputCls} value={newRecord.name || ''} onChange={e => setNewRecord({...newRecord, name: e.target.value})} placeholder="Equipment / setup name…" /></div>
+                  <div><label className={labelCls}>Assignee</label><input className={inputCls} value={newRecord.assignee || ''} onChange={e => setNewRecord({...newRecord, assignee: e.target.value})} placeholder="Person responsible…" /></div>
+                  <div>
+                    <label className={labelCls}>Status</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      {statusOpts.map(opt => (
+                        <button key={opt} type="button" onClick={() => setNewRecord({...newRecord, status: opt})} className={`h-11 rounded-xl border text-[12px] font-black uppercase tracking-widest transition-all ${newRecord.status === opt ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>{opt}</button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )
+            },
+            {
+              label: 'Notes & Links',
+              content: (
+                <div className="space-y-5">
+                  <div><label className={labelCls}>Notes</label><textarea className={`${inputCls} h-28 resize-none py-2.5`} value={newRecord.notes || ''} onChange={e => setNewRecord({...newRecord, notes: e.target.value})} placeholder="Additional notes…" /></div>
+                  <div><label className={labelCls}>Attachments Link</label><input className={inputCls} value={newRecord.attachments || ''} onChange={e => setNewRecord({...newRecord, attachments: e.target.value})} placeholder="https://…" /></div>
+                  <div><label className={labelCls}>Attachment Summary</label><input className={inputCls} value={newRecord.attachmentSummary || ''} onChange={e => setNewRecord({...newRecord, attachmentSummary: e.target.value})} placeholder="Brief summary…" /></div>
                 </div>
               )
             },
