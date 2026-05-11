@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect, useRef,useMemo } from 'react';
 import { 
   Event, 
@@ -73,6 +73,10 @@ import {
   Link2,
   Phone,
   Settings2,
+  Download,
+  Trash2,
+  Pencil,
+  GripVertical,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -251,8 +255,9 @@ const CellDropdown = React.memo(function CellDropdown({
     }
   };
 
-  const filtered = options.filter(o => o.toLowerCase().includes(search.toLowerCase()));
-  const canCreate = search.trim() !== '' && !options.some(o => o.toLowerCase() === search.toLowerCase().trim());
+  const safeOptions = options.filter(o => o != null);
+  const filtered = safeOptions.filter(o => o.toLowerCase().includes(search.toLowerCase()));
+  const canCreate = search.trim() !== '' && !safeOptions.some(o => o.toLowerCase() === search.toLowerCase().trim());
 
   return (
     <div ref={ref} className="relative w-full h-full flex items-center min-h-[36px]">
@@ -399,9 +404,9 @@ const SessionPicker = React.memo(function SessionPicker({
     <div ref={ref} className="relative w-full">
       <div className="w-full min-h-8 flex flex-wrap gap-1 items-center px-1 py-1">
         {localSel.length > 0 ? localSel.map(name => (
-          <span key={name} className="inline-flex items-center gap-0.5 bg-slate-100 text-slate-700 text-[11px] font-medium px-2 py-0.5 rounded border border-slate-200 leading-tight">
-            {name}
-            <button onMouseDown={e => remove(name, e)} className="ml-0.5 text-slate-400 hover:text-red-500 leading-none text-[13px] font-bold">&times;</button>
+          <span key={name} className="inline-flex items-center gap-0.5 bg-slate-100 text-slate-700 text-[11px] font-medium px-2 py-0.5 rounded border border-slate-200 leading-tight max-w-full min-w-0">
+            <span className="truncate max-w-[220px]">{name}</span>
+            <button onMouseDown={e => remove(name, e)} className="ml-0.5 text-slate-400 hover:text-red-500 leading-none text-[13px] font-bold shrink-0">&times;</button>
           </span>
         )) : <span className="text-[12px] text-slate-400">Link sessions…</span>}
         <button
@@ -413,7 +418,7 @@ const SessionPicker = React.memo(function SessionPicker({
         </button>
       </div>
       {open && (
-        <div className="absolute z-[300] top-full left-0 mt-1 w-72 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
+        <div className="absolute z-[300] top-full left-0 mt-1 w-full sm:w-72 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
           <div className="p-2 border-b border-slate-100">
             <input ref={searchRef} className="w-full text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder:text-slate-400" placeholder="Search sessions…" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); onCancel(); } }} />
           </div>
@@ -837,7 +842,7 @@ if (hasDropdown) {
         </div>
 
         {/* Fields for this step */}
-        <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-5 min-h-0">
+        <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 pb-2 space-y-5 min-h-0">
           {currentStepData.fields.map(col => (
             <div key={col}>
               <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] block mb-2">{col}</label>
@@ -918,17 +923,16 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], onS
       className="w-full space-y-6 pb-20"
     >
       {/* 1. TOP NAVIGATION */}
-      <div className="flex items-center gap-4 mb-8 px-4 md:px-8">
-        <Button 
-          variant="outline" 
+      <div className="flex flex-col gap-1 mb-6 px-4 md:px-8 pt-2">
+        <Button
+          variant="outline"
           onClick={onBack}
-          className="bg-white border-slate-300 text-slate-700 hover:bg-slate-50 rounded-xl px-4 shadow-sm"
+          className="self-start bg-white border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl px-3 py-2 h-auto text-[12px] font-semibold shadow-sm"
         >
-          <ChevronLeft className="h-4 w-4 mr-2" />
+          <ChevronLeft className="h-3.5 w-3.5 mr-1" />
           Back to {tableName}
         </Button>
-        <div className="h-6 w-px bg-slate-300 mx-2" />
-        <h2 className="text-xl font-black uppercase tracking-tight flex gap-2">
+        <h2 className="text-2xl font-black uppercase tracking-tight flex gap-2 mt-1">
           <span className="text-black">Record</span>
           <span className="text-brand-primary">Details</span>
         </h2>
@@ -964,23 +968,23 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], onS
 const sessionFieldNames = ["Sessions", "Imported table", "Session", "🕘 Session"];
 if (sessionFieldNames.includes(col) && typeof val === 'string') {
   return (
-    <div className="flex flex-wrap gap-1 mt-1">
+    <div className="flex flex-col gap-1.5 mt-1">
       {val.split(',').map((tag, i) => {
         const sName = tag.trim();
         const linked = sessions.find((s: any) => s["Session Name"] === sName);
         return (
-          <Badge
+          <div
             key={i}
-            className={`text-[10px] px-2 py-0.5 uppercase ${
-              linked 
-                ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' 
-                : 'bg-slate-100 text-slate-600 border border-slate-200 cursor-default'
-            }`}
             onClick={() => { if (linked) onSessionClick?.(linked); }}
+            className={`w-full px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold leading-snug flex items-start gap-1.5 ${
+              linked
+                ? 'bg-brand-primary/8 text-brand-primary border-brand-primary/25 hover:bg-brand-primary/15 cursor-pointer'
+                : 'bg-slate-50 text-slate-600 border-slate-200 cursor-default'
+            }`}
           >
-            {sName}
-            {linked && <ArrowUpRight className="h-3 w-3 ml-1 opacity-50" />}
-          </Badge>
+            <span className="flex-1 break-words">{sName}</span>
+            {linked && <ArrowUpRight className="h-3 w-3 shrink-0 mt-0.5 opacity-50" />}
+          </div>
         );
       })}
     </div>
@@ -1056,6 +1060,7 @@ export default function App() {
 const [editDraft, setEditDraft] = useState<any>(null);
 const [expandedRecord, setExpandedRecord] = useState<any>(null);
 const [editingCell, setEditingCell] = useState<string | null>(null);
+const [cellPreview, setCellPreview] = useState<{ label: string; value: string; record: any } | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<any[]>([]);
@@ -1092,6 +1097,9 @@ const [isSortOpen, setIsSortOpen] = useState(false);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
   const [mobileFilterOpen, setMobileFilterOpen] = useState(false);
+  const [mobileGroupOpen, setMobileGroupOpen] = useState(false);
+  const [mobileSortOpen, setMobileSortOpen] = useState(false);
+  const [mobileFieldsOpen, setMobileFieldsOpen] = useState(false);
   const [newRecord, setNewRecord] = useState<any>({});
   const [loginError, setLoginError] = useState<string | null>(null);
   const [health, setHealth] = useState<{ mongodb: boolean, mongodbError?: string } | null>(null);
@@ -1206,12 +1214,8 @@ const handleImageUpdate = async (updatedString: string) => {
     });
 
     if (response.ok) {
-      // 1. Update the local modal state so the user sees the new image immediately
+      // Only update modal item — no fetchAllData() here to avoid full re-render/blink
       setImageManager(prev => prev ? { ...prev, item: updatedItem } : null);
-      
-      // 2. Refresh the main data grid
-      await fetchAllData(); 
-      console.log("Image updated successfully");
     } else {
       const errorData = await response.text();
       console.error("Server refused update:", errorData);
@@ -1342,119 +1346,264 @@ const getActiveData = () => {
   }
 };
 
-const AttachmentManagerDialog = ({ manager, onClose, onUpdate }: any) => {
-  const [localImages, setLocalImages] = useState<string[]>([]);
-  const internalFileRef = useRef<HTMLInputElement>(null);
+const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ manager, onClose, onUpdate }: any) {
+  type ImgEntry = { url: string; name: string };
 
-  // Load images into local state when modal opens
+  const [images, setImages] = useState<ImgEntry[]>([]);
+  const [renamingIdx, setRenamingIdx] = useState<number | null>(null);
+  const [renameVal, setRenameVal] = useState('');
+  // Ref mirror so async callbacks (FileReader) always see latest images
+  const imagesRef = useRef<ImgEntry[]>([]);
+  imagesRef.current = images;
+  // Ref mirror for onUpdate so async callbacks always call the latest handler
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+
+  const parseImages = (raw: string): ImgEntry[] => {
+    const result: ImgEntry[] = [];
+    const re = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
+    let m;
+    while ((m = re.exec(raw)) !== null) result.push({ name: m[1] || '', url: m[2] });
+    return result;
+  };
+
+  const serialize = (entries: ImgEntry[]): string =>
+    entries.map(e => e.name ? `[${e.name}](${e.url})` : `(${e.url})`).join(' ');
+
+  const commit = (next: ImgEntry[]) => {
+    setImages(next);
+    onUpdateRef.current(serialize(next));
+  };
+
+  // Only initialise from manager.item when dialog first opens
   useEffect(() => {
     if (manager?.isOpen && manager?.item) {
-      const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
-      const images: string[] = [];
-      let match;
-      const rawValue = manager.item[manager.column] || "";
-      while ((match = urlRegex.exec(rawValue)) !== null) {
-        images.push(match[1]);
-      }
-      setLocalImages(images);
+      setImages(parseImages(manager.item[manager.column] || ''));
+      setRenamingIdx(null);
     }
-  }, [manager?.isOpen, manager?.item]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [manager?.isOpen]);
 
-  if (!manager) return null;
-
-  // 1. ADD IMAGE
-const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-  const file = e.target.files?.[0];
-  if (!file) return;
-
-  // Check file size (optional safety check)
-  if (file.size > 10 * 1024 * 1024) {
-    alert("File is too large (Max 10MB)");
-    return;
-  }
-
-  const reader = new FileReader();
-  reader.onloadend = () => {
-    const base64String = reader.result as string;
-    
-    // 1. Update the local UI state
-    const next = [...localImages, base64String];
-    setLocalImages(next);
-    
-    // 2. Create the Airtable-style string: (url) (url)
-    const updatedString = next.map(url => `(${url})`).join(' ');
-    
-    // 3. Call your handleImageUpdate function
-    onUpdate(updatedString);
-  };
-  
-  reader.readAsDataURL(file); // This triggers the conversion to string
-};
-
-  // 2. REMOVE IMAGE
-  const handleRemove = (index: number) => {
-    const next = [...localImages];
-    next.splice(index, 1);
-    setLocalImages(next);
-    onUpdate(next.map(url => `(${url})`).join(' '));
+  // All handlers defined before the early return — no stale closures
+  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 10 * 1024 * 1024) { alert('File too large (max 10 MB)'); return; }
+    const reader = new FileReader();
+    reader.onloadend = () => {
+      const name = file.name.replace(/\.[^.]+$/, '');
+      // Use imagesRef.current so the async callback always sees latest state
+      commit([...imagesRef.current, { url: reader.result as string, name }]);
+    };
+    reader.readAsDataURL(file);
+    e.target.value = '';
   };
 
-  // 3. DOWNLOAD
-  const handleDownload = (url: string) => {
-    window.open(url, '_blank');
+  const handleRemove = (i: number) => {
+    const next = [...imagesRef.current]; next.splice(i, 1); commit(next);
   };
 
-  // 4. RENAME (Simulated logic for filename)
-  const handleRename = (index: number) => {
-    const newName = prompt("Enter new name for this attachment:");
-    if (newName) alert("Renamed to: " + newName + " (Note: Airtable strings only store URLs, naming is metadata)");
+  const handleDownload = (entry: ImgEntry, i: number) => {
+    const a = document.createElement('a');
+    a.href = entry.url;
+    a.download = entry.name || `led_image_${i + 1}`;
+    a.style.cssText = 'position:fixed;left:-9999px';
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => { try { document.body.removeChild(a); } catch (_) {} }, 300);
   };
+
+  const moveUp = (i: number) => {
+    if (i === 0) return;
+    const next = [...imagesRef.current]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; commit(next);
+  };
+
+  const moveDown = (i: number) => {
+    if (i === imagesRef.current.length - 1) return;
+    const next = [...imagesRef.current]; [next[i], next[i + 1]] = [next[i + 1], next[i]]; commit(next);
+  };
+
+  const commitRename = (i: number) => {
+    commit(imagesRef.current.map((e, idx) => idx === i ? { ...e, name: renameVal.trim() } : e));
+    setRenamingIdx(null);
+  };
+
+  // ── Drag-and-drop reorder (desktop HTML5 + mobile touch) ──────────────
+  const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
+  const draggingIdxRef = useRef<number | null>(null);
+
+  const doReorder = (from: number | null, to: number | null) => {
+    if (from === null || to === null || from === to) return;
+    const next = [...imagesRef.current];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    commit(next);
+  };
+
+  // Touch handlers for mobile
+  const handleTouchStart = (i: number) => {
+    draggingIdxRef.current = i;
+    setDraggingIdx(i);
+  };
+
+  const handleTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault();
+    const touch = e.touches[0];
+    const el = document.elementFromPoint(touch.clientX, touch.clientY);
+    const card = el?.closest('[data-card-idx]');
+    if (card) {
+      const idx = parseInt(card.getAttribute('data-card-idx') || '-1');
+      if (!isNaN(idx) && idx >= 0) setDragOverIdx(idx);
+    }
+  };
+
+  const handleTouchEnd = () => {
+    doReorder(draggingIdxRef.current, dragOverIdx);
+    draggingIdxRef.current = null;
+    setDraggingIdx(null);
+    setDragOverIdx(null);
+  };
+
+  if (!manager?.isOpen) return null;
 
   return (
     <Dialog open={manager.isOpen} onOpenChange={onClose}>
-      <DialogContent className="sm:max-w-[750px] bg-white border-none rounded-[32px] p-0 overflow-hidden shadow-2xl z-[100]">
-        <DialogHeader className="p-8 bg-slate-50 border-b border-slate-100">
-          <div className="flex items-center gap-2 text-brand-primary mb-1">
-             <Monitor className="h-4 w-4" />
-             <span className="text-[10px] font-black uppercase tracking-widest">{manager.column} Manager</span>
-          </div>
-          <DialogTitle className="text-2xl font-black text-slate-900 uppercase tracking-tighter">Manage Attachments</DialogTitle>
-          
-          <button 
-            onClick={() => internalFileRef.current?.click()}
-            className="mt-6 flex items-center gap-2 bg-brand-primary text-white px-6 py-2.5 rounded-xl text-xs font-black uppercase hover:opacity-90 shadow-lg shadow-brand-primary/20 transition-all active:scale-95"
-          >
-            <Plus className="h-4 w-4" /> Attach file
-          </button>
-          <input type="file" ref={internalFileRef} className="hidden" onChange={handleUpload} />
-        </DialogHeader>
+      <DialogContent className="w-[95vw] sm:max-w-[700px] bg-white border-none rounded-[20px] sm:rounded-[28px] p-0 overflow-hidden shadow-2xl z-[600]">
 
-        <ScrollArea className="h-[480px] p-8 bg-white">
-          <div className="grid grid-cols-2 gap-6">
-            {localImages.map((url, i) => (
-              <div key={i} className="group/item relative space-y-2">
-                <div className="relative aspect-video rounded-[20px] overflow-hidden border border-slate-200 bg-slate-100 shadow-sm transition-all hover:shadow-md">
-                  <img src={url} className="w-full h-full object-cover" alt="Attachment" />
-                  
-                  {/* ACTIONS OVERLAY */}
-                  <div className="absolute inset-0 bg-slate-900/60 opacity-0 group-hover/item:opacity-100 transition-all duration-200 flex items-center justify-center gap-2 backdrop-blur-[2px]">
-                    <button onClick={() => handleRename(i)} className="p-2.5 bg-white rounded-xl text-slate-700 hover:bg-brand-primary hover:text-white shadow-xl transition-all" title="Rename"><FileText className="h-4 w-4" /></button>
-                    <button onClick={() => handleDownload(url)} className="p-2.5 bg-white rounded-xl text-slate-700 hover:bg-brand-primary hover:text-white shadow-xl transition-all" title="Download"><ArrowDown className="h-4 w-4" /></button>
-                    <button onClick={() => handleRemove(i)} className="p-2.5 bg-white rounded-xl text-red-500 hover:bg-red-500 hover:text-white shadow-xl transition-all" title="Remove"><X className="h-4 w-4" /></button>
-                  </div>
-                </div>
-                <p className="text-[10px] font-bold text-slate-400 px-2 truncate uppercase tracking-tighter">ATTACHMENT_{i+1}.JPG</p>
+        {/* HEADER */}
+        <div className="flex items-center justify-between px-5 sm:px-7 py-4 sm:py-5 bg-slate-50 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-1.5 text-brand-primary mb-0.5">
+              <Monitor className="h-3.5 w-3.5" />
+              <span className="text-[10px] font-black uppercase tracking-widest">LED Images</span>
+            </div>
+            <DialogTitle className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-none">Image Manager</DialogTitle>
+            <p className="text-[11px] text-slate-400 mt-1">{images.length} image{images.length !== 1 ? 's' : ''}</p>
+          </div>
+          <label className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider hover:opacity-90 shadow-md shadow-brand-primary/20 transition-all active:scale-95 cursor-pointer select-none">
+            <Plus className="h-3.5 w-3.5" /> Add Image
+            <input type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+          </label>
+        </div>
+
+        {/* IMAGE GRID */}
+        <ScrollArea className="max-h-[65vh] bg-white">
+          <div className="p-5 sm:p-6">
+            {images.length === 0 ? (
+              <div className="py-16 text-center space-y-3">
+                <Monitor className="h-12 w-12 text-slate-100 mx-auto" />
+                <p className="text-[11px] text-slate-300 italic uppercase tracking-widest font-bold">No images attached</p>
+                <label className="mt-1 text-[11px] font-black text-brand-primary uppercase tracking-widest hover:opacity-70 transition-opacity cursor-pointer">
+                  + Add First Image
+                  <input type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+                </label>
               </div>
-            ))}
-            {localImages.length === 0 && (
-              <div className="col-span-2 py-32 text-center text-slate-300 italic font-medium uppercase text-xs tracking-widest opacity-50">No files attached</div>
+            ) : (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+                {images.map((entry, i) => (
+                  <div
+                    key={i}
+                    data-card-idx={i}
+                    draggable
+                    onDragStart={() => { draggingIdxRef.current = i; setDraggingIdx(i); }}
+                    onDragOver={e => { e.preventDefault(); if (dragOverIdx !== i) setDragOverIdx(i); }}
+                    onDragLeave={() => setDragOverIdx(null)}
+                    onDrop={e => { e.preventDefault(); doReorder(draggingIdxRef.current, i); draggingIdxRef.current = null; setDraggingIdx(null); setDragOverIdx(null); }}
+                    onDragEnd={() => { draggingIdxRef.current = null; setDraggingIdx(null); setDragOverIdx(null); }}
+                    onTouchStart={() => handleTouchStart(i)}
+                    onTouchMove={handleTouchMove}
+                    onTouchEnd={handleTouchEnd}
+                    className={`group/card flex flex-col gap-2 transition-all duration-150 touch-none select-none ${
+                      draggingIdx === i ? 'opacity-40 scale-95' : ''
+                    } ${dragOverIdx === i && draggingIdx !== i ? 'ring-2 ring-brand-primary ring-offset-2 rounded-xl scale-[1.03]' : ''}`}
+                  >
+                    {/* Thumbnail + hover actions */}
+                    <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing">
+                      <img src={entry.url} className="w-full h-full object-cover pointer-events-none" alt={entry.name || `Image ${i + 1}`} />
+                      {/* Drag handle indicator */}
+                      <div className="absolute top-1.5 right-1.5 h-5 w-5 bg-black/40 rounded-md items-center justify-center hidden sm:group-hover/card:flex">
+                        <GripVertical className="h-3 w-3 text-white" />
+                      </div>
+
+                      {/* Index badge */}
+                      <div className="absolute top-1.5 left-1.5 h-5 w-5 bg-black/50 rounded-md flex items-center justify-center text-[9px] font-black text-white select-none">
+                        {i + 1}
+                      </div>
+
+                      {/* Hover overlay */}
+                      <div className="absolute inset-0 bg-black/55 opacity-0 group-hover/card:opacity-100 transition-all flex items-center justify-center gap-2 backdrop-blur-[1px]">
+                        <button
+                          onClick={() => { setRenamingIdx(i); setRenameVal(entry.name || `Image ${i + 1}`); }}
+                          title="Rename"
+                          className="p-2 bg-white/90 rounded-lg text-slate-700 hover:bg-brand-primary hover:text-white transition-all shadow-lg"
+                        ><Pencil className="h-3.5 w-3.5" /></button>
+                        <button
+                          onClick={() => handleDownload(entry, i)}
+                          title="Download"
+                          className="p-2 bg-white/90 rounded-lg text-slate-700 hover:bg-brand-primary hover:text-white transition-all shadow-lg"
+                        ><Download className="h-3.5 w-3.5" /></button>
+                        <button
+                          onClick={() => handleRemove(i)}
+                          title="Remove"
+                          className="p-2 bg-white/90 rounded-lg text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-lg"
+                        ><Trash2 className="h-3.5 w-3.5" /></button>
+                      </div>
+                    </div>
+
+                    {/* Inline rename */}
+                    {renamingIdx === i ? (
+                      <input
+                        autoFocus
+                        value={renameVal}
+                        onChange={e => setRenameVal(e.target.value)}
+                        onBlur={() => commitRename(i)}
+                        onKeyDown={e => { if (e.key === 'Enter') commitRename(i); if (e.key === 'Escape') setRenamingIdx(null); }}
+                        className="w-full text-[11px] font-bold text-slate-800 bg-white border border-brand-primary rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-brand-primary/20"
+                      />
+                    ) : (
+                      <button
+                        onClick={() => { setRenamingIdx(i); setRenameVal(entry.name || `Image ${i + 1}`); }}
+                        className="text-left w-full text-[10px] font-bold text-slate-500 uppercase tracking-wider hover:text-brand-primary transition-colors truncate flex items-center gap-1 group/name"
+                        title="Click to rename"
+                      >
+                        <Pencil className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover/name:opacity-100 transition-opacity" />
+                        <span className="truncate">{entry.name || `Image ${i + 1}`}</span>
+                      </button>
+                    )}
+
+                    {/* Reorder buttons */}
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => moveUp(i)} disabled={i === 0}
+                        title="Move left"
+                        className="flex-1 h-6 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-25 disabled:cursor-not-allowed transition-all flex items-center justify-center"
+                      ><ChevronLeft className="h-3.5 w-3.5" /></button>
+                      <button
+                        onClick={() => moveDown(i)} disabled={i === images.length - 1}
+                        title="Move right"
+                        className="flex-1 h-6 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-25 disabled:cursor-not-allowed transition-all flex items-center justify-center"
+                      ><ChevronRight className="h-3.5 w-3.5" /></button>
+                    </div>
+
+                  </div>
+                ))}
+              </div>
             )}
           </div>
         </ScrollArea>
+
+        {/* FOOTER */}
+        <div className="px-5 sm:px-7 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-4">
+          <span className="text-[10px] text-slate-400 font-medium hidden sm:block">Hover image for actions · Click name to rename · ‹ › to reorder</span>
+          <span className="text-[10px] text-slate-400 font-medium sm:hidden">Tap name to rename</span>
+          <button onClick={onClose} className="shrink-0 text-[11px] font-black text-slate-600 hover:text-slate-900 uppercase tracking-widest transition-colors">Done</button>
+        </div>
+
       </DialogContent>
     </Dialog>
   );
-};
+});
 const saveSettings = async (
   cols: Record<string, string[]>,
   types: Record<string, Record<string, FieldType>>,
@@ -3376,8 +3525,8 @@ if (!health?.mongodb) {
   </div>}
 
 
-  {/* 1. GROUP BY + SORT BY (hidden on Home) */}
-  {activeTable !== 'Home' && <>
+  {/* 1. GROUP BY + SORT BY (data grid only) */}
+  {activeTable !== 'Home' && viewMode === 'grid' && <>
   <div className="relative hidden sm:block">
   <button
     onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
@@ -3495,15 +3644,34 @@ if (!health?.mongodb) {
   </div>
   )}
 
-  {/* Mobile filter/sort button */}
-  {activeTable !== 'Home' && (
-    <button
-      className="sm:hidden p-2 rounded-lg border border-slate-200 bg-white text-slate-500 hover:text-brand-primary hover:border-brand-primary/30 transition-colors relative"
-      onClick={() => setMobileFilterOpen(true)}
-    >
-      <Layers className="h-4 w-4" />
-      {(groupByField || sortBy) && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
-    </button>
+  {/* Mobile Group By + Sort By buttons (data grid only) */}
+  {activeTable !== 'Home' && viewMode === 'grid' && (
+    <div className="sm:hidden flex items-center gap-1.5">
+      <button
+        onClick={() => setMobileGroupOpen(true)}
+        className={`relative p-2 rounded-lg border bg-white transition-colors ${groupByField ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500 hover:text-brand-primary hover:border-brand-primary/30'}`}
+        title="Group By"
+      >
+        <Layers className="h-4 w-4" />
+        {groupByField && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
+      </button>
+      <button
+        onClick={() => setMobileSortOpen(true)}
+        className={`relative p-2 rounded-lg border bg-white transition-colors ${sortBy ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500 hover:text-brand-primary hover:border-brand-primary/30'}`}
+        title="Sort By"
+      >
+        <ArrowUpDown className="h-4 w-4" />
+        {sortBy && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
+      </button>
+      <button
+        onClick={() => setMobileFieldsOpen(true)}
+        className={`relative p-2 rounded-lg border bg-white transition-colors ${(hiddenColumns[activeTable]?.length || 0) > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500 hover:text-brand-primary hover:border-brand-primary/30'}`}
+        title="Hide Fields"
+      >
+        <Eye className="h-4 w-4" />
+        {(hiddenColumns[activeTable]?.length || 0) > 0 && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
+      </button>
+    </div>
   )}
 
   {/* 4. NEW RECORD BUTTON */}
@@ -3568,52 +3736,144 @@ if (!health?.mongodb) {
         </div>
       )}
 
-      {/* Mobile Filter / Sort bottom sheet */}
-      {mobileFilterOpen && (
-        <div className="fixed inset-0 z-[600] flex items-end" style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }} onClick={() => setMobileFilterOpen(false)}>
-          <div className="w-full bg-white rounded-t-3xl shadow-2xl" onClick={e => e.stopPropagation()} style={{ paddingBottom: 'max(20px, env(safe-area-inset-bottom))' }}>
-            {/* Handle */}
-            <div className="flex justify-center pt-3 pb-1">
-              <div className="w-10 h-1 bg-slate-300 rounded-full" />
-            </div>
-            {/* Header */}
-            <div className="px-5 pt-2 pb-3 flex items-center justify-between border-b border-slate-100">
-              <h2 className="text-[15px] font-black text-slate-900 tracking-tight">Filter & Sort</h2>
-              <button onClick={() => setMobileFilterOpen(false)} className="p-1.5 rounded-xl hover:bg-slate-100">
-                <X className="h-4 w-4 text-slate-400" />
+      {/* GROUP BY bottom sheet */}
+      {mobileGroupOpen && (
+        <div className="fixed inset-0 z-[600] flex items-end" style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }} onClick={() => setMobileGroupOpen(false)}>
+          <div className="w-full bg-white rounded-t-3xl shadow-2xl flex flex-col" onClick={e => e.stopPropagation()} style={{ maxHeight: '80vh' }}>
+            <div className="flex justify-center pt-3 pb-1 shrink-0"><div className="w-10 h-1 bg-slate-200 rounded-full" /></div>
+            <div className="px-5 pt-2 pb-3 flex items-center justify-between border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 bg-brand-primary/10 rounded-lg flex items-center justify-center text-brand-primary">
+                  <Layers className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-black text-slate-900 tracking-tight">Group By</h2>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">{activeTable}</p>
+                </div>
+              </div>
+              <button onClick={() => setMobileGroupOpen(false)} className="h-9 w-9 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
+                <X className="h-4 w-4 text-slate-500" />
               </button>
             </div>
-            {/* Group By */}
-            <div className="px-5 py-4 border-b border-slate-100">
-              <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                <Layers className="h-3 w-3" /> Group By
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => setGroupByField(null)} className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase border transition-all ${!groupByField ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>None</button>
-                {getTableColumns().map(col => (
-                  <button key={col} onClick={() => setGroupByField(col)} className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase border transition-all ${groupByField === col ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>{col}</button>
-                ))}
-              </div>
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-2">
+              <button
+                onClick={() => setGroupByField(null)}
+                className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center px-4 gap-3 ${!groupByField ? 'bg-brand-primary text-white border-brand-primary shadow-md shadow-brand-primary/20' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+              >
+                <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${!groupByField ? 'border-white bg-white' : 'border-slate-300'}`}>
+                  {!groupByField && <span className="h-2 w-2 rounded-full bg-brand-primary block" />}
+                </span>
+                None
+              </button>
+              {getTableColumns().map(col => (
+                <button key={col} onClick={() => setGroupByField(col)}
+                  className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center px-4 gap-3 ${groupByField === col ? 'bg-brand-primary text-white border-brand-primary shadow-md shadow-brand-primary/20' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+                >
+                  <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${groupByField === col ? 'border-white bg-white' : 'border-slate-300'}`}>
+                    {groupByField === col && <span className="h-2 w-2 rounded-full bg-brand-primary block" />}
+                  </span>
+                  <span className="truncate">{col}</span>
+                </button>
+              ))}
             </div>
-            {/* Sort By */}
-            <div className="px-5 py-4">
-              <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.2em] mb-3 flex items-center gap-2">
-                <ArrowUpDown className="h-3 w-3" /> Sort By
+            <div className="px-5 py-4 border-t border-slate-100 shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+              <button onClick={() => setMobileGroupOpen(false)} className="w-full py-3.5 bg-brand-primary text-white rounded-2xl text-[13px] font-black uppercase tracking-widest shadow-lg shadow-brand-primary/25 active:scale-95 transition-all">Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* SORT BY bottom sheet */}
+      {mobileSortOpen && (
+        <div className="fixed inset-0 z-[600] flex items-end" style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }} onClick={() => setMobileSortOpen(false)}>
+          <div className="w-full bg-white rounded-t-3xl shadow-2xl flex flex-col" onClick={e => e.stopPropagation()} style={{ maxHeight: '80vh' }}>
+            <div className="flex justify-center pt-3 pb-1 shrink-0"><div className="w-10 h-1 bg-slate-200 rounded-full" /></div>
+            <div className="px-5 pt-2 pb-3 flex items-center justify-between border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 bg-slate-100 rounded-lg flex items-center justify-center text-slate-600">
+                  <ArrowUpDown className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-black text-slate-900 tracking-tight">Sort By</h2>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">{activeTable}</p>
+                </div>
               </div>
-              <div className="flex flex-wrap gap-2 mb-3">
-                <button onClick={() => setSortBy(null)} className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase border transition-all ${!sortBy ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}>None</button>
-                {getTableColumns().map(col => (
-                  <button key={col} onClick={() => setSortBy(s => s?.field === col ? { field: col, direction: s.direction === 'asc' ? 'desc' : 'asc' } : { field: col, direction: 'asc' })} className={`px-3 py-1.5 rounded-xl text-[11px] font-black uppercase border transition-all ${sortBy?.field === col ? 'bg-slate-800 text-white border-slate-800' : 'bg-white text-slate-600 border-slate-200'}`}>
-                    {col}{sortBy?.field === col ? (sortBy.direction === 'asc' ? ' ↑' : ' ↓') : ''}
+              <button onClick={() => setMobileSortOpen(false)} className="h-9 w-9 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
+                <X className="h-4 w-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-2">
+              <button
+                onClick={() => setSortBy(null)}
+                className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center px-4 gap-3 ${!sortBy ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+              >
+                <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${!sortBy ? 'border-white bg-white' : 'border-slate-300'}`}>
+                  {!sortBy && <span className="h-2 w-2 rounded-full bg-slate-800 block" />}
+                </span>
+                None
+              </button>
+              {getTableColumns().map(col => (
+                <button key={col}
+                  onClick={() => setSortBy(s => s?.field === col ? { field: col, direction: s.direction === 'asc' ? 'desc' : 'asc' } : { field: col, direction: 'asc' })}
+                  className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center justify-between px-4 gap-3 ${sortBy?.field === col ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+                >
+                  <div className="flex items-center gap-3 min-w-0">
+                    <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${sortBy?.field === col ? 'border-white bg-white' : 'border-slate-300'}`}>
+                      {sortBy?.field === col && <span className="h-2 w-2 rounded-full bg-slate-800 block" />}
+                    </span>
+                    <span className="truncate">{col}</span>
+                  </div>
+                  {sortBy?.field === col && (
+                    <span className="shrink-0 text-[11px] font-black opacity-80">{sortBy.direction === 'asc' ? '↑ ASC' : '↓ DESC'}</span>
+                  )}
+                </button>
+              ))}
+            </div>
+            <div className="px-5 py-4 border-t border-slate-100 shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+              <button onClick={() => setMobileSortOpen(false)} className="w-full py-3.5 bg-slate-800 text-white rounded-2xl text-[13px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all">Apply</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* HIDE FIELDS bottom sheet */}
+      {mobileFieldsOpen && (
+        <div className="fixed inset-0 z-[600] flex items-end" style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }} onClick={() => setMobileFieldsOpen(false)}>
+          <div className="w-full bg-white rounded-t-3xl shadow-2xl flex flex-col" onClick={e => e.stopPropagation()} style={{ maxHeight: '80vh' }}>
+            <div className="flex justify-center pt-3 pb-1 shrink-0"><div className="w-10 h-1 bg-slate-200 rounded-full" /></div>
+            <div className="px-5 pt-2 pb-3 flex items-center justify-between border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 bg-brand-primary/10 rounded-lg flex items-center justify-center text-brand-primary">
+                  <Eye className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-black text-slate-900 tracking-tight">Hide Fields</h2>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">{activeTable}</p>
+                </div>
+              </div>
+              <button onClick={() => setMobileFieldsOpen(false)} className="h-9 w-9 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
+                <X className="h-4 w-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-2">
+              {getTableColumns(true).map(col => {
+                const isHidden = (hiddenColumns[activeTable] || []).includes(col);
+                return (
+                  <button
+                    key={col}
+                    onClick={() => toggleHideColumn(col)}
+                    className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center justify-between px-4 gap-3 ${isHidden ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white text-slate-700 border-slate-200'}`}
+                  >
+                    <span className="truncate">{col}</span>
+                    {isHidden
+                      ? <EyeOff className="h-4 w-4 text-slate-300 shrink-0" />
+                      : <Eye className="h-4 w-4 text-brand-primary shrink-0" />}
                   </button>
-                ))}
-              </div>
+                );
+              })}
             </div>
-            {/* Apply button */}
-            <div className="px-5 pt-2">
-              <button onClick={() => setMobileFilterOpen(false)} className="w-full h-12 bg-brand-primary text-white rounded-2xl text-[12px] font-black uppercase tracking-widest shadow-lg shadow-brand-primary/25 hover:bg-brand-primary/90 transition-colors">
-                Apply
-              </button>
+            <div className="px-5 py-4 border-t border-slate-100 shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+              <button onClick={() => setMobileFieldsOpen(false)} className="w-full py-3.5 bg-brand-primary text-white rounded-2xl text-[13px] font-black uppercase tracking-widest shadow-lg shadow-brand-primary/25 active:scale-95 transition-all">Done</button>
             </div>
           </div>
         </div>
@@ -3817,7 +4077,7 @@ if (!health?.mongodb) {
                 {viewMode === 'visual' ? (
                   activeTable === 'Events' ? (
   /* --- RESPONSIVE EVENTS GALLERY (Airtable Style) --- */
-  <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-6 py-4 sm:py-6">
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
     {[...filteredData]
       .sort((a, b) => new Date(a.DateFrom).getTime() - new Date(b.DateFrom).getTime())
       .map((item: any) => (
@@ -3825,15 +4085,15 @@ if (!health?.mongodb) {
           key={item.id || item._id}
           onClick={() => setViewingRecord(item)}
           whileHover={{ y: -4 }}
-          className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[180px] sm:min-h-[300px] overflow-hidden"
+          className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col sm:min-h-[280px] overflow-hidden"
         >
           {/* EVENT NAME */}
-          <div className="text-[13px] sm:text-base font-black text-slate-900 mb-2 sm:mb-6 leading-tight line-clamp-2">
+          <div className="text-[13px] sm:text-base font-black text-slate-900 mb-2 sm:mb-5 leading-tight">
             {item["Event Name"] || item.EventName || "Untitled Event"}
           </div>
 
           {/* FIELDS */}
-          <div className="space-y-2 sm:space-y-5 flex-1">
+          <div className="space-y-2 sm:space-y-4 flex-1">
             <div className="space-y-0.5">
               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">DateFrom</label>
               <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateFrom || "—"}</div>
@@ -3847,7 +4107,7 @@ if (!health?.mongodb) {
                 <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Occasion</label>
                 <div className="flex flex-wrap gap-1 overflow-hidden">
                   {String(item.Occasion).split(',').map((t: string, i: number) => (
-                    <span key={i} className={getTagStyle(t.trim())} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{t.trim()}</span>
+                    <span key={i} className={getTagStyle(t.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{t.trim()}</span>
                   ))}
                 </div>
               </div>
@@ -3873,7 +4133,7 @@ if (!health?.mongodb) {
   </div>
 ) : activeTable === 'Tracks' ? (
   /* --- TRACKS GALLERY VIEW (Airtable Style) --- */
-  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 py-4 sm:py-6">
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
     {filteredData.map((item: any) => (
       <motion.div
         key={item.id || item._id}
@@ -3882,7 +4142,7 @@ if (!health?.mongodb) {
         className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[150px] sm:min-h-[220px] overflow-hidden"
       >
         {/* TRACK TITLE */}
-        <div className="text-[12px] sm:text-[14px] font-bold text-slate-900 mb-2 sm:mb-5 leading-tight line-clamp-2 border-b border-slate-50 pb-1 sm:pb-2">
+        <div className="text-[12px] sm:text-[14px] font-bold text-slate-900 mb-2 sm:mb-5 leading-tight border-b border-slate-50 pb-1 sm:pb-2">
           {item["Title"] || item.title || "Unknown Track"}
         </div>
 
@@ -3915,7 +4175,7 @@ if (!health?.mongodb) {
   </div>
 ) : activeTable === 'DataSharing' ? (
   /* --- DATA SHARING GALLERY VIEW (Airtable Style) --- */
-  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 py-4 sm:py-6">
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
     {filteredData.map((item: any) => (
         <motion.div
           key={item.id || item._id}
@@ -3924,7 +4184,7 @@ if (!health?.mongodb) {
           className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[160px] sm:min-h-[240px] overflow-hidden"
         >
           {/* SEVAK NAME */}
-          <div className="text-[13px] sm:text-[15px] font-bold text-slate-900 mb-2 sm:mb-4 truncate">
+          <div className="text-[13px] sm:text-[15px] font-bold text-slate-900 mb-2 sm:mb-4">
             {item["Sevak"] || "Unknown Sevak"}
           </div>
 
@@ -3932,7 +4192,7 @@ if (!health?.mongodb) {
           <div className="space-y-2 sm:space-y-4 flex-1">
             <div className="space-y-0.5 overflow-hidden">
               <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Dept</label>
-              {item["Dept"] ? <span className={getTagStyle(item["Dept"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["Dept"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
+              {item["Dept"] ? <span className={getTagStyle(item["Dept"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Dept"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
             </div>
             <div className="space-y-0.5 hidden sm:block">
               <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Email</label>
@@ -3961,7 +4221,7 @@ if (!health?.mongodb) {
   </div>
 ) : activeTable === 'Guidance & Learning' ? (
   /* --- GUIDANCE & LEARNING GALLERY VIEW --- */
-  <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-3 sm:gap-4 py-4 sm:py-6">
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
     {filteredData.map((item: any) => {
       // Logic to extract URL from Airtable format: (https://...)
       const attachmentString = item["Attachments"] || "";
@@ -4003,7 +4263,7 @@ if (!health?.mongodb) {
                 <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
                   Event
                 </label>
-                {item["Event"] ? <span className={getTagStyle(item["Event"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["Event"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
+                {item["Event"] ? <span className={getTagStyle(item["Event"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Event"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
               </div>
 
               {/* DateFrom Field */}
@@ -4102,327 +4362,281 @@ if (!health?.mongodb) {
                     </div>
                   ) :activeTable === 'MusicLog' ? (
   /* --- RESPONSIVE MUSIC LOG GALLERY --- */
-  <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-6 py-4 sm:py-6">
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
     {filteredData.map((item: any) => (
       <motion.div
         key={item.id || item._id}
         onClick={() => setViewingRecord(item)}
         whileHover={{ y: -4 }}
-        className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[24px] p-3 sm:p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[200px] sm:min-h-[340px] overflow-hidden"
+        className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
       >
-        {/* PLAY ID HEADER */}
-        <div className="text-2xl sm:text-4xl font-bold text-slate-900 mb-2 sm:mb-6">
-          {item["PlayID"] || "0"}
+        {/* HEADER ACCENT */}
+        <div className="bg-gradient-to-br from-brand-primary/8 to-brand-accent/8 px-4 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="h-9 w-9 shrink-0 bg-brand-primary rounded-xl flex items-center justify-center shadow-md shadow-brand-primary/20">
+              <Music className="h-4 w-4 text-white" />
+            </div>
+            <div className="min-w-0">
+              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Play ID</div>
+              <div className="text-xl font-black text-slate-900 leading-none">{item["PlayID"] || "—"}</div>
+            </div>
+          </div>
+          <div className="text-right shrink-0">
+            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Date</div>
+            <div className="text-[11px] font-bold text-slate-600 font-mono">{item["Date (from Session)"] || "—"}</div>
+          </div>
         </div>
 
-        {/* FIELDS CONTENT */}
-        <div className="space-y-2 sm:space-y-5 flex-1">
-          <div className="space-y-0.5 sm:space-y-1.5 overflow-hidden">
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Session</label>
-            {item["Session"] ? <span className={getTagStyle(item["Session"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["Session"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
-          </div>
-          <div className="space-y-0.5 sm:space-y-1.5">
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Track</label>
-            <div className="text-[11px] sm:text-[13px] font-bold text-brand-accent truncate">
+        {/* BODY */}
+        <div className="p-4 space-y-3 flex-1">
+          {/* TRACK — most prominent */}
+          <div>
+            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Track</div>
+            <div className="text-[13px] font-black text-brand-accent leading-snug">
               {item["Track"] || "—"}
             </div>
           </div>
-          <div className="hidden sm:block space-y-1.5 overflow-hidden">
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Parent Event</label>
-            {item["Parent Event (from Session)"] ? <span className={getTagStyle(item["Parent Event (from Session)"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["Parent Event (from Session)"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
+
+          {/* SESSION */}
+          <div className="overflow-hidden">
+            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Session</div>
+            {item["Session"]
+              ? <span className={getTagStyle(item["Session"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Session"]}</span>
+              : <span className="text-slate-300 italic text-[10px]">—</span>}
           </div>
-          <div className="space-y-0.5 sm:space-y-1.5">
-            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Date</label>
-            <div className="text-[11px] font-bold text-slate-600 font-mono">
-              {item["Date (from Session)"] || "—"}
+
+          {/* PARENT EVENT */}
+          {item["Parent Event (from Session)"] && (
+            <div className="overflow-hidden">
+              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Event</div>
+              <span className={getTagStyle(item["Parent Event (from Session)"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Parent Event (from Session)"]}</span>
             </div>
-          </div>
+          )}
         </div>
       </motion.div>
     ))}
-    <div className="col-span-2 md:col-span-1">
-      <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-700 h-14 sm:h-16 rounded-2xl text-slate-500 hover:text-brand-primary hover:border-brand-primary bg-slate-900/10 transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-5 w-5 mr-2" /> New Music Entry</Button>
+    <div className="col-span-1 sm:col-span-2 lg:col-span-1">
+      <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-200 h-14 rounded-2xl text-slate-400 hover:text-brand-primary hover:border-brand-primary bg-white transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-4 w-4 mr-2" /> New Music Entry</Button>
     </div>
                     </div>
                   ) : activeTable === 'VideoLog' ? (
   /* --- RESPONSIVE VIDEOLOG GALLERY (Airtable Style) --- */
-  <div className="grid grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 2xl:grid-cols-5 gap-3 sm:gap-6 py-4 sm:py-6">
+  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
     {filteredData.map((item: any) => (
         <motion.div
           key={item.id || item._id}
           onClick={() => setViewingRecord(item)}
           whileHover={{ y: -4 }}
-          className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-6 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[200px] sm:min-h-[320px] overflow-hidden"
+          className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
         >
-          {/* VIDEOPLAY ID */}
-          <div className="text-xl sm:text-3xl font-bold text-slate-800 mb-2 sm:mb-6">
-            {item["VideoPlayId"] || "0"}
+          {/* HEADER ACCENT */}
+          <div className="bg-gradient-to-br from-indigo-50 to-violet-50 px-4 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3 min-w-0">
+              <div className="h-9 w-9 shrink-0 bg-indigo-500 rounded-xl flex items-center justify-center shadow-md shadow-indigo-500/20">
+                <Video className="h-4 w-4 text-white" />
+              </div>
+              <div className="min-w-0">
+                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Video ID</div>
+                <div className="text-xl font-black text-slate-900 leading-none">{item["VideoPlayId"] || "—"}</div>
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Date</div>
+              <div className="text-[11px] font-bold text-slate-600 font-mono">{item["Date (from Session)"] || "—"}</div>
+            </div>
           </div>
 
-          {/* LABELED CONTENT */}
-          <div className="space-y-2 sm:space-y-5 flex-1">
-            <div className="space-y-0.5 sm:space-y-1 overflow-hidden">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Session</label>
-              {item["Session"] ? <span className={getTagStyle(item["Session"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["Session"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
-            </div>
-            <div className="space-y-0.5 sm:space-y-1">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Date</label>
-              <div className="text-[11px] font-bold text-slate-600 font-mono">
-                {item["Date (from Session)"] || "—"}
-              </div>
-            </div>
-            <div className="space-y-0.5 sm:space-y-1 overflow-hidden">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">City</label>
-              {item["City (from Session)"] ? <span className={getTagStyle(item["City (from Session)"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block'}}>{item["City (from Session)"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
-            </div>
+          {/* BODY */}
+          <div className="p-4 space-y-3 flex-1">
+            {/* VIDEO TITLE — most prominent */}
             {item["VideoTitle"] && (
-              <div className="hidden sm:block space-y-1">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Video Title</label>
-                <div className="text-[12px] font-semibold text-slate-700 truncate">{item["VideoTitle"]}</div>
+              <div>
+                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Video Title</div>
+                <div className="text-[13px] font-black text-indigo-600 leading-snug">{item["VideoTitle"]}</div>
               </div>
             )}
+
+            {/* SESSION */}
+            <div className="overflow-hidden">
+              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Session</div>
+              {item["Session"]
+                ? <span className={getTagStyle(item["Session"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Session"]}</span>
+                : <span className="text-slate-300 italic text-[10px]">—</span>}
+            </div>
+
+            {/* CITY */}
+            <div className="overflow-hidden">
+              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">City</div>
+              {item["City (from Session)"]
+                ? <span className={getTagStyle(item["City (from Session)"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["City (from Session)"]}</span>
+                : <span className="text-slate-300 italic text-[10px]">—</span>}
+            </div>
           </div>
         </motion.div>
     ))}
-    <div className="col-span-2 lg:col-span-1">
+    <div className="col-span-1 sm:col-span-2 lg:col-span-1">
       <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-700 h-14 sm:h-16 rounded-2xl text-slate-500 hover:text-indigo-400 hover:border-indigo-400 bg-slate-900/10 transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-5 w-5 mr-2" /> New Video Entry</Button>
     </div>
                   </div>
                   ) : (
-                    /* --- 2. STANDARD GRID VIEW (Darker Borders) --- */
-                  <div className="grid grid-cols-2 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
+                    /* --- 2. STANDARD GRID VIEW --- */
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
                   {filteredData.map((item: any) => (
-                    <motion.div 
-                      key={item.id || item._id} 
+                    <motion.div
+                      key={item.id || item._id}
                       onClick={() => setViewingRecord(item)}
-                      className="group relative bg-brand-surface border border-slate-800/90 rounded-2xl p-4 md:p-6 cursor-pointer hover:border-brand-primary/40 transition-all"
+                      whileHover={{ y: -4 }}
+                      className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
                     >
-                          {/* Card Header: Icon + Status */}
-                          <div className="flex items-start justify-between mb-5">
-                           <div className="h-10 w-10 bg-brand-primary/10 rounded-xl flex items-center justify-center text-brand-primary mb-4">
-                              {activeTable === 'Events' ? <Calendar className="h-5 w-5" /> : 
-                               activeTable === 'Tracks' ? <Play className="h-5 w-5" /> : <LayoutGrid className="h-5 w-5" />}
-                            </div>
-                           
-                          </div>
-
-                          {/* Card Body: Dynamic Content */}
-                          <div className="space-y-3">
-                            
-                             {activeTable === 'LED' && (
-                              
-                       <div className="h-36 md:h-44 w-full rounded-xl overflow-hidden bg-black mb-4">
-                          {/* 1. IMAGE GALLERY (Flip Logic Integrated) */}
-                   
+                      {/* LED IMAGE — rendered first so image appears at top */}
+                      {activeTable === 'LED' && (
+                        <div className="h-44 w-full overflow-hidden bg-slate-100 border-b border-slate-100">
                           {(() => {
-                             
                             const match = item["Images"]?.match(/\((https?:\/\/[^)]+)\)/);
-                            const firstImg = match ? match[1] : null;
-                            return firstImg ? (
+                            return match ? (
                               <CardImageGallery imageString={item["Images"] || ""} />
                             ) : (
-                              <div className="flex flex-col items-center gap-2 opacity-20">
-                                
-                                <Monitor className="h-10 w-10 text-slate-700" />
-                                <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">No Preview</span>
+                              <div className="h-full flex flex-col items-center justify-center gap-2 opacity-30">
+                                <Monitor className="h-10 w-10 text-slate-400" />
+                                <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">No Preview</span>
                               </div>
                             );
                           })()}
                         </div>
                       )}
-                        <div className="space-y-1">
-                 
-                <h3 className="text-sm md:text-base font-black text-brand-text-main uppercase leading-snug truncate">
-                  {activeTable === 'Events' ? (item["Event Name"] || item.EventName) : 
-                   activeTable === 'LED' ? (item["Parent Event (from 🕘 Session)"] || "Untitled LED") :
-                   activeTable === 'Guidance & Learning' ? item["Event"] :
-                   activeTable === 'DyatraChecklist' ? item["Task"] :
-                   activeTable === 'Tracks' ? item["Title"] : // Add this line
-                   (item.name || item.title || "Untitled Record")}
-                </h3>
-                  {activeTable === 'Tracks' && (
-                    <p className="text-[11px] font-bold text-brand-primary uppercase tracking-widest mt-1">
-                      {item["Artist"] || item.artist }
-                    </p>
-                  )}
-                </div>
-                 
 
-
-
-                            {/* 2. SPECIFIC DETAILS FOR EVENTS */}
-                           {activeTable === 'Events' ? (
-                  <div className="space-y-2 pt-1">
-                    <div className="flex items-center gap-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      <Calendar className="h-3.5 w-3.5 text-brand-primary/60" />
-                      <span>{item.DateFrom}</span>
-                    </div>
-                    <div className="flex items-center gap-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                      <MapPin className="h-3.5 w-3.5 text-brand-primary/60" />
-                      <span className="truncate">{item.Venue}</span>
-                    </div>
-                    <div className="mt-5 pt-4 border-t border-slate-800/40 flex justify-between items-center">
-                  <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">
-                    Year: {item.Year || item["Year (from Event)"]}
-                  </span>
-                </div>
-                  </div>
-                ) : activeTable === 'Guidance & Learning' ? (
-                  <div className="space-y-3 pt-1">
-                    {/* Highlighted Guidance Box */}
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                       <p className="text-[13px] text-slate-700 leading-relaxed italic line-clamp-3">
-                         "{item["Guidance/Learning"]}"
-                       </p>
-                    </div>
-                    <div className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase">
-                       <FileText className="h-3 w-3 text-brand-primary" />
-                       <span>GuidanceFrom: {item["GuidanceFrom"]}</span>
-                    </div>
-                    <div className="mt-5 pt-4 border-t border-slate-800/40 flex justify-between items-center">
-                  <span className="text-[9px] font-black text-slate-600 uppercase tracking-tighter">
-                    Year: {item.Year || item["Year (from Event)"]}
-                  </span>
-                </div>
-                  </div>
-                ) : activeTable === 'LED' ? (
-                  /* --- LED SPECIAL VISUAL CARD --- */
-                  <div className="space-y-4 pt-1">
-                   
-                    {/* 1. IMAGE GALLERY (Flip Logic Integrated) */}
-                    
-
-                    <div className="space-y-3">
-                      
-                     
-
-                      {/* 3. VENDOR & LOCATION DETAILS */}
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                          <Truck className="h-3.5 w-3.5 text-brand-primary/60 shrink-0" />
-                          <span className="truncate">Vendor: {item["Vendor"] || "N/A"}</span>
+                      {/* ACCENT HEADER — title shown below image for LED */}
+                      <div className="bg-gradient-to-br from-brand-primary/8 to-slate-50 px-4 py-4 border-b border-slate-100 flex items-center gap-3">
+                        <div className="h-9 w-9 shrink-0 bg-brand-primary/10 rounded-xl flex items-center justify-center text-brand-primary">
+                          {activeTable === 'LED' ? <Monitor className="h-4 w-4" /> :
+                           activeTable === 'DyatraChecklist' ? <CheckSquare className="h-4 w-4" /> :
+                           activeTable === 'Guidance & Learning' ? <FileText className="h-4 w-4" /> :
+                           activeTable === 'Events' ? <Calendar className="h-4 w-4" /> :
+                           activeTable === 'Tracks' ? <Play className="h-4 w-4" /> :
+                           <LayoutGrid className="h-4 w-4" />}
                         </div>
-                        <div className="flex items-center gap-2.5 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                          <MapPin className="h-3.5 w-3.5 text-brand-primary/60 shrink-0" />
-                          <span className="truncate">{item["City (from 🕘 Session)"] || "Location Unknown"}</span>
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Technical Mini-Badge for Pitch */}
-                    <div className="pt-2">
-                      <Badge className="bg-brand-primary/10 text-brand-primary border-none text-[9px] font-black px-2 py-0.5 rounded">
-                        Date: {item["Date (from 🕘 Session)"] }
-                      </Badge>
-                    </div>
-                    
-                  </div>
-                ) : activeTable === 'DyatraChecklist' ? (
-                  <div className="space-y-4 pt-1">
-                    {/* Task Header */}
-                    <div className="flex flex-col gap-1">
-                       <div className="flex items-center gap-2">
-                         <CheckSquare className="h-4 w-4 text-brand-primary" />
-                         <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest">{item["TaskGroup"] || "General Task"}</span>
-                       </div>
-                      
-                    </div>
-
-                    {/* Details Box */}
-                    {item["Details"] && (
-                      <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl">
-                        <p className="text-[12px] text-slate-600 leading-relaxed italic line-clamp-3">
-                          {item["Details"]}
-                        </p>
-                      </div>
-                    )}
-
-                    {/* Metadata */}
-                    <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
-                      <div className="space-y-1">
-                        <p className="text-[8px] font-black text-slate-400 uppercase">Timeline</p>
-                        <p className="text-[11px] font-bold text-slate-700">{item["Typical Timeline"] || "N/A"}</p>
-                      </div>
-                      <div className="space-y-1">
-                        <p className="text-[8px] font-black text-slate-400 uppercase">Category</p>
-                        {item["Category"] ? <span className={getTagStyle(item["Category"])}>{item["Category"]}</span> : <span className="text-slate-500 italic text-[9px]">—</span>}
-                      </div>
-                    </div>
-                  </div>
-                ) : activeTable === 'DataSharing' ? (
-                  <div className="space-y-4 pt-1">
-                    {/* Profile Header */}
-                    <div className="flex items-center gap-4">
-                       <div className="h-12 w-12 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary font-black text-lg border border-brand-primary/20">
-                         {item["Sevak"]?.[0]}
-                       </div>
-                       <div className="flex flex-col">
-                          <h3 className="text-lg font-black text-brand-text-main uppercase tracking-tight leading-tight">
-                            {item["Sevak"]}
+                        <div className="min-w-0 flex-1">
+                          <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{activeTable}</div>
+                          <h3 className="text-[13px] font-black text-slate-900 leading-snug line-clamp-2">
+                            {activeTable === 'Events' ? (item["Event Name"] || item.EventName) :
+                             activeTable === 'LED' ? (item["Parent Event (from 🕘 Session)"] || "Untitled LED") :
+                             activeTable === 'Guidance & Learning' ? item["Event"] :
+                             activeTable === 'DyatraChecklist' ? item["Task"] :
+                             activeTable === 'Tracks' ? item["Title"] :
+                             (item.name || item.title || "Untitled Record")}
                           </h3>
-                          {item["Dept"] ? <span className={getTagStyle(item["Dept"])}>{item["Dept"]}</span> : null}
-                       </div>
-                    </div>
+                          {activeTable === 'Tracks' && item["Artist"] && (
+                            <p className="text-[10px] font-bold text-brand-primary uppercase tracking-widest mt-0.5">{item["Artist"]}</p>
+                          )}
+                        </div>
+                      </div>
 
-                    {/* Contact Details Box */}
-                    <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl space-y-2">
-                       <div className="flex items-center gap-2 text-[11px] text-slate-600 font-medium">
-                          <Search className="h-3.5 w-3.5 text-slate-400" />
-                          <span className="truncate">{item["EmailId"]}</span>
-                       </div>
-                       <div className="flex items-center gap-2 text-[11px] text-slate-600 font-medium">
-                          <FileText className="h-3.5 w-3.5 text-slate-400" />
-                          <span className="truncate">Data: {item["ShareData"] || "N/A"}</span>
-                       </div>
-                    </div>
-
-                    {/* Permission Badge */}
-                    <div className="pt-1">
-                       <div className="flex items-center gap-2">
-                          <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Facts Sharing:</span>
-                          <span className={getTagStyle(item["ShareFacts?"] || 'No')}>{item["ShareFacts?"] || 'No'}</span>
-                       </div>
-                    </div>
-                  </div>
-                ) : activeTable === 'Tracks' ? (
-                  /* --- TRACKS SPECIAL METADATA --- */
-                  <div className="space-y-2 pt-2 border-t border-slate-800/40 mt-4">
-                    <div className="flex items-center justify-between text-[10px] font-bold uppercase tracking-widest text-slate-500">
-                      <span className="truncate max-w-[120px]">
-                        {item["Album"] }
-                      </span>
-                     
-                    </div>
-                    {item["Tags"] && (
-                       <div className="flex flex-wrap gap-1 overflow-hidden">
-                         {String(item["Tags"]).split(',').slice(0, 3).map((tag: string, i: number) => (
-                           <span key={i} className={getTagStyle(tag.trim())}>{tag.trim()}</span>
-                         ))}
-                       </div>
-                    )}
-                  </div>
-                ) : (
-                  /* Fallback subtitle for other tables */
-                  <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">
-                    {item.city || item.artist || item.category}
-                  </p>
-                )}
+                      {/* CARD BODY */}
+                      <div className="p-4 space-y-3 flex-1">
+                        {activeTable === 'Events' ? (
+                          <div className="space-y-2">
+                            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                              <Calendar className="h-3 w-3 text-brand-primary/60 shrink-0" /><span>{item.DateFrom}</span>
+                            </div>
+                            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                              <MapPin className="h-3 w-3 text-brand-primary/60 shrink-0" /><span className="truncate">{item.Venue}</span>
+                            </div>
+                            <div className="pt-2 border-t border-slate-100">
+                              <span className="text-[9px] font-black text-slate-400 uppercase">Year: {item.Year || item["Year (from Event)"]}</span>
+                            </div>
                           </div>
-
-                          {/* Subtle decoration line */}
-                          
-                        </motion.div>
-                      ))}
-
-                      {/* Add New Entry Box */}
-                      <motion.div 
-                        onClick={openAddModal} 
-                        className="border-2 border-dashed border-slate-700 rounded-2xl flex flex-col items-center justify-center p-8 text-slate-500 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-slate-900/10 min-h-[200px]"
-                      >
-                        <Plus className="h-6 w-6 mb-3" />
-                        <span className="text-[10px] font-black uppercase tracking-[0.2em]">New {activeTable} Entry</span>
-                      </motion.div>
-                    </div>
+                        ) : activeTable === 'Guidance & Learning' ? (
+                          <div className="space-y-3">
+                            <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                              <p className="text-[12px] text-slate-600 leading-relaxed italic line-clamp-3">"{item["Guidance/Learning"]}"</p>
+                            </div>
+                            <div className="flex items-center gap-2 text-[10px] font-black text-slate-500 uppercase">
+                              <FileText className="h-3 w-3 text-brand-primary shrink-0" /><span className="truncate">{item["GuidanceFrom"]}</span>
+                            </div>
+                            <div className="pt-2 border-t border-slate-100">
+                              <span className="text-[9px] font-black text-slate-400 uppercase">Year: {item.Year || item["Year (from Event)"]}</span>
+                            </div>
+                          </div>
+                        ) : activeTable === 'LED' ? (
+                          <div className="space-y-3">
+                            <div className="space-y-2">
+                              <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                <Truck className="h-3 w-3 text-brand-primary/60 shrink-0" /><span className="truncate">{item["Vendor"] || "No Vendor"}</span>
+                              </div>
+                              <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
+                                <MapPin className="h-3 w-3 text-brand-primary/60 shrink-0" /><span className="truncate">{item["City (from 🕘 Session)"] || "Location Unknown"}</span>
+                              </div>
+                            </div>
+                            <div className="pt-2 border-t border-slate-100">
+                              <Badge className="bg-brand-primary/10 text-brand-primary border-none text-[9px] font-black px-2 py-0.5 rounded">Date: {item["Date (from 🕘 Session)"]}</Badge>
+                            </div>
+                          </div>
+                        ) : activeTable === 'DyatraChecklist' ? (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-2">
+                              <CheckSquare className="h-3.5 w-3.5 text-brand-primary shrink-0" />
+                              <span className="text-[10px] font-black text-slate-500 uppercase tracking-widest truncate">{item["TaskGroup"] || "General Task"}</span>
+                            </div>
+                            {item["Details"] && (
+                              <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
+                                <p className="text-[12px] text-slate-600 leading-relaxed italic line-clamp-3">{item["Details"]}</p>
+                              </div>
+                            )}
+                            <div className="grid grid-cols-2 gap-3 pt-2 border-t border-slate-100">
+                              <div className="space-y-1">
+                                <p className="text-[8px] font-black text-slate-400 uppercase">Timeline</p>
+                                <p className="text-[11px] font-bold text-slate-700">{item["Typical Timeline"] || "N/A"}</p>
+                              </div>
+                              <div className="space-y-1 overflow-hidden">
+                                <p className="text-[8px] font-black text-slate-400 uppercase">Category</p>
+                                {item["Category"] ? <span className={getTagStyle(item["Category"])} style={{maxWidth:"100%",overflow:"hidden",textOverflow:"ellipsis",display:"inline-block",whiteSpace:"nowrap"}}>{item["Category"]}</span> : <span className="text-slate-400 italic text-[9px]">—</span>}
+                              </div>
+                            </div>
+                          </div>
+                        ) : activeTable === 'DataSharing' ? (
+                          <div className="space-y-3">
+                            <div className="flex items-center gap-3">
+                              <div className="h-10 w-10 shrink-0 rounded-full bg-brand-primary/10 flex items-center justify-center text-brand-primary font-black text-base border border-brand-primary/20">{item["Sevak"]?.[0]}</div>
+                              <div className="min-w-0">
+                                <div className="text-[13px] font-black text-slate-900 uppercase truncate">{item["Sevak"]}</div>
+                                {item["Dept"] ? <span className={getTagStyle(item["Dept"])} style={{maxWidth:'100%',overflow:'hidden',textOverflow:'ellipsis',display:'inline-block',whiteSpace:'nowrap'}}>{item["Dept"]}</span> : null}
+                              </div>
+                            </div>
+                            <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1.5">
+                              <div className="flex items-center gap-2 text-[11px] text-slate-600 font-medium"><Search className="h-3 w-3 text-slate-400 shrink-0" /><span className="truncate">{item["EmailId"]}</span></div>
+                              <div className="flex items-center gap-2 text-[11px] text-slate-600 font-medium"><FileText className="h-3 w-3 text-slate-400 shrink-0" /><span className="truncate">{item["ShareData"] || "N/A"}</span></div>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className="text-[9px] font-black text-slate-400 uppercase">Sharing:</span>
+                              <span className={getTagStyle(item["ShareFacts?"] || 'No')}>{item["ShareFacts?"] || 'No'}</span>
+                            </div>
+                          </div>
+                        ) : activeTable === 'Tracks' ? (
+                          <div className="space-y-2">
+                            {item["Album"] && <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest truncate">{item["Album"]}</div>}
+                            {item["Tags"] && (
+                              <div className="flex flex-wrap gap-1 overflow-hidden">
+                                {String(item["Tags"]).split(',').slice(0, 3).map((tag: string, i: number) => (
+                                  <span key={i} className={getTagStyle(tag.trim())}>{tag.trim()}</span>
+                                ))}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{item.city || item.artist || item.category || "—"}</p>
+                        )}
+                      </div>
+                    </motion.div>
+                  ))}
+                  <motion.div
+                    onClick={openAddModal}
+                    whileHover={{ y: -4 }}
+                    className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/40 transition-all bg-white min-h-[160px]"
+                  >
+                    <Plus className="h-6 w-6 mb-3" />
+                    <span className="text-[10px] font-black uppercase tracking-[0.2em]">New {activeTable} Entry</span>
+                  </motion.div>
+                  </div>
                   )
                 ) : (
                   /* --- 3. DATA GRID VIEW (Table) --- */
@@ -4621,13 +4835,13 @@ if (!health?.mongodb) {
       <div className="relative flex items-center justify-center h-full">
         {/* Row index — visible by default, fades on hover */}
         <span className={`absolute text-[10px] font-mono text-slate-400 transition-opacity duration-150 group-hover:opacity-0 ${
-          selectedIds.includes(row.data?._id || row.data?.id) ? 'opacity-0' : 'opacity-100'
+          selectedIds.includes(row.data?._id || row.data?.id) || isMobileView ? 'opacity-0' : 'opacity-100'
         }`}>
           {idx + 1}
         </span>
-        {/* Controls — hidden by default, appear on hover / when selected */}
+        {/* Controls — hidden by default on desktop (hover to reveal), always visible on mobile */}
         <div className={`flex items-center gap-1 transition-opacity duration-150 ${
-          selectedIds.includes(row.data?._id || row.data?.id) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
+          selectedIds.includes(row.data?._id || row.data?.id) || isMobileView ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'
         }`}>
           <input
             type="checkbox"
@@ -4730,48 +4944,50 @@ if (!health?.mongodb) {
             {/* THIS CLOSES THE viewingRecord TERNARY */}
 
             {selectedIds.length > 0 && (
-  <motion.div 
-    initial={{ y: 20, opacity: 0 }} 
+  <motion.div
+    initial={{ y: 20, opacity: 0 }}
     animate={{ y: 0, opacity: 1 }}
-    className="fixed bottom-10 left-1/2 -translate-x-1/2 z-[100] bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl px-6 py-3 flex items-center gap-6"
+    className="fixed bottom-4 left-3 right-3 sm:left-1/2 sm:right-auto sm:-translate-x-1/2 sm:w-auto z-[100] bg-slate-900 border border-slate-700 shadow-2xl rounded-2xl px-3 sm:px-6 py-3 flex items-center gap-2 sm:gap-6"
   >
-    <div className="flex items-center gap-2 border-r border-slate-700 pr-6">
-      <div className="bg-brand-primary h-6 w-6 rounded-md flex items-center justify-center text-[10px] font-black text-white">
+    {/* Count badge */}
+    <div className="flex items-center gap-2 border-r border-slate-700 pr-3 sm:pr-6 shrink-0">
+      <div className="bg-brand-primary h-6 w-6 rounded-md flex items-center justify-center text-[10px] font-black text-white shrink-0">
         {selectedIds.length}
       </div>
-      <span className="text-xs font-bold text-slate-300 uppercase tracking-widest">Selected</span>
+      <span className="text-[11px] font-bold text-slate-300 uppercase tracking-wider whitespace-nowrap">Selected</span>
     </div>
 
-    <div className="flex items-center gap-2">
-      {/* Expand - Only show if 1 selected */}
-      {selectedIds.length === 1 && (
-        <Button 
-          variant="ghost" size="sm" 
-          className="text-slate-400 hover:text-black"
+    {/* Actions — fill remaining space evenly on mobile */}
+    <div className="flex items-center gap-1 sm:gap-2 flex-1 justify-end">
+      {/* Expand — desktop only */}
+      {!isMobileView && selectedIds.length === 1 && (
+        <button
+          className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-700 text-[12px] font-bold transition-colors whitespace-nowrap"
           onClick={() => {
             const item = getActiveData().find(d => (d._id || d.id) === selectedIds[0]);
             setViewingRecord(item);
+            setSelectedIds([]);
           }}
         >
-          <ArrowUpRight className="h-4 w-4 mr-2" /> Expand
-        </Button>
+          <ArrowUpRight className="h-4 w-4" /> Expand
+        </button>
       )}
 
-      <Button 
-        variant="ghost" size="sm" 
-        className="text-red-400 hover:text-red-500 hover:bg-red-500/10"
+      <button
+        className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 text-[13px] font-bold transition-colors whitespace-nowrap"
         onClick={handleBulkDelete}
       >
-        <X className="h-4 w-4 mr-2" /> Delete
-      </Button>
-      
-      <Button 
-        variant="ghost" size="sm" 
-        className="text-slate-400"
+        <X className="h-4 w-4" /> Delete
+      </button>
+
+      <div className="w-px h-5 bg-slate-700 sm:hidden" />
+
+      <button
+        className="px-3 sm:px-4 py-2 rounded-xl text-slate-300 hover:text-white hover:bg-slate-700 text-[13px] font-bold transition-colors whitespace-nowrap"
         onClick={() => setSelectedIds([])}
       >
         Deselect
-      </Button>
+      </button>
     </div>
   </motion.div>
 )}
@@ -6095,7 +6311,7 @@ if (!health?.mongodb) {
 
       <AttachmentManagerDialog
     manager={imageManager}
-    onClose={() => setImageManager(null)}
+    onClose={() => { setImageManager(null); fetchAllData(); }}
     onUpdate={handleImageUpdate}
     activeTable={activeTable}
   />
