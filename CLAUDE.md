@@ -10,6 +10,7 @@ Manages Events, Sessions, Music/Video logs, LED setups, rentals, checklists, and
 @.claude/rules/frontend-patterns.md
 @.claude/rules/api-patterns.md
 @.claude/rules/ux-conventions.md
+@.claude/rules/mobile-responsive.md
 
 ## Dev Commands
 ```bash
