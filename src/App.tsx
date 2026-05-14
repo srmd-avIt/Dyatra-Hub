@@ -504,6 +504,130 @@ const SessionPicker = React.memo(function SessionPicker({
   );
 });
 
+// Generic linked-record picker — chip-based multi-select from any table's records
+const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
+  value, records, nameField, linkedTable, onCommit, onCancel, onAddLookup
+}: {
+  value: string;
+  records: any[];
+  nameField: string;
+  linkedTable: string;
+  onCommit: (v: string) => void;
+  onCancel: () => void;
+  onAddLookup?: (linkedTable: string) => void;
+}) {
+  const [localSel, setLocalSel] = useState<string[]>(() => value ? value.split(',').map(s => s.trim()).filter(Boolean) : []);
+  const [open, setOpen] = useState(false);
+  const [search, setSearch] = useState('');
+  const ref = useRef<HTMLDivElement>(null);
+  const searchRef = useRef<HTMLInputElement>(null);
+  const latestRef = useRef(localSel);
+  const openRef = useRef(false);
+  latestRef.current = localSel;
+  openRef.current = open;
+
+  useEffect(() => {
+    const next = value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
+    setLocalSel(next);
+  }, [value]);
+
+  useEffect(() => { if (open) setTimeout(() => searchRef.current?.focus(), 0); }, [open]);
+
+  useEffect(() => {
+    const h = (e: MouseEvent) => {
+      if (openRef.current && ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+        onCommit(latestRef.current.join(', '));
+      }
+    };
+    document.addEventListener('mousedown', h);
+    return () => document.removeEventListener('mousedown', h);
+  }, [onCommit]);
+
+  const toggle = (name: string) => {
+    const next = localSel.includes(name) ? localSel.filter(s => s !== name) : [...localSel, name];
+    setLocalSel(next);
+    onCommit(next.join(', '));
+  };
+
+  const remove = (name: string, e: React.MouseEvent) => {
+    e.preventDefault(); e.stopPropagation();
+    const next = localSel.filter(s => s !== name);
+    setLocalSel(next);
+    onCommit(next.join(', '));
+  };
+
+  const names = records.map(r => r[nameField]).filter(Boolean);
+  const filtered = names.filter(n => n.toLowerCase().includes(search.toLowerCase()));
+
+  return (
+    <div ref={ref} className="relative w-full">
+      <div className="w-full min-h-8 flex flex-wrap gap-1 items-center px-1 py-1">
+        {localSel.length > 0 ? localSel.map(name => (
+          <span key={name} className="inline-flex items-center gap-0.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-[11px] font-semibold px-2 py-0.5 rounded-sm leading-tight max-w-full min-w-0">
+            <Link2 className="h-2.5 w-2.5 shrink-0 opacity-60" />
+            <span className="truncate max-w-[200px]">{name}</span>
+            <button onMouseDown={e => remove(name, e)} className="ml-0.5 text-brand-primary/60 hover:text-red-500 leading-none text-[13px] font-bold shrink-0">&times;</button>
+          </span>
+        )) : <span className="text-[12px] text-slate-400">Link {linkedTable} records…</span>}
+        <button
+          onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
+          className="inline-flex items-center justify-center h-5 w-5 rounded border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 hover:border-brand-primary hover:text-brand-primary transition-colors ml-0.5 shrink-0"
+          title={`Add linked ${linkedTable} record`}
+        >
+          <Plus className="h-3 w-3" />
+        </button>
+      </div>
+      {open && (
+        <div className="absolute z-[9999] top-full left-0 mt-1 w-full sm:w-72 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
+          <div className="p-2 border-b border-slate-100">
+            <input
+              ref={searchRef}
+              className="w-full text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 bg-white outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder:text-slate-400"
+              placeholder={`Search ${linkedTable}…`}
+              value={search}
+              onChange={e => setSearch(e.target.value)}
+              onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); onCancel(); } }}
+            />
+          </div>
+          <div className="max-h-52 overflow-y-auto py-1">
+            {filtered.map(name => {
+              const sel = localSel.includes(name);
+              return (
+                <div
+                  key={name}
+                  className={`px-3 py-2 text-[12px] cursor-pointer flex items-center gap-2.5 transition-colors hover:bg-slate-50 ${sel ? 'bg-blue-50' : ''}`}
+                  onMouseDown={e => { e.preventDefault(); toggle(name); }}
+                >
+                  <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${sel ? 'bg-blue-500 border-blue-500' : 'border-slate-200'}`}>
+                    {sel && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
+                  </div>
+                  <span className={sel ? 'text-blue-700 font-semibold' : 'text-slate-700'}>{name}</span>
+                </div>
+              );
+            })}
+            {filtered.length === 0 && <div className="px-3 py-4 text-[12px] text-slate-400 text-center">No records found</div>}
+          </div>
+          <div className="border-t border-slate-100">
+            <div className="px-3 py-1.5 flex items-center justify-between bg-slate-50">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-widest">→ {linkedTable}</span>
+              {onAddLookup && (
+                <button
+                  onMouseDown={e => { e.preventDefault(); e.stopPropagation(); setOpen(false); onAddLookup(linkedTable); }}
+                  className="flex items-center gap-1 text-[10px] font-bold text-brand-primary hover:text-brand-primary/80 uppercase tracking-wider transition-colors"
+                >
+                  <Plus className="h-2.5 w-2.5" />
+                  Add lookup field
+                </button>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+});
+
 const COL_LABEL_MAP: Record<string, string> = {
   '🕘 Session': 'Session',
   'DateFrom': 'Start Date',
@@ -516,10 +640,15 @@ function colLabel(col: string): string {
 
 /** Airtable-style expanded record modal — desktop two-panel + mobile wizard */
 const RecordExpandModal = React.memo(function RecordExpandModal({
-  item, tableName, columns, sessions, events, onClose, onSave
+  item, tableName, columns, sessions, events, columnMeta, columnTypes, allData, onAddLookup, onClose, onSave
 }: {
   item: any; tableName: string; columns: string[]; sessions: any[];
-  events: any[]; onClose: () => void; onSave: (draft: any) => void;
+  events: any[];
+  columnMeta: Record<string, Record<string, { linkedTable?: string; lookupField?: string }>>;
+  columnTypes: Record<string, Record<string, string>>;
+  allData: Record<string, any[]>;
+  onAddLookup: (linkedTable: string) => void;
+  onClose: () => void; onSave: (draft: any) => void;
 }) {
   const normalize = (raw: any) => {
     const d = { ...raw };
@@ -644,11 +773,25 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   const inputCls = "w-full h-10 bg-white border border-slate-200 rounded-xl px-3.5 text-[13px] font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all";
   const readonlyCls = "w-full h-10 bg-slate-50 border border-slate-100 rounded-xl px-3.5 text-[13px] text-slate-400 flex items-center italic";
 
+ const getModalPrimaryField = (table: string): string => {
+    switch (table) {
+      case 'Events': return 'Event Name';
+      case 'Session': return 'Session Name';
+      case 'Tracks': return 'Title';
+      case 'DyatraChecklist': return 'Task';
+      case 'Guidance & Learning': return 'LearningId';
+      case 'LED': return 'LedId';
+      case 'DataSharing': return 'Sevak';
+      case 'VideoSetup': case 'AudioSetup': return 'Name';
+      default: return 'name';
+    }
+  };
+
  const renderField = (col: string) => {
   // Check for ANY auto-filled columns (Session or Event)
-  const isAutoFilled = 
-    col.includes('(from Session)') || 
-    col.includes('(from 🕘 Session)') || 
+  const isAutoFilled =
+    col.includes('(from Session)') ||
+    col.includes('(from 🕘 Session)') ||
     col.toLowerCase().includes('(from event)'); // <--- Added this
 
   if (isAutoFilled) {
@@ -661,7 +804,57 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
       </div>
     );
   }
-  
+
+  // Custom field types: link_to_record and lookup
+  const colTypeMeta = columnMeta[tableName]?.[col];
+  if (colTypeMeta) {
+    if (colTypeMeta.lookupField) {
+      // Lookup: read-only, shows field name source
+      return (
+        <div className="w-full h-10 bg-slate-100 border border-slate-200 rounded-xl px-3.5 text-[13px] text-slate-500 flex items-center gap-2 group/readonly">
+          <span className="truncate italic">{draft[col] || '—'}</span>
+          <div className="ml-auto opacity-0 group-hover/readonly:opacity-100 transition-opacity shrink-0">
+            <Badge variant="outline" className="text-[8px] border-slate-300 text-slate-400 uppercase tracking-tighter">
+              {colTypeMeta.lookupField}{colTypeMeta.linkedTable ? ` from ${colTypeMeta.linkedTable}` : ''}
+            </Badge>
+          </div>
+        </div>
+      );
+    }
+    if (colTypeMeta.linkedTable) {
+      // Link to record: chip-based picker with lookup auto-fill
+      const linkedTable = colTypeMeta.linkedTable;
+      const records = allData[linkedTable] || [];
+      const nameField = getModalPrimaryField(linkedTable);
+      return (
+        <LinkedRecordPicker
+          value={draft[col] || ''}
+          records={records}
+          nameField={nameField}
+          linkedTable={linkedTable}
+          onCommit={val => {
+            // Auto-fill any lookup columns pointing to the same linkedTable
+            const patch: Record<string, string> = { [col]: val };
+            const firstName = val.split(',').map((s: string) => s.trim()).filter(Boolean)[0];
+            const linkedRecord = firstName ? records.find((r: any) => r[nameField] === firstName) : null;
+            const tableMeta = columnMeta[tableName] || {};
+            for (const c of columns) {
+              const cm = tableMeta[c];
+              if (cm?.linkedTable === linkedTable && cm?.lookupField && columnTypes[tableName]?.[c] === 'lookup') {
+                patch[c] = linkedRecord ? (linkedRecord[cm.lookupField] ?? '') : '';
+              }
+            }
+            const nd = { ...draftRef.current, ...patch };
+            setDraft(nd);
+            onSave(nd);
+          }}
+          onCancel={onClose}
+          onAddLookup={onAddLookup}
+        />
+      );
+    }
+  }
+
     if (isLinked && col === 'Session') {
       return (
         <CellDropdown
@@ -1120,7 +1313,9 @@ const FIELD_TYPES = [
   { id: 'badge_multi', label: 'Multi-Badge', icon: Layers,      desc: 'Comma-split blue badges' },
   { id: 'email',       label: 'Email',       icon: Mail,        desc: 'Email address link' },
   { id: 'url',         label: 'URL',         icon: Link2,       desc: 'Shows as "Link" anchor' },
-  { id: 'phone',       label: 'Phone',       icon: Phone,       desc: 'Phone number' },
+  { id: 'phone',          label: 'Phone',            icon: Phone,        desc: 'Phone number' },
+  { id: 'link_to_record', label: 'Link to Record',   icon: Link2,        desc: 'Links to another table' },
+  { id: 'lookup',         label: 'Lookup',           icon: Search,       desc: 'Field pulled from linked table' },
 ] as const;
 type FieldType = typeof FIELD_TYPES[number]['id'];
 
@@ -1420,36 +1615,98 @@ const toggleHideColumn = (col: string) => {
   saveSettings(extraColumns, columnTypes, newHiddenObj);
 };
 
-const confirmAddColumn = () => {
+const confirmAddColumn = async () => {
   if (!addColumnModal || !addColumnModal.name.trim()) return;
   const name = addColumnModal.name.trim();
   const type = addColumnModal.type;
   const currentExtras = extraColumns[activeTable] || [];
   const newCols = { ...extraColumns, [activeTable]: [...currentExtras, name] };
   const newTypes = { ...columnTypes, [activeTable]: { ...(columnTypes[activeTable] || {}), [name]: type } };
+  const metaEntry: { linkedTable?: string; lookupField?: string } = {};
+  if (addColumnModal.linkedTable) metaEntry.linkedTable = addColumnModal.linkedTable;
+  if (addColumnModal.lookupField) metaEntry.lookupField = addColumnModal.lookupField;
+  const newMeta = { ...columnMeta, [activeTable]: { ...(columnMeta[activeTable] || {}), [name]: metaEntry } };
   setExtraColumns(newCols);
   setColumnTypes(newTypes);
-  saveSettings(newCols, newTypes, hiddenColumns);
+  setColumnMeta(newMeta);
+  saveSettings(newCols, newTypes, hiddenColumns, newMeta);
   setAddColumnModal(null);
+
+  // Backfill existing records when a lookup column is added
+  if (type === 'lookup' && metaEntry.linkedTable && metaEntry.lookupField) {
+    const linkedTable = metaEntry.linkedTable;
+    const lookupField = metaEntry.lookupField;
+    const nameField = getPrimaryField(linkedTable);
+    const linkedData = getDataForTable(linkedTable);
+
+    // Find which column in the current table links to linkedTable
+    const allTableMeta = { ...(columnMeta[activeTable] || {}), [name]: metaEntry };
+    const linkCol = Object.keys(allTableMeta).find(c =>
+      allTableMeta[c]?.linkedTable === linkedTable && !allTableMeta[c]?.lookupField &&
+      (newTypes[activeTable]?.[c] === 'link_to_record' || columnTypes[activeTable]?.[c] === 'link_to_record')
+    );
+
+    if (linkCol) {
+      const collection = (() => {
+        switch (activeTable) {
+          case 'Events': return 'events';
+          case 'Session': return 'sessions';
+          case 'MusicLog': return 'musiclog';
+          case 'VideoLog': return 'videolog';
+          case 'Tracks': return 'media';
+          case 'DyatraChecklist': return 'checklist';
+          case 'Guidance & Learning': return 'guidance';
+          case 'LED': return 'led_details';
+          case 'DataSharing': return 'locations';
+          case 'VideoSetup': return 'videosetup';
+          case 'AudioSetup': return 'audiosetup';
+          default: return '';
+        }
+      })();
+      if (collection) {
+        const records = getActiveData();
+        for (const record of records) {
+          const linkedName = (record[linkCol] || '').split(',')[0].trim();
+          if (!linkedName) continue;
+          const linkedRecord = linkedData.find(r => r[nameField] === linkedName);
+          const fillValue = linkedRecord ? (linkedRecord[lookupField] ?? '') : '';
+          const id = record._id || record.id;
+          if (!id) continue;
+          const body = { ...record, [name]: fillValue };
+          delete body._id;
+          await window.fetch(`/api/${collection}/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(body),
+          });
+        }
+        fetchActiveTable();
+      }
+    }
+  }
 };
 
 const confirmEditColumnType = () => {
   if (!editColumnModal) return;
   const { col, type, extraIndex } = editColumnModal;
 
-  // Always save the type for any column
   const newTypes = { ...columnTypes, [activeTable]: { ...(columnTypes[activeTable] || {}), [col]: type } };
   setColumnTypes(newTypes);
 
-  // Only touch extraColumns if it's an extra column (for rename support)
+  const metaEntry: { linkedTable?: string; lookupField?: string } = {};
+  if (editColumnModal.linkedTable) metaEntry.linkedTable = editColumnModal.linkedTable;
+  if (editColumnModal.lookupField) metaEntry.lookupField = editColumnModal.lookupField;
+  const newMeta = { ...columnMeta, [activeTable]: { ...(columnMeta[activeTable] || {}), [col]: metaEntry } };
+  setColumnMeta(newMeta);
+
   if (extraIndex >= 0) {
     const newExtras = [...(extraColumns[activeTable] || [])];
     newExtras[extraIndex] = editColumnModal.col;
     const newCols = { ...extraColumns, [activeTable]: newExtras };
     setExtraColumns(newCols);
-    saveSettings(newCols, newTypes, hiddenColumns);
+    saveSettings(newCols, newTypes, hiddenColumns, newMeta);
   } else {
-    saveSettings(extraColumns, newTypes, hiddenColumns);
+    saveSettings(extraColumns, newTypes, hiddenColumns, newMeta);
   }
   setEditColumnModal(null);
 };
@@ -1466,13 +1723,86 @@ const getActiveData = () => {
     case 'DataSharing': return locations;
     case 'VideoSetup': return videoSetup;
     case 'AudioSetup': return audioSetup;
-    case 'Tracks': 
+    case 'Tracks':
       // This more inclusive filter checks for type OR the existence of a Title
-      return media.filter((m: any) => 
+      return media.filter((m: any) =>
         m.type === 'track' || m.Type === 'track' || m["Title"]
       );
     default: return [];
   }
+};
+
+// Returns the data array for a given table name (used by LinkedRecordPicker)
+const getDataForTable = (table: string): any[] => {
+  switch (table) {
+    case 'Events': return events;
+    case 'Session': return sessions;
+    case 'MusicLog': return musicLogs;
+    case 'VideoLog': return videoLogs;
+    case 'Guidance & Learning': return guidance;
+    case 'LED': return ledDetails;
+    case 'DyatraChecklist': return checklist;
+    case 'DataSharing': return locations;
+    case 'VideoSetup': return videoSetup;
+    case 'AudioSetup': return audioSetup;
+    case 'Tracks': return media.filter((m: any) => m.type === 'track' || m.Type === 'track' || m["Title"]);
+    default: return [];
+  }
+};
+
+// Returns the display/primary name field for a given table
+const getPrimaryField = (table: string): string => {
+  switch (table) {
+    case 'Events': return 'Event Name';
+    case 'Session': return 'Session Name';
+    case 'MusicLog': return 'PlayID';
+    case 'VideoLog': return 'VideoPlayId';
+    case 'Tracks': return 'Title';
+    case 'DyatraChecklist': return 'Task';
+    case 'Guidance & Learning': return 'LearningId';
+    case 'LED': return 'LedId';
+    case 'DataSharing': return 'Sevak';
+    case 'VideoSetup': return 'Name';
+    case 'AudioSetup': return 'Name';
+    default: return 'name';
+  }
+};
+
+// For a given link column and new linked-record names, auto-fill all lookup columns
+// that point to the same linkedTable. Uses the first selected record for the values.
+const buildLookupPatch = (
+  linkCol: string,
+  linkedNames: string, // comma-separated selected record names
+  currentDraft: any
+): Record<string, string> => {
+  const meta = columnMeta[activeTable]?.[linkCol];
+  if (!meta?.linkedTable) return {};
+
+  const linkedTable = meta.linkedTable;
+  const nameField = getPrimaryField(linkedTable);
+  const linkedData = getDataForTable(linkedTable);
+
+  // Find the first linked record to pull field values from
+  const firstName = linkedNames.split(',').map(s => s.trim()).filter(Boolean)[0];
+  const linkedRecord = firstName ? linkedData.find(r => r[nameField] === firstName) : null;
+
+  const patch: Record<string, string> = {};
+  // Scan all columns for lookup fields pointing to this same linkedTable
+  const allCols = [
+    ...(getTableColumns() as string[]),
+    ...(extraColumns[activeTable] || []),
+  ];
+  for (const col of allCols) {
+    const colMeta = columnMeta[activeTable]?.[col];
+    if (
+      colMeta?.linkedTable === linkedTable &&
+      colMeta?.lookupField &&
+      (columnTypes[activeTable]?.[col] === 'lookup')
+    ) {
+      patch[col] = linkedRecord ? (linkedRecord[colMeta.lookupField] ?? '') : '';
+    }
+  }
+  return patch;
 };
 
 const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ manager, onClose, onUpdate }: any) {
@@ -1736,13 +2066,14 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 const saveSettings = async (
   cols: Record<string, string[]>,
   types: Record<string, Record<string, FieldType>>,
-  hidden: Record<string, string[]>
+  hidden: Record<string, string[]>,
+  meta?: Record<string, Record<string, { linkedTable?: string; lookupField?: string }>>
 ) => {
   try {
     await window.fetch('/api/settings/columns', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ _v: 2, columns: cols, types, hidden })
+      body: JSON.stringify({ _v: 2, columns: cols, types, hidden, meta: meta ?? columnMeta })
     });
   } catch (error) {
     console.error("Failed to save settings:", error);
@@ -1759,6 +2090,7 @@ useEffect(() => {
           setExtraColumns(data.columns || {});
           setColumnTypes(data.types || {});
           setHiddenColumns(data.hidden || {});
+          setColumnMeta(data.meta || {});
         } else {
           setExtraColumns(data || {});
         }
@@ -1873,9 +2205,11 @@ if (activeTable === 'Tracks') {
 const [extraColumns, setExtraColumns] = useState<Record<string, string[]>>({});
 const [columnTypes, setColumnTypes] = useState<Record<string, Record<string, FieldType>>>({});
 const [hiddenColumns, setHiddenColumns] = useState<Record<string, string[]>>({});
+// meta stores extra config per column: linkedTable for link_to_record; linkedTable+lookupField for lookup
+const [columnMeta, setColumnMeta] = useState<Record<string, Record<string, { linkedTable?: string; lookupField?: string }>>>({});
 const [isFieldsOpen, setIsFieldsOpen] = useState(false);
-const [addColumnModal, setAddColumnModal] = useState<{ name: string; type: FieldType } | null>(null);
-const [editColumnModal, setEditColumnModal] = useState<{ col: string; type: FieldType; extraIndex: number } | null>(null);
+const [addColumnModal, setAddColumnModal] = useState<{ name: string; type: FieldType; linkedTable: string; lookupField: string } | null>(null);
+const [editColumnModal, setEditColumnModal] = useState<{ col: string; type: FieldType; extraIndex: number; linkedTable: string; lookupField: string } | null>(null);
 
 const getColumnType = (col: string): FieldType => {
   // Explicitly stored type always wins
@@ -1975,6 +2309,28 @@ case 'text':
       return (val === 'true' || val === true)
         ? <Check className="h-4 w-4 text-green-500 mx-auto" />
         : empty;
+
+    case 'link_to_record': {
+      const meta = columnMeta[activeTable]?.[col];
+      const linkedTable = meta?.linkedTable || '';
+      if (!val) return empty;
+      const names = String(val).split(',').map((s: string) => s.trim()).filter(Boolean);
+      return (
+        <div className="flex flex-wrap gap-1 justify-center">
+          {names.map((n: string, i: number) => (
+            <span key={i} className="inline-flex items-center gap-1 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-[11px] font-semibold px-2 py-0.5 rounded-sm">
+              <Link2 className="h-2.5 w-2.5 shrink-0" />
+              {n}
+            </span>
+          ))}
+        </div>
+      );
+    }
+
+    case 'lookup': {
+      if (!val) return empty;
+      return <span className="text-[12px] text-slate-600">{String(val)}</span>;
+    }
 
     default:
       return val ? (
@@ -3097,18 +3453,23 @@ const updateDraftOnly = (col: string, val: string) => {
         const isMulti = colType === 'badge_multi';
         const isSingleBadge = colType === 'badge' || colType === 'status' || colType === 'select';
 
+        // link_to_record cells need overflow-visible always (dropdown + chips)
+        const isLinkCol = colType === 'link_to_record';
+
         return (
           <td
             key={i}
             className={`border-r border-b bg-white transition-colors ${
-              isActuallyActive 
-                ? 'p-0 border-blue-400 ring-2 ring-inset ring-blue-300 overflow-visible' 
-                : isAutoFilled 
-                  ? 'px-4 py-3 bg-slate-50/50 cursor-not-allowed' 
-                  : `px-4 py-3 border-slate-200 hover:bg-slate-50/60 overflow-hidden${i > 0 ? ' text-center' : ''}`
+              isLinkCol
+                ? 'px-1 py-0.5 border-slate-200 overflow-visible'
+                : isActuallyActive
+                  ? 'p-0 border-blue-400 ring-2 ring-inset ring-blue-300 overflow-visible'
+                  : isAutoFilled
+                    ? 'px-4 py-3 bg-slate-50/50 cursor-not-allowed'
+                    : `px-4 py-3 border-slate-200 hover:bg-slate-50/60 overflow-hidden${i > 0 ? ' text-center' : ''}`
             }`}
             style={{ width: gw(col), minWidth: gw(col), maxWidth: gw(col), height: '40px' }}
-            onClick={() => !isAutoFilled && setEditingCell(col)}
+            onClick={() => !isAutoFilled && !isLinkCol && colType !== 'lookup' && setEditingCell(col)}
           >
             {(() => {
               if (isAutoFilled) {
@@ -3120,6 +3481,42 @@ const updateDraftOnly = (col: string, val: string) => {
               }
 
 
+
+              // link_to_record: always show the picker (active or not), never a plain text input
+              if (colType === 'link_to_record') {
+                const meta = columnMeta[activeTable]?.[col];
+                const linkedTable = meta?.linkedTable || '';
+                const linkedRecords = getDataForTable(linkedTable);
+                const nameField = getPrimaryField(linkedTable);
+                return (
+                  <LinkedRecordPicker
+                    value={editDraft[col] || ''}
+                    records={linkedRecords}
+                    nameField={nameField}
+                    linkedTable={linkedTable || col}
+                    onCommit={val => {
+                      const patch = buildLookupPatch(col, val, editDraft);
+                      const nd = { ...editDraft, [col]: val, ...patch };
+                      setEditDraft(nd);
+                      handleUpdateRecord(nd);
+                    }}
+                    onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
+                    onAddLookup={lt => {
+                      const currentExtras = extraColumns[activeTable] || [];
+                      setAddColumnModal({ name: '', type: 'lookup', linkedTable: lt, lookupField: '' });
+                    }}
+                  />
+                );
+              }
+
+              // lookup: always read-only
+              if (colType === 'lookup') {
+                return (
+                  <div className="flex items-center h-full opacity-60 italic select-none">
+                    {renderCell(col, editDraft)}
+                  </div>
+                );
+              }
 
               // Only show the input/editor if THIS specific cell is active
               if (!isActuallyActive) {
@@ -3225,7 +3622,7 @@ const updateDraftOnly = (col: string, val: string) => {
               if (colType === 'checkbox') {
                 return <input type="checkbox" checked={editDraft[col] === 'true' || editDraft[col] === true} onChange={e => commitField(col, e.target.checked ? 'true' : 'false')} className="h-4 w-4 rounded accent-brand-primary cursor-pointer" />;
               }
-              
+
               if (colType === 'date') {
                  return <input type="date" className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => handleUpdateRecord()} onKeyDown={saveKeys} autoFocus />;
               }
@@ -4892,13 +5289,18 @@ if (!health?.mongodb) {
             className="flex items-center gap-2 px-4 py-3 h-full w-full cursor-pointer hover:bg-black/5 transition-colors truncate pr-16"
           >
             <TypeIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <span className="truncate">{col}</span>
+            <span className="truncate">{(() => {
+              const meta = columnMeta[activeTable]?.[col];
+              if (meta?.lookupField && meta?.linkedTable) return `${meta.lookupField} (from ${meta.linkedTable})`;
+              if (meta?.linkedTable && fieldType === 'link_to_record') return `Linked to ${meta.linkedTable}`;
+              return col;
+            })()}</span>
           </div>
 
           {/* COLUMN ACTIONS — type picker for all columns, delete only for extra */}
           <div className="absolute right-2 flex items-center gap-0.5 opacity-0 group-hover/header:opacity-100 transition-all">
             <button
-              onClick={(e) => { e.stopPropagation(); setEditColumnModal({ col, type: getColumnType(col), extraIndex }); }}
+              onClick={(e) => { e.stopPropagation(); const existMeta = columnMeta[activeTable]?.[col] || {}; setEditColumnModal({ col, type: getColumnType(col), extraIndex, linkedTable: existMeta.linkedTable || '', lookupField: existMeta.lookupField || '' }); }}
               className="p-1 hover:bg-blue-100 text-slate-400 hover:text-brand-primary rounded transition-all"
               title="Change field type"
             >
@@ -4927,7 +5329,7 @@ if (!health?.mongodb) {
       <button
         onClick={() => {
           const currentExtras = extraColumns[activeTable] || [];
-          setAddColumnModal({ name: `Field ${currentExtras.length + 1}`, type: 'text' });
+          setAddColumnModal({ name: `Field ${currentExtras.length + 1}`, type: 'text', linkedTable: '', lookupField: '' });
         }}
         className="w-full h-full flex items-center justify-center text-slate-400 hover:text-brand-primary transition-colors"
         title="Add field"
@@ -5215,40 +5617,87 @@ if (!health?.mongodb) {
       {addColumnModal && (
         <>
           <div className="fixed inset-0 z-[600] bg-black/20" onClick={() => setAddColumnModal(null)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[601] w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl p-6">
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide mb-4">Add field</h3>
-
-            <div className="mb-4">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Field name</label>
-              <input
-                autoFocus
-                className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary outline-none"
-                value={addColumnModal.name}
-                onChange={e => setAddColumnModal({ ...addColumnModal, name: e.target.value })}
-                onKeyDown={e => { if (e.key === 'Enter') confirmAddColumn(); if (e.key === 'Escape') setAddColumnModal(null); }}
-              />
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[601] w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col max-h-[80vh]">
+            {/* sticky header */}
+            <div className="px-5 pt-5 pb-3 shrink-0">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide">Add field</h3>
             </div>
 
-            <div className="mb-5">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Field type</label>
-              <div className="grid grid-cols-2 gap-1.5">
-                {FIELD_TYPES.map(ft => (
-                  <button
-                    key={ft.id}
-                    onClick={() => setAddColumnModal({ ...addColumnModal, type: ft.id })}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-left ${addColumnModal.type === ft.id ? 'border-brand-primary bg-brand-primary/5 text-brand-primary' : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'}`}
-                  >
-                    <ft.icon className="h-3.5 w-3.5 shrink-0" />
-                    <div>
-                      <div className="text-[11px] font-semibold leading-tight">{ft.label}</div>
-                      <div className="text-[9px] text-slate-400 leading-tight">{ft.desc}</div>
-                    </div>
-                  </button>
-                ))}
+            {/* scrollable body */}
+            <div className="flex-1 overflow-y-auto px-5 pb-1 min-h-0">
+              <div className="mb-4">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Field name</label>
+                <input
+                  autoFocus
+                  className="w-full border border-slate-300 rounded-lg px-3 py-2 text-sm text-slate-900 focus:ring-2 focus:ring-brand-primary/30 focus:border-brand-primary outline-none"
+                  value={addColumnModal.name}
+                  onChange={e => setAddColumnModal({ ...addColumnModal, name: e.target.value })}
+                  onKeyDown={e => { if (e.key === 'Enter') confirmAddColumn(); if (e.key === 'Escape') setAddColumnModal(null); }}
+                />
               </div>
+
+              <div className="mb-4">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Field type</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {FIELD_TYPES.map(ft => (
+                    <button
+                      key={ft.id}
+                      onClick={() => setAddColumnModal({ ...addColumnModal, type: ft.id })}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-all text-left ${addColumnModal.type === ft.id ? 'border-brand-primary bg-brand-primary/5 text-brand-primary' : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      <ft.icon className="h-3 w-3 shrink-0" />
+                      <div>
+                        <div className="text-[11px] font-semibold leading-tight">{ft.label}</div>
+                        <div className="text-[9px] text-slate-400 leading-tight">{ft.desc}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Extra config for link_to_record and lookup */}
+              {(addColumnModal.type === 'link_to_record' || addColumnModal.type === 'lookup') && (
+                <div className="mb-4 space-y-3 border border-slate-100 rounded-xl p-3 bg-slate-50">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Linked table</label>
+                    <select
+                      className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-[12px] text-slate-900 bg-white focus:ring-2 focus:ring-brand-primary/30 outline-none"
+                      value={addColumnModal.linkedTable}
+                      onChange={e => setAddColumnModal({ ...addColumnModal, linkedTable: e.target.value, lookupField: '' })}
+                    >
+                      <option value="">Select table…</option>
+                      {['Events','Session','MusicLog','VideoLog','Tracks','DyatraChecklist','Guidance & Learning','LED','DataSharing','VideoSetup','AudioSetup']
+                        .filter(t => t !== activeTable)
+                        .map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  {addColumnModal.type === 'lookup' && addColumnModal.linkedTable && (() => {
+                    const linkedFields = Object.keys(
+                      getDataForTable(addColumnModal.linkedTable)[0] || {}
+                    ).filter(f => !['_id','id','created_at','__v'].includes(f));
+                    return (
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Field to look up</label>
+                        <select
+                          className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-[12px] text-slate-900 bg-white focus:ring-2 focus:ring-brand-primary/30 outline-none"
+                          value={addColumnModal.lookupField}
+                          onChange={e => setAddColumnModal({ ...addColumnModal, lookupField: e.target.value, name: addColumnModal.name || `${e.target.value} (from ${addColumnModal.linkedTable})` })}
+                        >
+                          <option value="">Select field…</option>
+                          {linkedFields.map(f => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                        {addColumnModal.lookupField && (
+                          <p className="text-[9px] text-slate-400 mt-1">Will display as: <span className="text-brand-primary font-semibold">{addColumnModal.lookupField} (from {addColumnModal.linkedTable})</span></p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
             </div>
 
-            <div className="flex gap-2">
+            {/* sticky footer */}
+            <div className="px-5 py-3 border-t border-slate-100 flex gap-2 shrink-0">
               <button onClick={() => setAddColumnModal(null)} className="flex-1 py-2 border border-slate-200 rounded-lg text-[12px] font-semibold text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
               <button onClick={confirmAddColumn} className="flex-1 py-2 bg-brand-primary text-white rounded-lg text-[12px] font-semibold hover:bg-brand-primary/90 transition-colors">Add field</button>
             </div>
@@ -5260,30 +5709,77 @@ if (!health?.mongodb) {
       {editColumnModal && (
         <>
           <div className="fixed inset-0 z-[600] bg-black/20" onClick={() => setEditColumnModal(null)} />
-          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[601] w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl p-6">
-            <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide mb-1">Edit field</h3>
-            <p className="text-[11px] text-slate-500 mb-4 font-medium truncate">{editColumnModal.col}</p>
-
-            <div className="mb-5">
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Field type</label>
-              <div className="grid grid-cols-2 gap-1.5">
-                {FIELD_TYPES.map(ft => (
-                  <button
-                    key={ft.id}
-                    onClick={() => setEditColumnModal({ ...editColumnModal, type: ft.id })}
-                    className={`flex items-center gap-2 px-3 py-2 rounded-lg border transition-all text-left ${editColumnModal.type === ft.id ? 'border-brand-primary bg-brand-primary/5 text-brand-primary' : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'}`}
-                  >
-                    <ft.icon className="h-3.5 w-3.5 shrink-0" />
-                    <div>
-                      <div className="text-[11px] font-semibold leading-tight">{ft.label}</div>
-                      <div className="text-[9px] text-slate-400 leading-tight">{ft.desc}</div>
-                    </div>
-                  </button>
-                ))}
-              </div>
+          <div className="fixed top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 z-[601] w-80 bg-white border border-slate-200 rounded-2xl shadow-2xl flex flex-col max-h-[80vh]">
+            {/* sticky header */}
+            <div className="px-5 pt-5 pb-3 shrink-0">
+              <h3 className="text-sm font-black text-slate-900 uppercase tracking-wide mb-0.5">Edit field</h3>
+              <p className="text-[11px] text-slate-500 font-medium truncate">{editColumnModal.col}</p>
             </div>
 
-            <div className="flex gap-2">
+            {/* scrollable body */}
+            <div className="flex-1 overflow-y-auto px-5 pb-1 min-h-0">
+              <div className="mb-4">
+                <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-2 block">Field type</label>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {FIELD_TYPES.map(ft => (
+                    <button
+                      key={ft.id}
+                      onClick={() => setEditColumnModal({ ...editColumnModal, type: ft.id })}
+                      className={`flex items-center gap-2 px-2.5 py-1.5 rounded-lg border transition-all text-left ${editColumnModal.type === ft.id ? 'border-brand-primary bg-brand-primary/5 text-brand-primary' : 'border-slate-200 hover:border-slate-300 text-slate-600 hover:bg-slate-50'}`}
+                    >
+                      <ft.icon className="h-3 w-3 shrink-0" />
+                      <div>
+                        <div className="text-[11px] font-semibold leading-tight">{ft.label}</div>
+                        <div className="text-[9px] text-slate-400 leading-tight">{ft.desc}</div>
+                      </div>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Extra config for link_to_record and lookup */}
+              {(editColumnModal.type === 'link_to_record' || editColumnModal.type === 'lookup') && (
+                <div className="mb-4 space-y-3 border border-slate-100 rounded-xl p-3 bg-slate-50">
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Linked table</label>
+                    <select
+                      className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-[12px] text-slate-900 bg-white focus:ring-2 focus:ring-brand-primary/30 outline-none"
+                      value={editColumnModal.linkedTable}
+                      onChange={e => setEditColumnModal({ ...editColumnModal, linkedTable: e.target.value, lookupField: '' })}
+                    >
+                      <option value="">Select table…</option>
+                      {['Events','Session','MusicLog','VideoLog','Tracks','DyatraChecklist','Guidance & Learning','LED','DataSharing','VideoSetup','AudioSetup']
+                        .filter(t => t !== activeTable)
+                        .map(t => <option key={t} value={t}>{t}</option>)}
+                    </select>
+                  </div>
+                  {editColumnModal.type === 'lookup' && editColumnModal.linkedTable && (() => {
+                    const linkedFields = Object.keys(
+                      getDataForTable(editColumnModal.linkedTable)[0] || {}
+                    ).filter(f => !['_id','id','created_at','__v'].includes(f));
+                    return (
+                      <div>
+                        <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Field to look up</label>
+                        <select
+                          className="w-full border border-slate-300 rounded-lg px-2 py-1.5 text-[12px] text-slate-900 bg-white focus:ring-2 focus:ring-brand-primary/30 outline-none"
+                          value={editColumnModal.lookupField}
+                          onChange={e => setEditColumnModal({ ...editColumnModal, lookupField: e.target.value })}
+                        >
+                          <option value="">Select field…</option>
+                          {linkedFields.map(f => <option key={f} value={f}>{f}</option>)}
+                        </select>
+                        {editColumnModal.lookupField && (
+                          <p className="text-[9px] text-slate-400 mt-1">Will display as: <span className="text-brand-primary font-semibold">{editColumnModal.lookupField} (from {editColumnModal.linkedTable})</span></p>
+                        )}
+                      </div>
+                    );
+                  })()}
+                </div>
+              )}
+            </div>
+
+            {/* sticky footer */}
+            <div className="px-5 py-3 border-t border-slate-100 flex gap-2 shrink-0">
               <button onClick={() => setEditColumnModal(null)} className="flex-1 py-2 border border-slate-200 rounded-lg text-[12px] font-semibold text-slate-600 hover:bg-slate-50 transition-colors">Cancel</button>
               <button onClick={confirmEditColumnType} className="flex-1 py-2 bg-brand-primary text-white rounded-lg text-[12px] font-semibold hover:bg-brand-primary/90 transition-colors">Save</button>
             </div>
@@ -6541,6 +7037,24 @@ if (!health?.mongodb) {
           columns={getTableColumns()}
           sessions={sessions}
           events={events}
+          columnMeta={columnMeta}
+          columnTypes={columnTypes}
+          allData={{
+            Events: events,
+            Session: sessions,
+            MusicLog: musicLogs,
+            VideoLog: videoLogs,
+            Tracks: media.filter((m: any) => m.type === 'track' || m.Type === 'track' || m["Title"]),
+            'Guidance & Learning': guidance,
+            LED: ledDetails,
+            DyatraChecklist: checklist,
+            DataSharing: locations,
+            VideoSetup: videoSetup,
+            AudioSetup: audioSetup,
+          }}
+          onAddLookup={lt => {
+            setAddColumnModal({ name: '', type: 'lookup', linkedTable: lt, lookupField: '' });
+          }}
           onClose={() => setExpandedRecord(null)}
           onSave={handleExpandedSave}
         />
