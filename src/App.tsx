@@ -27,7 +27,7 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
-import { 
+import {
   Music,
   Video,
   FileText,
@@ -41,20 +41,16 @@ import {
   Calendar,
   MapPin,
   Play,
-  Pause,
-  SkipForward,
-  SkipBack,
   Menu,
   X,
   Star,
   Zap,
   PanelLeftClose,
   PanelLeftOpen,
-  LucideWatch,
   Clock,
   LayoutGrid,
   Grid,
-    ChevronLeft,
+  ChevronLeft,
   ChevronRight,
   Layers,
   ArrowUpDown,
@@ -78,6 +74,7 @@ import {
   Pencil,
   GripVertical,
   Share2,
+  Volume2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -507,6 +504,16 @@ const SessionPicker = React.memo(function SessionPicker({
   );
 });
 
+const COL_LABEL_MAP: Record<string, string> = {
+  '🕘 Session': 'Session',
+  'DateFrom': 'Start Date',
+  'DateTo': 'End Date',
+};
+function colLabel(col: string): string {
+  if (COL_LABEL_MAP[col]) return COL_LABEL_MAP[col];
+  return col.replace(/\(from 🕘 Session\)/g, '(from Session)');
+}
+
 /** Airtable-style expanded record modal — desktop two-panel + mobile wizard */
 const RecordExpandModal = React.memo(function RecordExpandModal({
   item, tableName, columns, sessions, events, onClose, onSave
@@ -910,7 +917,7 @@ if (hasDropdown) {
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 pb-2 space-y-5 min-h-0">
           {currentStepData.fields.map(col => (
             <div key={col}>
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] block mb-2">{col === 'DateFrom' ? 'Start Date' : col === 'DateTo' ? 'End Date' : col}</label>
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] block mb-2">{colLabel(col)}</label>
               {renderField(col)}
             </div>
           ))}
@@ -966,7 +973,7 @@ if (hasDropdown) {
           <div className="flex-1 overflow-y-auto p-6 space-y-4 thin-scrollbar">
             {columns.map(col => (
               <div key={col}>
-                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] block mb-1.5">{col}</label>
+                <label className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] block mb-1.5">{colLabel(col)}</label>
                 {renderField(col)}
               </div>
             ))}
@@ -1116,6 +1123,49 @@ const FIELD_TYPES = [
   { id: 'phone',       label: 'Phone',       icon: Phone,       desc: 'Phone number' },
 ] as const;
 type FieldType = typeof FIELD_TYPES[number]['id'];
+
+const EmptyState = React.memo(function EmptyState({
+  searchQuery,
+  onClearSearch,
+  onAddFirst,
+}: {
+  searchQuery: string;
+  onClearSearch: () => void;
+  onAddFirst: () => void;
+}) {
+  if (searchQuery) {
+    return (
+      <div className="flex flex-col items-center justify-center py-16 px-4 text-center col-span-full">
+        <div className="h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+          <Search className="h-6 w-6 text-slate-300" />
+        </div>
+        <div className="text-[15px] font-black text-slate-800 mb-1">No results for "{searchQuery}"</div>
+        <div className="text-[12px] text-slate-400 mb-4">Try adjusting your search or clear it to see all records</div>
+        <button
+          onClick={onClearSearch}
+          className="text-[11px] font-black text-brand-primary uppercase tracking-widest hover:underline flex items-center gap-1.5"
+        >
+          <X className="h-3 w-3" /> Clear search
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-col items-center justify-center py-16 px-4 text-center col-span-full">
+      <div className="h-14 w-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+        <Plus className="h-7 w-7 text-slate-300" />
+      </div>
+      <div className="text-[15px] font-black text-slate-800 mb-1">No records yet</div>
+      <div className="text-[12px] text-slate-400 mb-4">Get started by adding the first record</div>
+      <button
+        onClick={onAddFirst}
+        className="h-10 px-5 bg-brand-primary text-white rounded-xl text-[11px] font-black uppercase tracking-widest hover:bg-brand-primary/90 transition-colors"
+      >
+        Add first record
+      </button>
+    </div>
+  );
+});
 
 export default function App() {
   const gridContainerRef = useRef<HTMLDivElement>(null);
@@ -1599,7 +1649,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                   >
                     {/* Thumbnail + hover actions */}
                     <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing">
-                      <img src={entry.url} className="w-full h-full object-cover pointer-events-none" alt={entry.name || `Image ${i + 1}`} />
+                      <img src={entry.url} loading="lazy" decoding="async" className="w-full h-full object-cover pointer-events-none" alt={entry.name || `Image ${i + 1}`} />
                       {/* Drag handle indicator */}
                       <div className="absolute top-1.5 right-1.5 h-5 w-5 bg-black/40 rounded-md items-center justify-center hidden sm:group-hover/card:flex">
                         <GripVertical className="h-3 w-3 text-white" />
@@ -2028,6 +2078,23 @@ const handleToggleYesNo = async (item: any, col: string) => {
   }
 };
 
+const handleToggleChecklist = async (item: any) => {
+  const id = item._id || item.id;
+  const isDone = item.done === true || item.done === 'Yes';
+  const updatedItem = { ...item, done: !isDone };
+  setChecklist((prev: any[]) => prev.map(r => (r._id === id || r.id === id) ? updatedItem : r));
+  try {
+    const res = await window.fetch(`/api/checklist/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedItem),
+    });
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
+  } catch {
+    setChecklist((prev: any[]) => prev.map(r => (r._id === id || r.id === id) ? item : r));
+    showToast('Failed to save — change was rolled back.');
+  }
+};
 
 // 1. Database Update Helper for Ratings
 // Helper to update ratings in the database
@@ -2234,7 +2301,7 @@ const renderRow = (item: any) => {
                   ? <span className="text-slate-300 italic text-[10px]">No Images</span>
                   : <>
                       {matches.slice(0, 3).map((url, idx) => (
-                        <img key={idx} src={url} className="h-8 w-12 object-cover rounded border border-slate-300 shrink-0" alt="" />
+                        <img key={idx} src={url} loading="lazy" decoding="async" className="h-8 w-12 object-cover rounded border border-slate-300 shrink-0" alt="" />
                       ))}
                       {matches.length > 3 && <span className="text-[10px] font-black text-slate-400">+{matches.length - 3}</span>}
                     </>
@@ -3485,7 +3552,7 @@ if (!health?.mongodb) {
             { icon: CheckSquare, label: "D'yatra Checklist",    table: 'DyatraChecklist' },
             { icon: Search,      label: 'Data Sharing',         table: 'DataSharing' },
             { icon: Video,       label: 'Video Setup',          table: 'VideoSetup' },
-            { icon: Zap,         label: 'Audio Setup',          table: 'AudioSetup' },
+            { icon: Volume2,      label: 'Audio Setup',          table: 'AudioSetup' },
             { icon: Play,        label: 'Tracks',               table: 'Tracks' },
           ].map((item) => (
             <button
@@ -3992,7 +4059,7 @@ if (!health?.mongodb) {
     const greeting = hr < 12 ? 'Good Morning' : hr < 17 ? 'Good Afternoon' : 'Good Evening';
     const recentEvents = [...events].sort((a: any, b: any) => new Date(b.DateFrom || 0).getTime() - new Date(a.DateFrom || 0).getTime()).slice(0, 4);
     const recentSessions = [...sessions].sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()).slice(0, 5);
-    const pendingChecklist = checklist.filter((c: any) => !c.done).slice(0, 6);
+    const recentTasks = [...checklist].slice(0, 6);
     const navLinks = [
       { label: 'Events', table: 'Events', Icon: Calendar, count: events.length, color: 'bg-blue-500' },
       { label: 'Sessions', table: 'Session', Icon: MessageSquare, count: sessions.length, color: 'bg-violet-500' },
@@ -4066,21 +4133,31 @@ if (!health?.mongodb) {
 
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col">
             <div className="flex items-center justify-between mb-4">
-              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Checklist</p>
+              <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Recent Tasks</p>
               <button onClick={() => setActiveTable('DyatraChecklist')} className="text-[10px] font-black text-brand-primary uppercase tracking-widest hover:underline">View All</button>
             </div>
-            {pendingChecklist.length === 0
-              ? <div className="flex-1 flex items-center justify-center text-slate-300 text-xs font-bold uppercase">All clear ✓</div>
+            {recentTasks.length === 0
+              ? <div className="flex-1 flex items-center justify-center text-slate-300 text-xs font-bold uppercase">No tasks yet</div>
               : <div className="space-y-2 flex-1">
-                  {pendingChecklist.map((c: any, i: number) => (
-                    <div key={i} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50">
-                      <div className="h-4 w-4 rounded border-2 border-slate-300 mt-0.5 shrink-0" />
-                      <div>
-                        <div className="text-[12px] font-semibold text-slate-800 leading-tight">{c["Task"] || '—'}</div>
-                        {c["TaskGroup"] && <div className="text-[10px] text-slate-400 uppercase">{c["TaskGroup"]}</div>}
+                  {recentTasks.map((c: any, i: number) => {
+                    const isDone = c.done === true || c.done === 'Yes';
+                    return (
+                      <div key={i} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50">
+                        <button
+                          onClick={() => handleToggleChecklist(c)}
+                          className={`h-4 w-4 rounded border-2 mt-0.5 shrink-0 flex items-center justify-center transition-colors ${
+                            isDone ? 'bg-green-500 border-green-500' : 'border-slate-300 hover:border-brand-primary'
+                          }`}
+                        >
+                          {isDone && <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
+                        </button>
+                        <div>
+                          <div className={`text-[12px] font-semibold leading-tight ${isDone ? 'line-through text-slate-400' : 'text-slate-800'}`}>{c["Task"] || '—'}</div>
+                          {c["TaskGroup"] && <div className="text-[10px] text-slate-400 uppercase">{c["TaskGroup"]}</div>}
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
             }
           </div>
@@ -4096,7 +4173,7 @@ if (!health?.mongodb) {
             <div className="space-y-1">
               {recentEvents.length === 0 && <div className="text-slate-300 text-xs font-bold uppercase py-6 text-center">No events yet</div>}
               {recentEvents.map((ev: any, i: number) => (
-                <div key={i} onClick={() => setActiveTable('Events')} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer">
+                <div key={i} onClick={() => { setActiveTable('Events'); setViewingRecord(ev); }} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer">
                   <div className="h-9 w-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
                     <Calendar className="h-4 w-4 text-blue-500" />
                   </div>
@@ -4118,7 +4195,7 @@ if (!health?.mongodb) {
             <div className="space-y-1">
               {recentSessions.length === 0 && <div className="text-slate-300 text-xs font-bold uppercase py-6 text-center">No sessions yet</div>}
               {recentSessions.map((s: any, i: number) => (
-                <div key={i} onClick={() => setActiveTable('Session')} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer">
+                <div key={i} onClick={() => { setActiveTable('Session'); setViewingRecord(s); }} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer">
                   <div className="h-9 w-9 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center shrink-0">
                     <MessageSquare className="h-4 w-4 text-violet-500" />
                   </div>
@@ -4180,6 +4257,7 @@ if (!health?.mongodb) {
                   activeTable === 'Events' ? (
   /* --- RESPONSIVE EVENTS GALLERY (Airtable Style) --- */
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
+    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
     {[...filteredData]
       .sort((a, b) => {
         const ta = a.DateFrom ? new Date(a.DateFrom).getTime() : Infinity;
@@ -4231,17 +4309,18 @@ if (!health?.mongodb) {
       ))}
 
     {/* ADD EVENT CARD */}
-    <motion.div
+    {!searchQuery && <motion.div
       onClick={openAddModal}
       className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"
     >
       <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
       <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Event</span>
-    </motion.div>
+    </motion.div>}
   </div>
 ) : activeTable === 'Tracks' ? (
   /* --- TRACKS GALLERY VIEW (Airtable Style) --- */
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
+    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
     {filteredData.map((item: any) => (
       <motion.div
         key={item.id || item._id}
@@ -4273,17 +4352,18 @@ if (!health?.mongodb) {
     ))}
 
     {/* ADD TRACK CARD */}
-    <motion.div
+    {!searchQuery && <motion.div
       onClick={openAddModal}
       className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[150px] sm:min-h-[220px]"
     >
       <Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" />
       <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add track</span>
-    </motion.div>
+    </motion.div>}
   </div>
 ) : activeTable === 'DataSharing' ? (
   /* --- DATA SHARING GALLERY VIEW (Airtable Style) --- */
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
+    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
     {filteredData.map((item: any) => (
         <motion.div
           key={item.id || item._id}
@@ -4319,17 +4399,18 @@ if (!health?.mongodb) {
     ))}
 
     {/* ADD RECORD CARD */}
-    <motion.div
+    {!searchQuery && <motion.div
       onClick={openAddModal}
       className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[160px] sm:min-h-[240px]"
     >
       <Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" />
       <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add record</span>
-    </motion.div>
+    </motion.div>}
   </div>
 ) : activeTable === 'Guidance & Learning' ? (
   /* --- GUIDANCE & LEARNING GALLERY VIEW --- */
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
+    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
     {filteredData.map((item: any) => {
       // Logic to extract URL from Airtable format: (https://...)
       const attachmentString = item["Attachments"] || "";
@@ -4346,10 +4427,12 @@ if (!health?.mongodb) {
           {/* IMAGE AREA */}
           <div className="h-28 sm:h-48 w-full bg-slate-50 border-b border-slate-100 flex items-center justify-center overflow-hidden">
             {imageUrl ? (
-              <img 
-                src={imageUrl} 
-                className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" 
-                alt="Attachment" 
+              <img
+                src={imageUrl}
+                loading="lazy"
+                decoding="async"
+                className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
+                alt="Attachment"
               />
             ) : (
               <div className="flex flex-col items-center gap-2 opacity-20">
@@ -4400,23 +4483,28 @@ if (!health?.mongodb) {
     })}
 
     {/* ADD FEEDBACK CARD */}
-    <motion.div 
-      onClick={openAddModal} 
+    {!searchQuery && <motion.div
+      onClick={openAddModal}
       className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[380px]"
     >
       <Plus className="h-6 w-6 mb-2" />
       <span className="text-[10px] font-black uppercase tracking-widest">Add Guidance & Learning</span>
-    </motion.div>
+    </motion.div>}
   </div>
 ) :
                   activeTable === 'Session' ? (
                     /* --- 1. SESSION TIMELINE VIEW --- */
                     <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
                         <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
-                  
+
                   {/* The Vertical Line: Hidden on very small screens or moved left */}
                   <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
                       <div className="space-y-8 md:space-y-12">
+                        {filteredData.length === 0 && (
+                          <div className="pl-12">
+                            <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />
+                          </div>
+                        )}
                         {[...filteredData]
                           .sort((a, b) => {
                             const ta = a["Date"] ? new Date(a["Date"]).getTime() : Infinity;
@@ -4460,7 +4548,7 @@ if (!health?.mongodb) {
                                    <div className="flex overflow-x-auto md:flex-wrap gap-3 md:gap-4 items-center pb-2 md:pb-0 scrollbar-hide">
                               {images.map((imgSrc, imgIdx) => (
                                 <div key={imgIdx} className="relative h-32 md:h-40 w-48 md:w-64 shrink-0 rounded-xl overflow-hidden border border-slate-800">
-                                  <img src={imgSrc} className="h-full w-full object-cover" alt="Upload" />
+                                  <img src={imgSrc} loading="lazy" decoding="async" className="h-full w-full object-cover" alt="Upload" />
                                 </div>
                               ))}
                                     <button onClick={(e) => { e.stopPropagation(); setActiveUploadId(sessionId); fileInputRef.current?.click(); }} className="h-32 md:h-40 w-32 md:w-48 shrink-0 rounded-xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center gap-2 text-slate-500">
@@ -4477,6 +4565,7 @@ if (!health?.mongodb) {
                   ) :activeTable === 'MusicLog' ? (
   /* --- RESPONSIVE MUSIC LOG GALLERY --- */
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
+    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
     {filteredData.map((item: any) => (
       <motion.div
         key={item.id || item._id}
@@ -4485,7 +4574,7 @@ if (!health?.mongodb) {
         className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
       >
         {/* HEADER ACCENT */}
-        <div className="bg-gradient-to-br from-brand-primary/8 to-brand-accent/8 px-4 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+        <div className="bg-gradient-to-br from-brand-primary/10 to-brand-accent/10 px-4 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
           <div className="flex items-center gap-3 min-w-0">
             <div className="h-9 w-9 shrink-0 bg-brand-primary rounded-xl flex items-center justify-center shadow-md shadow-brand-primary/20">
               <Music className="h-4 w-4 text-white" />
@@ -4529,13 +4618,18 @@ if (!health?.mongodb) {
         </div>
       </motion.div>
     ))}
-    <div className="col-span-1 sm:col-span-2 lg:col-span-1">
-      <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-200 h-14 rounded-2xl text-slate-400 hover:text-brand-primary hover:border-brand-primary bg-white transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-4 w-4 mr-2" /> New Music Entry</Button>
-    </div>
+    {!searchQuery && <motion.div
+      onClick={openAddModal}
+      className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"
+    >
+      <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
+      <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Music Entry</span>
+    </motion.div>}
                     </div>
                   ) : activeTable === 'VideoLog' ? (
   /* --- RESPONSIVE VIDEOLOG GALLERY (Airtable Style) --- */
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
+    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
     {filteredData.map((item: any) => (
         <motion.div
           key={item.id || item._id}
@@ -4563,12 +4657,10 @@ if (!health?.mongodb) {
           {/* BODY */}
           <div className="p-4 space-y-3 flex-1">
             {/* VIDEO TITLE — most prominent */}
-            {item["VideoTitle"] && (
-              <div>
-                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Video Title</div>
-                <div className="text-[13px] font-black text-brand-primary leading-snug">{item["VideoTitle"]}</div>
-              </div>
-            )}
+            <div>
+              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Video Title</div>
+              <div className="text-[13px] font-black text-brand-primary leading-snug">{item["VideoTitle"] || "Untitled Video"}</div>
+            </div>
 
             {/* SESSION */}
             <div className="overflow-hidden">
@@ -4588,13 +4680,18 @@ if (!health?.mongodb) {
           </div>
         </motion.div>
     ))}
-    <div className="col-span-1 sm:col-span-2 lg:col-span-1">
-      <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-200 h-14 sm:h-16 rounded-2xl text-slate-400 hover:text-brand-primary hover:border-brand-primary/50 bg-white/50 transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-5 w-5 mr-2" /> New Video Entry</Button>
-    </div>
+    {!searchQuery && <motion.div
+      onClick={openAddModal}
+      className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"
+    >
+      <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
+      <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Video Entry</span>
+    </motion.div>}
                   </div>
                   ) : (
                     /* --- 2. STANDARD GRID VIEW --- */
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
+                  {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
                   {filteredData.map((item: any) => (
                     <motion.div
                       key={item.id || item._id}
@@ -4620,46 +4717,29 @@ if (!health?.mongodb) {
                       )}
 
                       {/* ACCENT HEADER — title shown below image for LED */}
-                      <div className="bg-gradient-to-br from-brand-primary/8 to-slate-50 px-4 py-4 border-b border-slate-100 flex items-center gap-3">
+                      <div className="bg-gradient-to-br from-brand-primary/10 to-slate-50 px-4 py-4 border-b border-slate-100 flex items-center gap-3">
                         <div className="h-9 w-9 shrink-0 bg-brand-primary/10 rounded-xl flex items-center justify-center text-brand-primary">
                           {activeTable === 'LED' ? <Monitor className="h-4 w-4" /> :
                            activeTable === 'DyatraChecklist' ? <CheckSquare className="h-4 w-4" /> :
                            activeTable === 'Guidance & Learning' ? <FileText className="h-4 w-4" /> :
-                           activeTable === 'Events' ? <Calendar className="h-4 w-4" /> :
-                           activeTable === 'Tracks' ? <Play className="h-4 w-4" /> :
+                           activeTable === 'VideoSetup' ? <Video className="h-4 w-4" /> :
+                           activeTable === 'AudioSetup' ? <Volume2 className="h-4 w-4" /> :
                            <LayoutGrid className="h-4 w-4" />}
                         </div>
                         <div className="min-w-0 flex-1">
                           <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">{activeTable}</div>
                           <h3 className="text-[13px] font-black text-slate-900 leading-snug line-clamp-2">
-                            {activeTable === 'Events' ? (item["Event Name"] || item.EventName) :
-                             activeTable === 'LED' ? (item["Parent Event (from 🕘 Session)"] || "Untitled LED") :
+                            {activeTable === 'LED' ? (item["Parent Event (from 🕘 Session)"] || "Untitled LED") :
                              activeTable === 'Guidance & Learning' ? item["Event"] :
                              activeTable === 'DyatraChecklist' ? item["Task"] :
-                             activeTable === 'Tracks' ? item["Title"] :
                              (item.name || item.title || "Untitled Record")}
                           </h3>
-                          {activeTable === 'Tracks' && item["Artist"] && (
-                            <p className="text-[10px] font-bold text-brand-primary uppercase tracking-widest mt-0.5">{item["Artist"]}</p>
-                          )}
                         </div>
                       </div>
 
                       {/* CARD BODY */}
                       <div className="p-4 space-y-3 flex-1">
-                        {activeTable === 'Events' ? (
-                          <div className="space-y-2">
-                            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                              <Calendar className="h-3 w-3 text-brand-primary/60 shrink-0" /><span>{item.DateFrom}</span>
-                            </div>
-                            <div className="flex items-center gap-2 text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-                              <MapPin className="h-3 w-3 text-brand-primary/60 shrink-0" /><span className="truncate">{item.Venue}</span>
-                            </div>
-                            <div className="pt-2 border-t border-slate-100">
-                              <span className="text-[9px] font-black text-slate-400 uppercase">Year: {item.Year || item["Year (from Event)"]}</span>
-                            </div>
-                          </div>
-                        ) : activeTable === 'Guidance & Learning' ? (
+                        {activeTable === 'Guidance & Learning' ? (
                           <div className="space-y-3">
                             <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl">
                               <p className="text-[12px] text-slate-600 leading-relaxed italic line-clamp-3">"{item["Guidance/Learning"]}"</p>
@@ -4725,31 +4805,20 @@ if (!health?.mongodb) {
                               <span className={getTagStyle(item["ShareFacts?"] || 'No')}>{item["ShareFacts?"] || 'No'}</span>
                             </div>
                           </div>
-                        ) : activeTable === 'Tracks' ? (
-                          <div className="space-y-2">
-                            {item["Album"] && <div className="text-[11px] font-bold text-slate-500 uppercase tracking-widest truncate">{item["Album"]}</div>}
-                            {item["Tags"] && (
-                              <div className="flex flex-wrap gap-1 overflow-hidden">
-                                {String(item["Tags"]).split(',').slice(0, 3).map((tag: string, i: number) => (
-                                  <span key={i} className={getTagStyle(tag.trim())}>{tag.trim()}</span>
-                                ))}
-                              </div>
-                            )}
-                          </div>
                         ) : (
                           <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{item.city || item.artist || item.category || "—"}</p>
                         )}
                       </div>
                     </motion.div>
                   ))}
-                  <motion.div
+                  {!searchQuery && <motion.div
                     onClick={openAddModal}
                     whileHover={{ y: -4 }}
                     className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/40 transition-all bg-white min-h-[160px]"
                   >
                     <Plus className="h-6 w-6 mb-3" />
                     <span className="text-[10px] font-black uppercase tracking-[0.2em]">New {activeTable} Entry</span>
-                  </motion.div>
+                  </motion.div>}
                   </div>
                   )
                 ) : (
@@ -5043,8 +5112,16 @@ if (!health?.mongodb) {
     );
   });})()}
 
+  {filteredData.length === 0 && !isInlineAdding && (
+    <tr>
+      <td colSpan={getTableColumns().length + 2}>
+        <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={() => handleAddBlankRow()} />
+      </td>
+    </tr>
+  )}
+
   {!isInlineAdding && (
-    <tr 
+    <tr
   className="hover:bg-slate-50 cursor-pointer group border-b border-slate-200"
   onClick={() => handleAddBlankRow()}
 >

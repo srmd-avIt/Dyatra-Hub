@@ -12,12 +12,10 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        // Change this to './src' if your code is inside a src folder
-        '@': path.resolve(__dirname, '.'), 
+        '@': path.resolve(__dirname, '.'),
       },
     },
     server: {
-      // ADD THIS PROXY BLOCK FOR LOCAL DEV
       proxy: {
         '/api': {
           target: 'http://localhost:3000',
@@ -25,6 +23,19 @@ export default defineConfig(({ mode }) => {
         },
       },
       hmr: process.env.DISABLE_HMR !== 'true',
+    },
+    build: {
+      chunkSizeWarningLimit: 600,
+      rollupOptions: {
+        output: {
+          manualChunks: {
+            'vendor-react':  ['react', 'react-dom'],
+            'vendor-motion': ['motion'],
+            'vendor-genai':  ['@google/genai'],
+            'vendor-ui':     ['lucide-react', 'clsx', 'tailwind-merge', 'class-variance-authority'],
+          },
+        },
+      },
     },
   };
 });
