@@ -892,15 +892,17 @@ if (hasDropdown) {
 
         {/* Step progress bar */}
         <div className="px-5 pb-3 shrink-0">
-          <div className="flex items-center gap-1 mb-2">
+          <div className="flex items-center gap-1">
             {wizardSteps.map((_, i) => (
               <div
                 key={i}
                 onClick={() => setStep(i)}
-                className={`h-1 rounded-full transition-all duration-300 cursor-pointer ${
-                  i === step ? 'bg-brand-primary flex-[2]' : i < step ? 'bg-brand-primary/40 flex-1' : 'bg-slate-200 flex-1'
-                }`}
-              />
+                className={`${i === step ? 'flex-[2]' : 'flex-1'} py-3 flex items-center cursor-pointer`}
+              >
+                <div className={`h-1 w-full rounded-full transition-all duration-300 ${
+                  i === step ? 'bg-brand-primary' : i < step ? 'bg-brand-primary/40' : 'bg-slate-200'
+                }`} />
+              </div>
             ))}
           </div>
           <div className="flex items-center justify-between">
@@ -1028,7 +1030,7 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], onS
                   <div key={idx} className="p-4 sm:p-6 border-b border-r border-slate-50 flex flex-col gap-1 hover:bg-slate-50/50 transition-colors">
                     {/* UPDATED LABEL COLOR: Changed from slate-900 to slate-400 for better hierarchy */}
                     <span className="text-[11px] font-black text-slate-400 uppercase tracking-[0.15em] mb-0.5">
-                      {col}
+                      {colLabel(col)}
                     </span>
                     
                     {/* UPDATED VALUE COLOR: Changed from slate-800 to slate-900 to stand out */}
@@ -1966,7 +1968,7 @@ case 'text':
     
    case 'long_text':
   return val ? (
-    <div className="text-[13px] text-slate-700 leading-normal whitespace-normal break-words text-left px-1">
+    <div className="text-[13px] text-slate-700 leading-normal whitespace-normal break-words px-1">
       {String(val)}
     </div>
   ) : empty;
@@ -2164,7 +2166,7 @@ const renderRow = (item: any) => {
   const cols = getTableColumns();
   const getWidth = (name: string) => colWidths[name] || 200;
   const cellStyle = (colName: string) => ({ width: getWidth(colName), minWidth: getWidth(colName), maxWidth: getWidth(colName) });
-  const cellCls = "px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] whitespace-nowrap overflow-hidden text-ellipsis text-center";
+  const cellCls = "px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] whitespace-nowrap overflow-hidden text-ellipsis text-left";
   const primaryCls = "px-4 py-3 border-r border-b border-slate-200 font-semibold text-slate-900 text-[13px] truncate bg-inherit";
 
   // renderExtraCells kept for backward compat but no longer called from renderRow
@@ -3032,10 +3034,9 @@ const renderEditInputs = (_item: any) => {
   const isVL = activeTable === 'VideoLog';
   const isLinked = isML || isVL;
 
-  const inputCls = (col: string) => 
-  `w-full h-full bg-transparent border-none focus:border-none focus:ring-0 
-   px-2 py-0 text-[12px] font-bold text-slate-900 outline-none shadow-none
-   ${editingCell === col ? 'text-center' : ''}`;
+  const inputCls = () =>
+  `w-full h-full bg-transparent border-none focus:border-none focus:ring-0
+   px-2 py-0 text-[12px] font-bold text-slate-900 outline-none shadow-none`;
   const saveKeys    = (e: React.KeyboardEvent) => { 
     if (e.key === 'Enter') handleUpdateRecord(); 
     if (e.key === 'Escape') { setEditingId(null); setEditDraft(null); setEditingCell(null); } 
@@ -3105,7 +3106,7 @@ const updateDraftOnly = (col: string, val: string) => {
                 ? 'p-0 border-blue-400 ring-2 ring-inset ring-blue-300 overflow-visible' 
                 : isAutoFilled 
                   ? 'px-4 py-3 bg-slate-50/50 cursor-not-allowed' 
-                  : `px-4 py-3 border-slate-200 hover:bg-slate-50/60 overflow-hidden${i > 0 ? ' text-center' : ''}`
+                  : `px-4 py-3 border-slate-200 hover:bg-slate-50/60 overflow-hidden text-left`
             }`}
             style={{ width: gw(col), minWidth: gw(col), maxWidth: gw(col), height: '40px' }}
             onClick={() => !isAutoFilled && setEditingCell(col)}
@@ -3150,7 +3151,7 @@ const updateDraftOnly = (col: string, val: string) => {
                 return (
                   <textarea
                     autoFocus
-                    className={`${inputCls(col)} h-24 py-2 resize-none whitespace-normal text-left align-top`}
+                    className={`${inputCls()} h-24 py-2 resize-none whitespace-normal text-left align-top`}
                     value={editDraft[col] || ''}
                     onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
                     onBlur={() => handleUpdateRecord()}
@@ -3227,13 +3228,13 @@ const updateDraftOnly = (col: string, val: string) => {
               }
               
               if (colType === 'date') {
-                 return <input type="date" className={inputCls(col)} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => handleUpdateRecord()} onKeyDown={saveKeys} autoFocus />;
+                 return <input type="date" className={inputCls()} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => handleUpdateRecord()} onKeyDown={saveKeys} autoFocus />;
               }
 
               return (
                 <input
                   autoFocus
-                  className={inputCls(col)}
+                  className={inputCls()}
                   value={editDraft[col] || ''}
                   onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
                   onBlur={() => handleUpdateRecord()}
@@ -4892,7 +4893,7 @@ if (!health?.mongodb) {
             className="flex items-center gap-2 px-4 py-3 h-full w-full cursor-pointer hover:bg-black/5 transition-colors truncate pr-16"
           >
             <TypeIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
-            <span className="truncate">{col}</span>
+            <span className="truncate">{colLabel(col)}</span>
           </div>
 
           {/* COLUMN ACTIONS — type picker for all columns, delete only for extra */}
@@ -6565,7 +6566,7 @@ if (!health?.mongodb) {
             className="bg-white rounded-[24px] shadow-2xl w-full max-w-lg overflow-hidden"
             onClick={e => e.stopPropagation()}
           >
-            <div className="bg-slate-50 border-b border-slate-100 px-6 py-4 flex items-center justify-between">
+            <div className="bg-slate-50 border-b border-slate-100 px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between">
               <div>
                 <div className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-0.5">Linked Session</div>
                 <div className="text-lg font-black text-slate-900 tracking-tight">{linkedSession["Session Name"]}</div>
@@ -6574,7 +6575,7 @@ if (!health?.mongodb) {
                 <X className="h-4 w-4 text-slate-500" />
               </button>
             </div>
-            <div className="p-6 grid grid-cols-2 gap-x-6 gap-y-4">
+            <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 sm:gap-y-4">
               {(['Parent Event', 'Date', 'City', 'Venue', 'TimeOfDay', 'Occasion', 'SessionType', 'Notes'] as const).map(field =>
                 linkedSession[field] ? (
                   <div key={field}>
@@ -6584,7 +6585,7 @@ if (!health?.mongodb) {
                 ) : null
               )}
             </div>
-            <div className="px-6 pb-5 border-t border-slate-100 pt-4">
+            <div className="px-4 sm:px-6 pb-4 sm:pb-5 border-t border-slate-100 pt-3 sm:pt-4">
               <button
                 onClick={() => { setActiveTable('Session'); setLinkedSession(null); }}
                 className="text-[11px] font-black text-brand-primary uppercase tracking-widest hover:underline flex items-center gap-1"
