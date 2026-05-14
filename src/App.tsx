@@ -77,6 +77,7 @@ import {
   Trash2,
   Pencil,
   GripVertical,
+  Share2,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -123,16 +124,32 @@ const getTagStyle = (val: any) => {
 };
 
 const UNIFORM_DROPDOWN_STYLE = "bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-semibold text-[12px] px-3 py-1 rounded-md shadow-sm tracking-tighter whitespace-nowrap inline-block";
+
+// Columns to show by default on mobile grid view (others are hidden until user unlocks via Fields)
+const MOBILE_PRIORITY_COLS: Record<string, string[]> = {
+  'Events':              ['Event Name', 'DateFrom', 'Occasion'],
+  'Session':             ['Session Name', 'Parent Event', 'Date'],
+  'MusicLog':            ['PlayID', 'Track', 'Session'],
+  'Tracks':              ['Title', 'Artist', 'Duration'],
+  'VideoLog':            ['VideoPlayId', 'VideoTitle', 'Session'],
+  'Guidance & Learning': ['LearningId', 'Guidance/Learning', 'Category'],
+  'LED':                 ['LedId', '🕘 Session', 'Indoor/Outdoor LED?'],
+  'DyatraChecklist':     ['Task', 'TaskGroup', 'Category'],
+  'DataSharing':         ['Sevak', 'Dept', 'EmailId'],
+  'VideoSetup':          ['Name', 'Status', 'Assignee'],
+  'AudioSetup':          ['Name', 'Status', 'Assignee'],
+};
+
+
 const CardImageGallery = ({ imageString }: { imageString: string }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
-  
-  // Extract all URLs from the Airtable string format
+  const [dir, setDir] = useState(1);
+  const touchStartX = useRef<number | null>(null);
+
   const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
   const images: string[] = [];
   let match;
-  while ((match = urlRegex.exec(imageString)) !== null) {
-    images.push(match[1]);
-  }
+  while ((match = urlRegex.exec(imageString)) !== null) images.push(match[1]);
 
   if (images.length === 0) {
     return (
@@ -143,49 +160,79 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
     );
   }
 
-  const nextImage = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setCurrentIndex((prev) => (prev + 1) % images.length);
+  const goTo = (idx: number, direction: number, e?: React.MouseEvent) => {
+    e?.stopPropagation();
+    setDir(direction);
+    setCurrentIndex((idx + images.length) % images.length);
   };
 
-  const prevImage = (e: React.MouseEvent) => {
-    e.stopPropagation();
-    setCurrentIndex((prev) => (prev - 1 + images.length) % images.length);
+  const handleTouchStart = (e: React.TouchEvent) => {
+    touchStartX.current = e.touches[0].clientX;
   };
+
+  const handleTouchEnd = (e: React.TouchEvent) => {
+    if (touchStartX.current === null) return;
+    const delta = e.changedTouches[0].clientX - touchStartX.current;
+    touchStartX.current = null;
+    if (Math.abs(delta) < 40) return;
+    delta < 0 ? goTo(currentIndex + 1, 1) : goTo(currentIndex - 1, -1);
+  };
+
+  const multi = images.length > 1;
 
   return (
-    <div className="h-44 w-full relative group/gallery overflow-hidden rounded-xl border border-slate-800 bg-black shadow-inner">
-      <AnimatePresence mode="wait">
+    <div
+      className="h-44 w-full relative group/gallery overflow-hidden rounded-xl border border-slate-800 bg-black shadow-inner"
+      onTouchStart={handleTouchStart}
+      onTouchEnd={handleTouchEnd}
+    >
+      <AnimatePresence mode="wait" initial={false}>
         <motion.img
           key={currentIndex}
           src={images[currentIndex]}
-          initial={{ opacity: 0, x: 10 }}
+          initial={{ opacity: 0, x: dir * 24 }}
           animate={{ opacity: 1, x: 0 }}
-          exit={{ opacity: 0, x: -10 }}
+          exit={{ opacity: 0, x: dir * -24 }}
+          transition={{ duration: 0.18, ease: 'easeOut' }}
           className="w-full h-full object-cover"
-          alt="LED Setup"
+          alt={`Image ${currentIndex + 1}`}
         />
       </AnimatePresence>
 
-      {/* Navigation Arrows - Only show if more than 1 image */}
-      {images.length > 1 && (
+      {multi && (
         <>
-          <button 
-            onClick={prevImage}
-            className="absolute left-2 top-1/2 -translate-y-1/2 bg-black/50 text-white p-1 rounded-full opacity-0 group-hover/gallery:opacity-100 transition-opacity hover:bg-brand-primary"
+          {/* Arrows — always visible on mobile, hover-only on desktop */}
+          <button
+            onClick={e => goTo(currentIndex - 1, -1, e)}
+            className="absolute left-1.5 top-1/2 -translate-y-1/2 bg-black/55 text-white p-1.5 rounded-full transition-all hover:bg-brand-primary sm:opacity-0 sm:group-hover/gallery:opacity-100 active:scale-90"
           >
-            <ChevronLeft className="h-4 w-4" />
+            <ChevronLeft className="h-3.5 w-3.5" />
           </button>
-          <button 
-            onClick={nextImage}
-            className="absolute right-2 top-1/2 -translate-y-1/2 bg-black/50 text-white p-1 rounded-full opacity-0 group-hover/gallery:opacity-100 transition-opacity hover:bg-brand-primary"
+          <button
+            onClick={e => goTo(currentIndex + 1, 1, e)}
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-black/55 text-white p-1.5 rounded-full transition-all hover:bg-brand-primary sm:opacity-0 sm:group-hover/gallery:opacity-100 active:scale-90"
           >
-            <ChevronRight className="h-4 w-4" />
+            <ChevronRight className="h-3.5 w-3.5" />
           </button>
-          
-          {/* Image Counter Badge */}
-          <div className="absolute bottom-2 right-2 bg-black/60 px-2 py-0.5 rounded text-[8px] font-black text-white uppercase tracking-widest border border-white/10">
-            {currentIndex + 1} / {images.length}
+
+          {/* Dot indicators — always visible, tap to jump */}
+          <div className="absolute bottom-2 left-1/2 -translate-x-1/2 flex items-center gap-1">
+            {images.map((_, i) => (
+              <button
+                key={i}
+                onClick={e => goTo(i, i > currentIndex ? 1 : -1, e)}
+                className={`rounded-full transition-all ${
+                  i === currentIndex
+                    ? 'w-4 h-1.5 bg-white'
+                    : 'w-1.5 h-1.5 bg-white/40 hover:bg-white/70'
+                }`}
+              />
+            ))}
+          </div>
+
+          {/* Counter badge — top-right, small */}
+          <div className="absolute top-1.5 right-1.5 bg-black/55 px-1.5 py-0.5 rounded-md text-[9px] font-black text-white/90 border border-white/10 tabular-nums">
+            {currentIndex + 1}/{images.length}
           </div>
         </>
       )}
@@ -213,6 +260,17 @@ const CellDropdown = React.memo(function CellDropdown({
   const [search, setSearch] = useState('');
   const ref = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
+
+  const openDropdown = () => {
+    if (ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const top = spaceBelow < 300 ? Math.max(8, r.top - 304) : r.bottom + 4;
+      setPanelPos({ top, left: r.left, width: Math.max(240, r.width) });
+    }
+    setOpen(true);
+  };
 
   const selectedValues = useMemo(() => {
     if (Array.isArray(value)) return value;
@@ -234,6 +292,13 @@ const CellDropdown = React.memo(function CellDropdown({
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
+  }, [open, onOutsideClick]);
+
+  useEffect(() => {
+    if (!open) return;
+    const close = () => { setOpen(false); setSearch(''); if (onOutsideClick) onOutsideClick(); };
+    window.addEventListener('resize', close);
+    return () => window.removeEventListener('resize', close);
   }, [open, onOutsideClick]);
 
   const pick = (val: string) => {
@@ -845,7 +910,7 @@ if (hasDropdown) {
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 pb-2 space-y-5 min-h-0">
           {currentStepData.fields.map(col => (
             <div key={col}>
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] block mb-2">{col}</label>
+              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] block mb-2">{col === 'DateFrom' ? 'Start Date' : col === 'DateTo' ? 'End Date' : col}</label>
               {renderField(col)}
             </div>
           ))}
@@ -1088,6 +1153,13 @@ const [editingHeader, setEditingHeader] = useState<{ index: number, value: strin
   const [isGroupOpen, setIsGroupOpen] = useState(false);
 const [isSortOpen, setIsSortOpen] = useState(false);
   const [activeTable, setActiveTable] = useState('Home');
+  const activeTableRef = useRef('Home');
+  activeTableRef.current = activeTable;
+  const [toast, setToast] = useState<{ msg: string; type: 'error' | 'success' } | null>(null);
+  const showToast = (msg: string, type: 'error' | 'success' = 'error') => {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3500);
+  };
   const [isAdding, setIsAdding] = useState(false);
  const [viewMode, setViewMode] = useState<'visual' | 'grid' | 'card'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
@@ -1237,25 +1309,32 @@ const toggleRowSelection = (id: string) => {
 };
 
 const handleBulkDelete = async () => {
-  if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} records?`)) return;
-  
+  if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} record${selectedIds.length !== 1 ? 's' : ''}?`)) return;
+
   let collection = '';
   switch (activeTable) {
-    case 'Events': collection = 'events'; break;
-    case 'Session': collection = 'sessions'; break;
-    case 'MusicLog': collection = 'musiclog'; break;
-    // ... add your other collection mappings ...
+    case 'Events':              collection = 'events'; break;
+    case 'Session':             collection = 'sessions'; break;
+    case 'MusicLog':            collection = 'musiclog'; break;
+    case 'VideoLog':            collection = 'videolog'; break;
+    case 'Tracks':              collection = 'media'; break;
+    case 'DyatraChecklist':     collection = 'checklist'; break;
+    case 'Guidance & Learning': collection = 'guidance'; break;
+    case 'LED':                 collection = 'led_details'; break;
+    case 'DataSharing':         collection = 'locations'; break;
+    case 'VideoSetup':          collection = 'videosetup'; break;
+    case 'AudioSetup':          collection = 'audiosetup'; break;
+    default: console.error('Unknown table for delete:', activeTable); return;
   }
 
   try {
-    // Note: This assumes your API supports bulk delete or you loop through
     for (const id of selectedIds) {
       await window.fetch(`/api/${collection}/${id}`, { method: 'DELETE' });
     }
     setSelectedIds([]);
-    fetchAllData();
+    fetchActiveTable();
   } catch (e) {
-    console.error("Delete failed", e);
+    console.error('Delete failed', e);
   }
 };
 
@@ -1908,6 +1987,7 @@ const handleToggleYesNo = async (item: any, col: string) => {
   const val = item[col];
   const isChecked = val === 'Yes' || val === true || val === 'true';
   const nextVal = isChecked ? 'No' : 'Yes';
+  const id = item._id || item.id;
   const updatedItem = { ...item, [col]: nextVal };
 
   let collection = '';
@@ -1923,15 +2003,27 @@ const handleToggleYesNo = async (item: any, col: string) => {
     default: collection = activeTable.toLowerCase();
   }
 
+  // Optimistic update — apply immediately so checkbox flips without waiting
+  const applyOptimistic = (prev: any[]) => prev.map(r => (r._id === id || r.id === id) ? updatedItem : r);
+  const setterMap: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+    'events': setEvents as any, 'sessions': setSessions, 'musiclog': setMusicLogs,
+    'media': setMedia as any, 'videolog': setVideoLogs, 'led_details': setLedDetails as any,
+    'checklist': setChecklist as any, 'locations': setLocations,
+  };
+  const setter = setterMap[collection];
+  if (setter) setter(applyOptimistic);
+
   try {
-    const id = item._id || item.id;
-    await window.fetch(`/api/${collection}/${id}`, {
+    const res = await window.fetch(`/api/${collection}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedItem)
     });
-    fetchAllData(); // Refresh table
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
   } catch (error) {
+    // Rollback optimistic update on failure
+    if (setter) setter(prev => prev.map(r => (r._id === id || r.id === id) ? item : r));
+    showToast('Failed to save — change was rolled back.');
     console.error("Toggle Error:", error);
   }
 };
@@ -1941,24 +2033,25 @@ const handleToggleYesNo = async (item: any, col: string) => {
 // Helper to update ratings in the database
 // 1. Rating Update Helper
 const handleSetRating = async (item: any, col: string, newValue: number) => {
-  // If user clicks the same rating that already exists, toggle it off (optional, Airtable style)
   const currentVal = Number(item[col]) || 0;
   const finalVal = currentVal === newValue ? 0 : newValue;
-
+  const id = item._id || item.id;
   const updatedItem = { ...item, [col]: finalVal };
+
+  // Optimistic update
+  setMusicLogs(prev => prev.map(m => (m._id === id || m.id === id) ? updatedItem : m));
+
   try {
-    const id = item._id || item.id;
-    const response = await window.fetch(`/api/musiclog/${id}`, {
+    const res = await window.fetch(`/api/musiclog/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updatedItem)
     });
-
-    if (response.ok) {
-      // Local state update for immediate feedback
-      setMusicLogs(prev => prev.map(m => (m._id === id || m.id === id) ? updatedItem : m));
-    }
+    if (!res.ok) throw new Error(`Server error ${res.status}`);
   } catch (error) {
+    // Rollback
+    setMusicLogs(prev => prev.map(m => (m._id === id || m.id === id) ? item : m));
+    showToast('Failed to save rating — change was rolled back.');
     console.error("Rating Update Error:", error);
   }
 };
@@ -2117,23 +2210,6 @@ const renderRow = (item: any) => {
           </td>
         );
       }
-        // MusicLog / VideoLog: Session field — clickable link to session
-        if ((activeTable === 'MusicLog' || activeTable === 'VideoLog') && col === 'Session') {
-          return (
-            <td
-              key={col}
-              className={`${cellCls} cursor-pointer hover:text-brand-primary hover:underline font-semibold text-slate-900`}
-              style={style}
-              onClick={(e) => { e.stopPropagation(); const s = sessions.find((x: any) => x["Session Name"] === item["Session"]); if (s) setLinkedSession(s); }}
-            >
-              <span className="flex items-center justify-center gap-1">
-                {item["Session"] || <span className="text-slate-300 italic text-[12px]">—</span>}
-                {item["Session"] && <ArrowUpRight className="h-3 w-3 shrink-0 opacity-40" />}
-              </span>
-            </td>
-          );
-        }
-
         // MusicLog: Track — brand-accent bold
         if (activeTable === 'MusicLog' && col === 'Track') {
           return (
@@ -2215,7 +2291,7 @@ const renderRow = (item: any) => {
 };
 
 
-const handleAddBlankRow = async () => {
+const handleAddBlankRow = async (initialData: Record<string, any> = {}) => {
   let collection = '';
   // Determine collection based on activeTable
   switch (activeTable) {
@@ -2234,13 +2310,13 @@ const handleAddBlankRow = async () => {
     const response = await window.fetch(`/api/${collection}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({}) 
+      body: JSON.stringify(initialData)
     });
 
     if (response.ok) {
       const newRecordFromServer = await response.json();
-      await fetchAllData(); // This refreshes the list
-      
+      await fetchActiveTable(); // refresh only active collection
+
       // Enter Edit Mode immediately
       setEditingId(newRecordFromServer._id || newRecordFromServer.id);
       setEditDraft(newRecordFromServer);
@@ -2291,15 +2367,45 @@ const fetchAllData = async () => {
   }
 };
 
+// Fetch only the active table's collection (plus sessions for linked-record tables)
+const fetchActiveTable = async (table = activeTableRef.current) => {
+  type E = { key: string; setter: (d: any[]) => void };
+  const map: Record<string, E> = {
+    'Events':              { key: 'events',      setter: d => setEvents(d) },
+    'Session':             { key: 'sessions',    setter: d => setSessions(d) },
+    'MusicLog':            { key: 'musiclog',    setter: d => setMusicLogs(d) },
+    'VideoLog':            { key: 'videolog',    setter: d => setVideoLogs(d) },
+    'Tracks':              { key: 'media',       setter: d => setMedia(d) },
+    'DyatraChecklist':     { key: 'checklist',   setter: d => setChecklist(d) },
+    'Guidance & Learning': { key: 'guidance',    setter: d => setGuidance(d) },
+    'LED':                 { key: 'led_details', setter: d => setLedDetails(d) },
+    'DataSharing':         { key: 'locations',   setter: d => setLocations(d) },
+    'VideoSetup':          { key: 'videosetup',  setter: d => setVideoSetup(d) },
+    'AudioSetup':          { key: 'audiosetup',  setter: d => setAudioSetup(d) },
+  };
+  const entry = map[table];
+  if (!entry) return;
+  try {
+    const r = await window.fetch(`/api/${entry.key}`);
+    if (r.ok) entry.setter(await r.json());
+    if (['Events', 'MusicLog', 'VideoLog'].includes(table)) {
+      const sr = await window.fetch('/api/sessions');
+      if (sr.ok) setSessions(await sr.json());
+    }
+  } catch (e) {
+    console.error('fetchActiveTable error', e);
+  }
+};
+
 // 2. Trigger fetch on mount and every time user logs in
 useEffect(() => {
   if (user) {
     fetchAllData();
-    
+
     const interval = setInterval(() => {
       // STOP background refresh if the Image Manager is open
       if (!imageManager?.isOpen) {
-        fetchAllData();
+        fetchActiveTable(); // only active table, not all 12
       }
     }, 10000);
 
@@ -2342,7 +2448,7 @@ useEffect(() => {
     if (response.ok) {
       setIsAddModalOpen(false);
       setNewRecord({});
-      fetchAllData(); // Refresh list immediately after adding
+      fetchActiveTable(); // refresh only active collection
     } else {
       alert("Failed to save record to database.");
     }
@@ -2809,7 +2915,7 @@ const handleUpdateRecord = async (draftOverride?: any) => {
       setEditingId(null);
       setEditDraft(null);
       setEditingCell(null);
-      fetchAllData();
+      fetchActiveTable();
     } else {
       alert("Failed to update record");
     }
@@ -2844,7 +2950,7 @@ const handleExpandedSave = async (newDraft: any) => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updateData)
     });
-    fetchAllData();
+    fetchActiveTable();
   } catch (e) {
     console.error("Expand save error", e);
   }
@@ -3027,6 +3133,9 @@ const updateDraftOnly = (col: string, val: string) => {
                  if (col === 'Parent Event') opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort();
                  else opts = [...new Set(sessions.map((s: any) => s[col]).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort();
               }
+              else if (isLinked && col === 'Session') {
+                opts = sessions.map((s: any) => s["Session Name"]).filter(Boolean).sort();
+              }
 
               if (isMulti || isSingleBadge || (isLinked && col === 'Session')) {
                 return (
@@ -3109,7 +3218,7 @@ const handleInlineSave = async () => {
     if (response.ok) {
       setIsInlineAdding(false);
       setInlineRecord({});
-      fetchAllData();
+      fetchActiveTable();
     } else {
       alert("Error saving record");
     }
@@ -3260,13 +3369,6 @@ if (!health?.mongodb) {
 }
   return (
     <div className="flex h-screen bg-[#07080d] overflow-hidden text-slate-200 relative selection:bg-brand-primary/30">
-      {/* Mobile Sidebar Overlay */}
-      {isSidebarOpen && (
-        <div 
-          className="fixed inset-0 bg-black/50 z-40 lg:hidden" 
-          onClick={() => setIsSidebarOpen(false)}
-        />
-      )}
 
 
 <style dangerouslySetInnerHTML={{ __html: `
@@ -3311,7 +3413,7 @@ if (!health?.mongodb) {
 >
   {/* Close button - Only visible on Mobile when sidebar is open */}
   <div className="lg:hidden absolute right-4 top-5">
-    <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(false)} className="text-slate-400">
+    <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(false)} className="text-slate-400 h-11 w-11">
       <X className="h-6 w-6" />
     </Button>
   </div>
@@ -3323,11 +3425,11 @@ if (!health?.mongodb) {
 }`}>
   
    {/* 1. THE TOGGLE BUTTON (Comes first when closed) */}
-  <button 
+  <button
     onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-    className={`p-2 rounded-lg transition-all duration-200 group ${
-      isSidebarOpen 
-        ? 'text-slate-500 hover:text-white hover:bg-slate-800/60 order-2' 
+    className={`hidden lg:flex h-11 w-11 items-center justify-center rounded-lg transition-all duration-200 group ${
+      isSidebarOpen
+        ? 'text-slate-500 hover:text-white hover:bg-slate-800/60 order-2'
         : 'text-brand-primary bg-brand-primary/10 border border-brand-primary/20 hover:bg-brand-primary hover:text-white order-1 scale-110 shadow-lg shadow-brand-primary/10'
     }`}
     title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
@@ -3373,33 +3475,33 @@ if (!health?.mongodb) {
         
         <div className="space-y-1">
           {[
-            { icon: LayoutGrid, label: 'Home' }, 
-           { icon: Calendar, label: 'Events' },
-          { icon: MessageSquare, label: 'Session' },
-          { icon: Music, label: 'MusicLog' },
-          { icon: Video, label: 'VideoLog' },
-          { icon: FileText, label: 'Guidance & Learning' },
-          { icon: Monitor, label: 'LED' },
-          { icon: CheckSquare, label: 'DyatraChecklist' },
-          { icon: Search, label: 'DataSharing' },
-          { icon: Video, label: 'VideoSetup' },
-          { icon: Zap, label: 'AudioSetup' },
-          { icon: Play, label: 'Tracks' },
+            { icon: LayoutGrid,  label: 'Home',                table: 'Home' },
+            { icon: Calendar,    label: 'Events',               table: 'Events' },
+            { icon: MessageSquare, label: 'Sessions',           table: 'Session' },
+            { icon: Music,       label: 'Music Log',            table: 'MusicLog' },
+            { icon: Video,       label: 'Video Log',            table: 'VideoLog' },
+            { icon: FileText,    label: 'Guidance & Learning',  table: 'Guidance & Learning' },
+            { icon: Monitor,     label: 'LED',                  table: 'LED' },
+            { icon: CheckSquare, label: "D'yatra Checklist",    table: 'DyatraChecklist' },
+            { icon: Search,      label: 'Data Sharing',         table: 'DataSharing' },
+            { icon: Video,       label: 'Video Setup',          table: 'VideoSetup' },
+            { icon: Zap,         label: 'Audio Setup',          table: 'AudioSetup' },
+            { icon: Play,        label: 'Tracks',               table: 'Tracks' },
           ].map((item) => (
             <button
-              key={item.label}
-              onClick={() => { setActiveTable(item.label); setViewingRecord(null); if (isMobileView) setIsSidebarOpen(false); }}
+              key={item.table}
+              onClick={() => { setActiveTable(item.table); setViewingRecord(null); if (isMobileView) setIsSidebarOpen(false); }}
               title={!isSidebarOpen ? item.label : ""}
               className={`w-full flex items-center rounded-xl transition-all duration-200 group
               ${isSidebarOpen ? 'px-4 py-3 gap-4' : 'p-3 justify-center'}
-              ${activeTable === item.label 
-                ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20' 
+              ${activeTable === item.table
+                ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20'
                 : 'text-slate-400 hover:text-white hover:bg-slate-800/40'}`}
             >
-              <item.icon className={`h-5 w-5 shrink-0 transition-transform ${activeTable === item.label ? '' : 'group-hover:scale-110'}`} />
+              <item.icon className={`h-5 w-5 shrink-0 transition-transform ${activeTable === item.table ? '' : 'group-hover:scale-110'}`} />
               {isSidebarOpen && (
-                <motion.span 
-                  initial={{ opacity: 0, x: -10 }} 
+                <motion.span
+                  initial={{ opacity: 0, x: -10 }}
                   animate={{ opacity: 1, x: 0 }}
                   className="text-sm font-bold whitespace-nowrap overflow-hidden text-ellipsis"
                 >
@@ -3459,10 +3561,10 @@ if (!health?.mongodb) {
       <header className="sticky top-0 z-40 w-full h-auto min-h-[80px] bg-white border-b border-slate-200 flex flex-col md:flex-row items-center justify-between px-4 py-4 md:py-0 md:px-8 gap-4 shrink-0 shadow-sm">
   <div className="flex items-center justify-between w-full md:w-auto gap-4">
     {/* Hamburger for Mobile */}
-    <Button 
-      variant="ghost" 
-      size="icon" 
-      className="lg:hidden text-brand-text-muted"
+    <Button
+      variant="ghost"
+      size="icon"
+      className="lg:hidden text-brand-text-muted h-11 w-11"
       onClick={() => setIsSidebarOpen(true)}
     >
       <Menu className="h-6 w-6" />
@@ -3495,27 +3597,27 @@ if (!health?.mongodb) {
 <div className="flex items-center justify-between w-full md:w-auto gap-1.5 md:gap-2">
 
     {/* 3. VIEW SWITCHER */}
-  {activeTable !== 'Home' && <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-8 items-center">
-   <Button 
-  size="sm" 
+  {activeTable !== 'Home' && <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-11 items-center">
+   <Button
+  size="sm"
   variant="ghost"
-  onClick={() => setViewMode('visual')} 
-  className={`h-8 px-3 flex items-center gap-1.5 rounded-lg transition-all ${
-    viewMode === 'visual' 
-      ? 'bg-white text-brand-primary shadow-sm' 
+  onClick={() => setViewMode('visual')}
+  className={`h-10 px-3 flex items-center gap-1.5 rounded-lg transition-all ${
+    viewMode === 'visual'
+      ? 'bg-white text-brand-primary shadow-sm'
       : 'text-slate-400'
   }`}
 >
   <LayoutGrid className="h-4 w-4" />
   <span className="text-xs font-semibold hidden sm:inline">Visual</span>
 </Button>
-    <Button 
-  size="sm" 
+    <Button
+  size="sm"
   variant="ghost"
-  onClick={() => setViewMode('grid')} 
-  className={`h-8 px-3 flex items-center gap-1.5 rounded-lg transition-all ${
-    viewMode === 'grid' 
-      ? 'bg-white text-brand-primary shadow-sm' 
+  onClick={() => setViewMode('grid')}
+  className={`h-10 px-3 flex items-center gap-1.5 rounded-lg transition-all ${
+    viewMode === 'grid'
+      ? 'bg-white text-brand-primary shadow-sm'
       : 'text-slate-400'
   }`}
 >
@@ -3676,7 +3778,7 @@ if (!health?.mongodb) {
 
   {/* 4. NEW RECORD BUTTON */}
   {activeTable !== 'Home' && <Button
-    onClick={handleAddBlankRow}
+    onClick={openAddModal}
     className="bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-4 shadow-md flex items-center gap-2 transition-transform active:scale-95 ml-1"
   >
     <Plus className="h-4 w-4" />
@@ -4079,7 +4181,13 @@ if (!health?.mongodb) {
   /* --- RESPONSIVE EVENTS GALLERY (Airtable Style) --- */
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
     {[...filteredData]
-      .sort((a, b) => new Date(a.DateFrom).getTime() - new Date(b.DateFrom).getTime())
+      .sort((a, b) => {
+        const ta = a.DateFrom ? new Date(a.DateFrom).getTime() : Infinity;
+        const tb = b.DateFrom ? new Date(b.DateFrom).getTime() : Infinity;
+        if (isNaN(ta)) return 1;
+        if (isNaN(tb)) return -1;
+        return ta - tb;
+      })
       .map((item: any) => (
         <motion.div
           key={item.id || item._id}
@@ -4095,11 +4203,11 @@ if (!health?.mongodb) {
           {/* FIELDS */}
           <div className="space-y-2 sm:space-y-4 flex-1">
             <div className="space-y-0.5">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">DateFrom</label>
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Start Date</label>
               <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateFrom || "—"}</div>
             </div>
             <div className="space-y-0.5">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">DateTo</label>
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">End Date</label>
               <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateTo || "—"}</div>
             </div>
             {item.Occasion && (
@@ -4251,41 +4359,41 @@ if (!health?.mongodb) {
           </div>
 
           {/* 2. CARD CONTENT */}
-          <div className="p-5 flex-1 flex flex-col">
-            {/* Learning ID (The Large Number Header) */}
-            <div className="text-[22px] font-bold text-slate-900 mb-5">
-              {item["LearningId"] || "—"}
+          <div className="p-5 flex-1 flex flex-col gap-3">
+            {/* ID badge + Category row */}
+            <div className="flex items-center justify-between gap-2">
+              <span className="font-mono text-[10px] font-bold text-brand-primary bg-brand-primary/8 border border-brand-primary/15 px-2 py-0.5 rounded">
+                {item["LearningId"] || "—"}
+              </span>
+              {item["Category"] && (
+                <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded truncate max-w-[120px]">
+                  {item["Category"]}
+                </span>
+              )}
             </div>
 
-            <div className="space-y-4 flex-1">
-              {/* Event Field */}
-              <div className="space-y-1 overflow-hidden">
-                <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
-                  Event
-                </label>
-                {item["Event"] ? <span className={getTagStyle(item["Event"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Event"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
-              </div>
-
-              {/* DateFrom Field */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
-                  DateFrom (from Event)
-                </label>
-                <div className="text-[13px] font-medium text-slate-700">
-                  {item["DateFrom (from Event)"] || "—"}
-                </div>
-              </div>
-
-              {/* DateTo Field */}
-              <div className="space-y-1">
-                <label className="text-[10px] font-medium text-slate-400 uppercase tracking-tight block">
-                  DateTo (from Event)
-                </label>
-                <div className="text-[13px] font-medium text-slate-700">
-                  {item["DateTo (from Event)"] || "—"}
-                </div>
-              </div>
+            {/* Guidance text — primary content */}
+            <div className="flex-1">
+              <p className="text-[13px] text-slate-800 font-medium leading-relaxed">
+                {item["Guidance/Learning"] || <span className="text-slate-300 italic">No content</span>}
+              </p>
             </div>
+
+            {/* GuidanceFrom sub-label */}
+            {item["GuidanceFrom"] && (
+              <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Guidance From</span>
+                <span className="text-[11px] font-semibold text-slate-600 truncate">{item["GuidanceFrom"]}</span>
+              </div>
+            )}
+
+            {/* Event context */}
+            {item["Event"] && (
+              <div className="flex items-center gap-1.5">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Event</span>
+                <span className={`${getTagStyle(item["Event"])} !text-[10px]`} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Event"]}</span>
+              </div>
+            )}
           </div>
         </motion.div>
       );
@@ -4310,14 +4418,20 @@ if (!health?.mongodb) {
                   <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
                       <div className="space-y-8 md:space-y-12">
                         {[...filteredData]
-                          .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime())
+                          .sort((a, b) => {
+                            const ta = a["Date"] ? new Date(a["Date"]).getTime() : Infinity;
+                            const tb = b["Date"] ? new Date(b["Date"]).getTime() : Infinity;
+                            if (isNaN(ta)) return 1;
+                            if (isNaN(tb)) return -1;
+                            return ta - tb;
+                          })
                           .map((item: any, idx: number) => {
                             const sessionId = item.id || item._id;
                             const images = sessionImages[sessionId] || [];
                             return (
                               <motion.div key={sessionId} onClick={() => setViewingRecord(item)} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8 group cursor-pointer">
                                 <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
-                            <div className="h-8 w-8 md:h-10 md:h-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
+                            <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
                               <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${idx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
                             </div>
                           </div>
@@ -4328,7 +4442,7 @@ if (!health?.mongodb) {
                     <div className="text-[9px] md:text-[11px] font-black text-brand-primary uppercase tracking-[0.2em]">
                                   {item["Parent Event"] || "MASTER EVENT"}
                                 </div>
-                                <h3 className="text-xl md:text-3xl font-black text-white uppercase tracking-tighter leading-tight">
+                                <h3 className="text-xl md:text-3xl font-black text-white tracking-tight leading-tight">
                                   {item["Session Name"]}
                                 </h3>
                     
@@ -4430,9 +4544,9 @@ if (!health?.mongodb) {
           className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
         >
           {/* HEADER ACCENT */}
-          <div className="bg-gradient-to-br from-indigo-50 to-violet-50 px-4 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
+          <div className="bg-gradient-to-br from-brand-primary/10 to-slate-50 px-4 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
             <div className="flex items-center gap-3 min-w-0">
-              <div className="h-9 w-9 shrink-0 bg-indigo-500 rounded-xl flex items-center justify-center shadow-md shadow-indigo-500/20">
+              <div className="h-9 w-9 shrink-0 bg-brand-primary rounded-xl flex items-center justify-center shadow-md shadow-brand-primary/20">
                 <Video className="h-4 w-4 text-white" />
               </div>
               <div className="min-w-0">
@@ -4452,7 +4566,7 @@ if (!health?.mongodb) {
             {item["VideoTitle"] && (
               <div>
                 <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Video Title</div>
-                <div className="text-[13px] font-black text-indigo-600 leading-snug">{item["VideoTitle"]}</div>
+                <div className="text-[13px] font-black text-brand-primary leading-snug">{item["VideoTitle"]}</div>
               </div>
             )}
 
@@ -4475,7 +4589,7 @@ if (!health?.mongodb) {
         </motion.div>
     ))}
     <div className="col-span-1 sm:col-span-2 lg:col-span-1">
-      <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-700 h-14 sm:h-16 rounded-2xl text-slate-500 hover:text-indigo-400 hover:border-indigo-400 bg-slate-900/10 transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-5 w-5 mr-2" /> New Video Entry</Button>
+      <Button onClick={openAddModal} className="w-full border-2 border-dashed border-slate-200 h-14 sm:h-16 rounded-2xl text-slate-400 hover:text-brand-primary hover:border-brand-primary/50 bg-white/50 transition-all uppercase text-[10px] font-black tracking-widest"><Plus className="h-5 w-5 mr-2" /> New Video Entry</Button>
     </div>
                   </div>
                   ) : (
@@ -4603,8 +4717,8 @@ if (!health?.mongodb) {
                               </div>
                             </div>
                             <div className="p-3 bg-slate-50 border border-slate-100 rounded-xl space-y-1.5">
-                              <div className="flex items-center gap-2 text-[11px] text-slate-600 font-medium"><Search className="h-3 w-3 text-slate-400 shrink-0" /><span className="truncate">{item["EmailId"]}</span></div>
-                              <div className="flex items-center gap-2 text-[11px] text-slate-600 font-medium"><FileText className="h-3 w-3 text-slate-400 shrink-0" /><span className="truncate">{item["ShareData"] || "N/A"}</span></div>
+                              <div className="flex items-center gap-2 text-[11px] text-slate-600 font-medium"><Mail className="h-3 w-3 text-slate-400 shrink-0" /><span className="truncate">{item["EmailId"]}</span></div>
+                              <div className="flex items-center gap-2 text-[11px] text-slate-600 font-medium"><Share2 className="h-3 w-3 text-slate-400 shrink-0" /><span className="truncate">{item["ShareData"] || "N/A"}</span></div>
                             </div>
                             <div className="flex items-center gap-2">
                               <span className="text-[9px] font-black text-slate-400 uppercase">Sharing:</span>
@@ -4757,8 +4871,8 @@ if (!health?.mongodb) {
                       
      <tbody className="bg-white">
      
-  {getProcessedData().map((row, idx) => {
-    
+  {(() => { const _rows = getProcessedData(); return _rows.map((row, idx) => {
+
     // 1. Visibility logic (Keep this exactly as you had it)
     if (row.type === 'header' && row.parentId && collapsedGroups.includes(row.parentId)) return null;
     if (row.type === 'row' && (
@@ -4822,9 +4936,15 @@ if (!health?.mongodb) {
     }
 
     // C. RENDER DATA ROWS
+    const nextItem = _rows[idx + 1];
+    const isLastInGroup = !!(groupByField && row.parentId &&
+      !collapsedGroups.includes(row.parentId) &&
+      (!nextItem || nextItem.type === 'header' || nextItem.type === 'edit-row'));
+    const groupHeader = isLastInGroup ? _rows.find(r => r.type === 'header' && r.id === row.parentId) : null;
+
  return (
+  <React.Fragment key={row.data?._id || row.data?.id || idx}>
   <tr
-    key={row.data?._id || row.data?.id || idx}
     className={`group transition-colors border-b border-slate-200 ${
       selectedIds.includes(row.data?._id || row.data?.id) ? 'bg-blue-100/60' : !row.groupColor ? 'hover:bg-blue-50/40' : ''
     }`}
@@ -4901,13 +5021,32 @@ if (!health?.mongodb) {
           </div>
         )}
       </tr>
+      {isLastInGroup && (
+        <tr
+          className="hover:bg-slate-50/80 cursor-pointer border-b border-slate-100 group/addrow"
+          onClick={() => {
+            const seed = groupByField && groupHeader?.value != null ? { [groupByField]: groupHeader.value } : {};
+            handleAddBlankRow(seed);
+          }}
+        >
+          <td className="w-12 border-r border-slate-100 text-center py-2">
+            <div className="h-5 w-5 rounded bg-slate-100 group-hover/addrow:bg-brand-primary/10 flex items-center justify-center mx-auto transition-colors">
+              <Plus className="h-3 w-3 text-slate-400 group-hover/addrow:text-brand-primary" />
+            </div>
+          </td>
+          <td colSpan={getTableColumns().length} className="px-4 py-2 text-slate-300 text-[11px] group-hover/addrow:text-brand-primary/60 transition-colors">
+            + Add record to {groupHeader?.value}
+          </td>
+        </tr>
+      )}
+  </React.Fragment>
     );
-  })}
+  });})()}
 
   {!isInlineAdding && (
     <tr 
   className="hover:bg-slate-50 cursor-pointer group border-b border-slate-200"
-  onClick={handleAddBlankRow} // Change this line
+  onClick={() => handleAddBlankRow()}
 >
   <td className="w-12 border-r border-slate-200 bg-slate-50/50 flex items-center justify-center py-3">
     <div className="h-6 w-6 rounded bg-yellow-400 flex items-center justify-center shadow-sm">
@@ -6271,9 +6410,11 @@ if (!health?.mongodb) {
 
               {/* Step progress bar */}
               <div className="px-5 pb-3 shrink-0">
-                <div className="flex items-center gap-1 mb-2">
+                <div className="flex items-center gap-1">
                   {wizardSteps.map((_, i) => (
-                    <div key={i} onClick={() => setAddWizardStep(i)} className={`h-1.5 rounded-full transition-all duration-300 cursor-pointer ${i === addWizardStep ? 'bg-brand-primary flex-[2]' : i < addWizardStep ? 'bg-brand-primary/40 flex-1' : 'bg-slate-200 flex-1'}`} />
+                    <div key={i} onClick={() => setAddWizardStep(i)} className={`h-8 flex items-center cursor-pointer ${i === addWizardStep ? 'flex-[2]' : 'flex-1'}`}>
+                      <div className={`h-1.5 w-full rounded-full transition-all duration-300 ${i === addWizardStep ? 'bg-brand-primary' : i < addWizardStep ? 'bg-brand-primary/40' : 'bg-slate-200'}`} />
+                    </div>
                   ))}
                 </div>
                 <div className="flex items-center justify-between">
@@ -6326,6 +6467,16 @@ if (!health?.mongodb) {
           onClose={() => setExpandedRecord(null)}
           onSave={handleExpandedSave}
         />
+      )}
+
+      {/* TOAST NOTIFICATIONS */}
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl text-[13px] font-semibold pointer-events-none transition-all ${
+          toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
+        }`}>
+          {toast.type === 'error' ? <X className="h-4 w-4 shrink-0" /> : <Check className="h-4 w-4 shrink-0" />}
+          {toast.msg}
+        </div>
       )}
 
       {linkedSession && (
