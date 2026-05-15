@@ -626,10 +626,16 @@ const COL_LABEL_MAP: Record<string, string> = {
   '🕘 Session': 'Session',
   'DateFrom': 'Start Date',
   'DateTo': 'End Date',
+  'ShareFacts?': 'Sharing Facts',
+  'is Led Required?': 'LED Required',
 };
 function colLabel(col: string): string {
   if (COL_LABEL_MAP[col]) return COL_LABEL_MAP[col];
-  return col.replace(/\(from 🕘 Session\)/g, '(from Session)');
+  let label = col.replace(/\(from 🕘 Session\)/g, '(from Session)');
+  if (label.endsWith('?')) {
+    label = label.slice(0, -1);
+  }
+  return label;
 }
 
 /** Airtable-style expanded record modal — desktop two-panel + mobile wizard */
@@ -1366,6 +1372,7 @@ export default function App() {
   const gridContainerRef = useRef<HTMLDivElement>(null);
   const [user, setUser] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [isLoading, setIsLoading] = useState(true);
   const [editingId, setEditingId] = useState<string | null>(null);
 const [editDraft, setEditDraft] = useState<any>(null);
 const [expandedRecord, setExpandedRecord] = useState<any>(null);
@@ -2581,17 +2588,19 @@ const renderRow = (item: any) => {
   <>
     {cols.map((col, i) => {
       const isPrimary = col === primaryKey;
+      const isFirstCol = i === 0;
       const style = cellStyle(col);
       const val = item[col];
        const type = getColumnType(col);
       const isLongText = type === 'long_text';
+      const stickyBg = isFirstCol ? "sticky left-[48px] z-10 bg-white group-hover:bg-slate-50" : "";
 
       if (activeTable === 'MusicLog' && col === 'Relevance') {
   return (
     <td 
       key={col} 
       style={style} 
-      className="border-r border-b border-slate-200 text-center bg-white h-[40px] group/star-cell p-0"
+            className={`border-r border-b border-slate-200 text-center h-[40px] group/star-cell p-0 ${isFirstCol ? stickyBg : 'bg-white'}`}
     >
       <StarRating 
         value={val} 
@@ -2607,7 +2616,7 @@ const renderRow = (item: any) => {
             <td
               key={col}
               style={style}
-              className="border-r border-b border-slate-200 text-center relative group/checkbox cursor-pointer hover:bg-slate-50 transition-colors h-[40px]"
+            className={`border-r border-b border-slate-200 text-center relative group/checkbox cursor-pointer transition-colors h-[40px] ${isFirstCol ? stickyBg : 'hover:bg-slate-50'}`}
               onClick={(e) => {
                 e.stopPropagation();
                 handleToggleYesNo(item, col); 
@@ -2634,7 +2643,7 @@ const renderRow = (item: any) => {
         return (
           <td 
           key={col} 
-          className={`${isLongText ? 'px-4 py-2' : cellCls} ${isLongText ? 'whitespace-normal' : ''}`} 
+          className={`${isLongText ? 'px-4 py-2' : cellCls} ${isLongText ? 'whitespace-normal' : ''} ${isFirstCol ? stickyBg : ''}`} 
           style={style}
         >
             <div className="flex flex-wrap gap-1.5 justify-center overflow-hidden">
@@ -2662,7 +2671,7 @@ const renderRow = (item: any) => {
         // MusicLog: Track — brand-accent bold
         if (activeTable === 'MusicLog' && col === 'Track') {
           return (
-            <td key={col} className={`${cellCls} font-bold text-brand-accent`} style={style}>
+            <td key={col} className={`${cellCls} font-bold text-brand-accent ${isFirstCol ? stickyBg : ''}`} style={style}>
               {item["Track"] || <span className="text-slate-300 italic text-[12px]">—</span>}
             </td>
           );
@@ -2677,7 +2686,7 @@ const renderRow = (item: any) => {
           const re = new RegExp(urlRegex.source, 'g');
           while ((m = re.exec(imageString)) !== null) matches.push(m[1]);
           return (
-            <td key={col} className={`${cellCls} relative group/cell`} style={{ ...style, minWidth: '200px' }}>
+            <td key={col} className={`${cellCls} relative group/cell ${isFirstCol ? stickyBg : ''}`} style={{ ...style, minWidth: '200px' }}>
               <div className="flex items-center gap-1.5 overflow-hidden">
                 {matches.length === 0
                   ? <span className="text-slate-300 italic text-[10px]">No Images</span>
@@ -2702,7 +2711,7 @@ const renderRow = (item: any) => {
         // Tracks: FileLink — special link display
         if (activeTable === 'Tracks' && col === 'FileLink') {
           return (
-            <td key={col} className={cellCls} style={style}>
+            <td key={col} className={`${cellCls} ${isFirstCol ? stickyBg : ''}`} style={style}>
               {item["FileLink"]
                 ? <a href={item["FileLink"]} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px]">Link</a>
                 : <span className="text-slate-300 italic text-[12px]">—</span>}
@@ -2714,7 +2723,7 @@ const renderRow = (item: any) => {
        if (isPrimary) {
           const primaryVal = item[col] || item[col.toLowerCase()] || '';
           return (
-            <td key={col} className={primaryCls} style={style}>
+            <td key={col} className={`${primaryCls} ${isFirstCol ? stickyBg : ''}`} style={style}>
               <div className="truncate">{primaryVal || primaryFallback}</div>
             </td>
           );
@@ -2728,7 +2737,7 @@ const renderRow = (item: any) => {
       getColumnType(col) === 'long_text' 
         ? 'px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] whitespace-normal text-left align-top' 
         : cellCls
-    }`} 
+    } ${isFirstCol ? stickyBg : ''}`} 
     style={style}
   >
     {renderCell(col, item)}
@@ -2813,6 +2822,8 @@ const fetchAllData = async () => {
     }
   } catch (error) {
     console.error("Failed to fetch data from MongoDB:", error);
+  } finally {
+    setIsLoading(false);
   }
 };
 
@@ -3242,7 +3253,7 @@ const renderEditableRow = () => {
       {cols.map((col, i) => (
         <td
           key={i}
-          className="px-2 py-2 border-r border-b border-slate-400 bg-blue-50/50"
+          className={`px-2 py-2 border-r border-b border-slate-400 ${i === 0 ? 'bg-blue-100 sticky left-[48px] z-10' : 'bg-blue-50/50'}`}
           style={{ width: getWidth(col), minWidth: getWidth(col), maxWidth: getWidth(col) }}
         >
           {(() => {
@@ -3508,11 +3519,11 @@ const updateDraftOnly = (col: string, val: string) => {
               isLinkCol
                 ? 'px-1 py-0.5 border-slate-200 bg-white overflow-visible'
                 : isActuallyActive
-                  ? 'p-0 border-blue-400 bg-white ring-2 ring-inset ring-blue-300 overflow-visible relative z-10'
+                  ? `p-0 border-blue-400 bg-white ring-2 ring-inset ring-blue-300 overflow-visible relative ${i === 0 ? 'z-30' : 'z-10'}`
                   : isAutoFilled
                     ? 'px-4 py-3 bg-slate-50/40 cursor-not-allowed overflow-hidden'
                     : `px-4 py-3 border-slate-200 bg-white hover:bg-blue-50/30 overflow-hidden cursor-pointer${i > 0 ? ' text-center' : ''}`
-            }`}
+            } ${i === 0 ? `sticky left-[48px] ${!isActuallyActive ? 'z-10' : ''}` : ''}`}
             style={isActuallyActive
               ? { width: gw(col), minWidth: gw(col), height: '40px' }
               : { width: gw(col), minWidth: gw(col), maxWidth: gw(col), height: '40px' }}
@@ -4552,7 +4563,11 @@ if (!health?.mongodb) {
             { label: 'Video Plays', value: videoLogs.length, sub: 'log entries', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
           ].map(s => (
             <div key={s.label} className={`${s.bg} border ${s.border} rounded-2xl p-4`}>
-              <div className={`text-3xl font-black ${s.color} leading-none`}>{s.value}</div>
+              {isLoading ? (
+                <div className="h-8 w-16 bg-slate-200 animate-pulse rounded mb-1" />
+              ) : (
+                <div className={`text-3xl font-black ${s.color} leading-none`}>{s.value}</div>
+              )}
               <div className="text-[11px] font-black text-slate-700 mt-1 uppercase tracking-wide">{s.label}</div>
 <div className="text-[11px] text-slate-500 mt-0.5">{s.sub}</div> 
             </div>
@@ -4752,6 +4767,11 @@ if (!health?.mongodb) {
                 <div className="text-[11px] font-semibold text-slate-600 truncate">{item.Venue}</div>
               </div>
             )}
+            {item.City && (
+              <div className="block sm:hidden text-[11px] font-semibold text-slate-500 truncate mt-1">
+                <MapPin className="h-3 w-3 inline mr-1 opacity-50" />{item.City}
+              </div>
+            )}
           </div>
         </motion.div>
       ))}
@@ -4835,7 +4855,7 @@ if (!health?.mongodb) {
               <div className="text-[11px] font-medium text-slate-600 truncate">{item["EmailId"] || "—"}</div>
             </div>
             <div className="space-y-0.5">
-              <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">ShareFacts?</label>
+              <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Sharing Facts</label>
               <div className="pt-0.5">
                 {item["ShareFacts?"] === 'Yes'
                   ? <span className={getTagStyle('Yes')}>Yes</span>
@@ -4933,7 +4953,7 @@ if (!health?.mongodb) {
     {/* ADD FEEDBACK CARD */}
     {!searchQuery && <motion.div
       onClick={openAddModal}
-      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[380px]"
+      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[240px] sm:min-h-[380px]"
     >
       <Plus className="h-6 w-6 mb-2" />
       <span className="text-[10px] font-black uppercase tracking-widest">Add Guidance & Learning</span>
@@ -4989,9 +5009,11 @@ if (!health?.mongodb) {
                                   <div className="flex items-center gap-1.5"><MapPin className="h-3 md:h-3.5 w-3 md:w-3.5" /> {item["Venue"]}</div>
                                 </div>
                               </div>
-                              <Badge className="bg-brand-primary/10 text-brand-primary text-[8px] md:text-[9px] px-2 py-0.5">
-                                {item["SessionType"]}
-                              </Badge>
+                              {item["SessionType"] && (
+                                <Badge className="bg-brand-primary/10 text-brand-primary text-[8px] md:text-[9px] px-2 py-0.5">
+                                  {item["SessionType"]}
+                                </Badge>
+                              )}
                             </div>
                                    <div className="flex overflow-x-auto md:flex-wrap gap-3 md:gap-4 items-center pb-2 md:pb-0 scrollbar-hide">
                               {images.map((imgSrc, imgIdx) => (
@@ -4999,7 +5021,7 @@ if (!health?.mongodb) {
                                   <img src={imgSrc} loading="lazy" decoding="async" className="h-full w-full object-cover" alt="Upload" />
                                 </div>
                               ))}
-                                    <button onClick={(e) => { e.stopPropagation(); setActiveUploadId(sessionId); fileInputRef.current?.click(); }} className="h-32 md:h-40 w-32 md:w-48 shrink-0 rounded-xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center gap-2 text-slate-500">
+                                    <button onClick={(e) => { e.stopPropagation(); setActiveUploadId(sessionId); fileInputRef.current?.click(); }} className="h-32 md:h-40 w-32 md:w-48 shrink-0 rounded-xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center gap-2 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
                                 <Plus className="h-5 w-5" />
                                 <span className="text-[8px] font-black uppercase">Add Media</span>
                               </button>
@@ -5061,6 +5083,22 @@ if (!health?.mongodb) {
             <div className="overflow-hidden">
               <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Event</div>
               <span className={getTagStyle(item["Parent Event (from Session)"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Parent Event (from Session)"]}</span>
+            </div>
+          )}
+
+          {/* RELEVANCE STARS */}
+          {item["Relevance"] && (
+            <div className="flex items-center gap-0.5 mt-2">
+              {[1, 2, 3, 4, 5].map(star => (
+                <Star
+                  key={star}
+                  className={`h-3 w-3 ${
+                    star <= Number(item["Relevance"])
+                      ? 'fill-yellow-400 text-yellow-400'
+                      : 'text-slate-200'
+                  }`}
+                />
+              ))}
             </div>
           )}
         </div>
@@ -5305,10 +5343,10 @@ if (!health?.mongodb) {
   onDragLeave={() => setDragOverCol(null)}
   onDrop={() => { setDragOverCol(null); if (dragColRef.current) handleColDrop(dragColRef.current, col); dragColRef.current = null; }}
   onDragEnd={() => { setDragOverCol(null); dragColRef.current = null; }}
-  style={{ width: colWidths[col] || 200, minWidth: colWidths[col] || 200, position: 'relative' }}
+  style={{ width: colWidths[col] || 200, minWidth: colWidths[col] || 200 }}
   className={`border-r border-b p-0 font-semibold tracking-tight overflow-hidden select-none transition-colors group/header ${
     dragOverCol === col ? 'bg-brand-primary/10 border-brand-primary border-l-2' : isSorted ? 'bg-blue-50 text-brand-primary border-slate-200' : 'bg-slate-50 text-slate-600 border-slate-200'
-  }`}
+  } ${i === 0 ? 'sticky left-[48px] z-30' : 'relative'}`}
 >
       {editingHeader?.index === i ? (
         <input
@@ -6195,7 +6233,7 @@ if (!health?.mongodb) {
            <option value="Indoor">Indoor</option>
            <option value="Outdoor">Outdoor</option>
         </select>
-        <Input value={newRecord["is Led Required?"] || ''} onChange={(e) => setNewRecord({...newRecord, "is Led Required?": e.target.value})} placeholder="is Led Required? (Yes/No)" className="bg-brand-bg h-9 text-xs" />
+        <Input value={newRecord["is Led Required?"] || ''} onChange={(e) => setNewRecord({...newRecord, "is Led Required?": e.target.value})} placeholder="LED Required (Yes/No)" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord["Stageht"] || ''} onChange={(e) => setNewRecord({...newRecord, "Stageht": e.target.value})} placeholder="Stage Height" className="bg-brand-bg h-9 text-xs" />
       </div>
     </div>
@@ -6354,7 +6392,7 @@ if (!health?.mongodb) {
       <Input value={newRecord["EmailId"] || ''} onChange={(e) => setNewRecord({...newRecord, "EmailId": e.target.value})} placeholder="Email Address" className="bg-brand-bg" />
     </div>
     <div className="space-y-1">
-      <label className="text-[10px] font-bold uppercase text-slate-500">ShareFacts?</label>
+      <label className="text-[10px] font-bold uppercase text-slate-500">Sharing Facts</label>
       <select className="w-full bg-brand-bg border border-slate-700 rounded h-10 px-3 text-sm" value={newRecord["ShareFacts?"] || ''} onChange={(e) => setNewRecord({...newRecord, "ShareFacts?": e.target.value})}>
         <option value="No">No</option>
         <option value="Yes">Yes</option>
@@ -6960,7 +6998,7 @@ if (!health?.mongodb) {
               content: (
                 <div className="space-y-5">
                   <div>
-                    <label className={labelCls}>Share Facts?</label>
+                    <label className={labelCls}>Sharing Facts</label>
                     <div className="flex gap-2">
                       {['Yes', 'No'].map(opt => (
                         <button key={opt} type="button" onClick={() => setNewRecord({...newRecord, "ShareFacts?": opt})} className={`flex-1 h-11 rounded-xl border text-[12px] font-black uppercase tracking-widest transition-all ${newRecord["ShareFacts?"] === opt ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>{opt}</button>
