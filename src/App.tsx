@@ -111,13 +111,7 @@ const getTagStyle = (val: any) => {
 
   const index = Math.abs(hash) % TAG_COLORS.length;
 
-   return `
-    px-2.5 py-1 
-    rounded-md border 
-    font-bold text-[12px] tracking-tight whitespace-nowrap inline-block
-    shadow-sm
-    ${TAG_COLORS[index]}
-  `; 
+  return ['px-2.5', 'py-1', 'rounded-md', 'border', 'font-bold', 'text-[12px]', 'tracking-tight', 'whitespace-nowrap', 'inline-block', 'shadow-sm', TAG_COLORS[index]].join(' ');
 };
 
 const UNIFORM_DROPDOWN_STYLE = "bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-semibold text-[13px] px-3 py-1.5 rounded-md shadow-sm tracking-tighter whitespace-nowrap inline-block";
