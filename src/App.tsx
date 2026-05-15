@@ -1372,6 +1372,9 @@ export default function App() {
 const [editDraft, setEditDraft] = useState<any>(null);
 const [expandedRecord, setExpandedRecord] = useState<any>(null);
 const [editingCell, setEditingCell] = useState<string | null>(null);
+// Tracks whether a mousedown happened inside the editing row — suppresses
+// blur-triggered saves when the user is just clicking a different cell in the same row.
+const clickingCellRef = useRef(false);
 const [cellPreview, setCellPreview] = useState<{ label: string; value: string; record: any } | null>(null);
   const [events, setEvents] = useState<Event[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
@@ -2522,8 +2525,8 @@ const renderRow = (item: any) => {
   const cols = getTableColumns();
   const getWidth = (name: string) => colWidths[name] || 200;
   const cellStyle = (colName: string) => ({ width: getWidth(colName), minWidth: getWidth(colName), maxWidth: getWidth(colName) });
-  const cellCls = "px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] whitespace-nowrap overflow-hidden text-ellipsis text-left";
-  const primaryCls = "px-4 py-3 border-r border-b border-slate-200 font-semibold text-slate-900 text-[13px] truncate bg-inherit";
+  const cellCls = "px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] text-left overflow-hidden";
+  const primaryCls = "px-4 py-3 border-r border-b border-slate-200 font-semibold text-slate-900 text-[13px] overflow-hidden bg-inherit";
 
   // renderExtraCells kept for backward compat but no longer called from renderRow
   const renderExtraCells = () => {
@@ -2691,7 +2694,7 @@ const renderRow = (item: any) => {
           const primaryVal = item[col] || item[col.toLowerCase()] || '';
           return (
             <td key={col} className={primaryCls} style={style}>
-              {primaryVal || primaryFallback}
+              <div className="truncate">{primaryVal || primaryFallback}</div>
             </td>
           );
         }
@@ -2919,6 +2922,10 @@ const toggleGroup = (groupId: string) => {
     
  
 }, [activeTable]);
+
+useEffect(() => {
+  if (!editingId) setEditingCell(null);
+}, [editingId]);
 
 useEffect(() => {
   const handleClickOutside = (event: MouseEvent) => {
@@ -3306,10 +3313,12 @@ const renderEditableRow = () => {
 
 
 const handleUpdateRecord = async (draftOverride?: any) => {
+  // If a cell mousedown is in-flight (user clicking a different cell in the same row),
+  // skip the blur-triggered save — the click will handle saving when needed.
+  if (clickingCellRef.current) return;
   const draft = draftOverride ?? editDraft;
     if (!editingId || !draft) {
     setEditingId(null);
-    setEditingCell(null);
     return;
   }
 
@@ -3328,8 +3337,23 @@ const handleUpdateRecord = async (draftOverride?: any) => {
     case 'AudioSetup': collection = 'audiosetup'; break;
   }
 
+  // Optimistic update — apply immediately so the UI shows the new value
+  // with no flash; background fetch reconciles any server-side transforms.
+  const id = draft._id || draft.id;
+  const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+    'events': setEvents as any, 'sessions': setSessions as any,
+    'musiclog': setMusicLogs, 'videolog': setVideoLogs,
+    'media': setMedia as any, 'checklist': setChecklist as any,
+    'guidance': setGuidance as any, 'led_details': setLedDetails as any,
+    'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+  };
+  const setter = optimisticSetter[collection];
+  if (setter) setter((prev: any[]) => prev.map(r => (r._id === id || r.id === id) ? { ...r, ...draft } : r));
+
+  setEditingId(null);
+  setEditDraft(null);
+
   try {
-    const id = draft._id || draft.id;
     const response = await window.fetch(`/api/${collection}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
@@ -3337,15 +3361,14 @@ const handleUpdateRecord = async (draftOverride?: any) => {
     });
 
     if (response.ok) {
-      setEditingId(null);
-      setEditDraft(null);
-      setEditingCell(null);
       fetchActiveTable();
     } else {
       alert("Failed to update record");
+      fetchActiveTable(); // revert to server state on failure
     }
   } catch (error) {
     console.error("Update Error:", error);
+    fetchActiveTable(); // revert to server state on error
   }
 };
 
@@ -3460,17 +3483,23 @@ const updateDraftOnly = (col: string, val: string) => {
         return (
           <td
             key={i}
-            className={`border-r border-b bg-white transition-colors ${
+            className={`border-r border-b transition-colors ${
               isLinkCol
-                ? 'px-1 py-0.5 border-slate-200 overflow-visible'
+                ? 'px-1 py-0.5 border-slate-200 bg-white overflow-visible'
                 : isActuallyActive
-                  ? 'p-0 border-blue-400 ring-2 ring-inset ring-blue-300 overflow-visible'
+                  ? 'p-0 border-blue-400 bg-white ring-2 ring-inset ring-blue-300 overflow-visible relative z-10'
                   : isAutoFilled
-                    ? 'px-4 py-3 bg-slate-50/50 cursor-not-allowed'
-                    : `px-4 py-3 border-slate-200 hover:bg-slate-50/60 overflow-hidden${i > 0 ? ' text-center' : ''}`
+                    ? 'px-4 py-3 bg-slate-50/40 cursor-not-allowed overflow-hidden'
+                    : `px-4 py-3 border-slate-200 bg-white hover:bg-blue-50/30 overflow-hidden cursor-pointer${i > 0 ? ' text-center' : ''}`
             }`}
-            style={{ width: gw(col), minWidth: gw(col), maxWidth: gw(col), height: '40px' }}
-            onClick={() => !isAutoFilled && !isLinkCol && colType !== 'lookup' && setEditingCell(col)}
+            style={isActuallyActive
+              ? { width: gw(col), minWidth: gw(col), height: '40px' }
+              : { width: gw(col), minWidth: gw(col), maxWidth: gw(col), height: '40px' }}
+            onMouseDown={() => { if (!isAutoFilled && !isLinkCol && colType !== 'lookup') clickingCellRef.current = true; }}
+            onClick={() => {
+              clickingCellRef.current = false;
+              if (!isAutoFilled && !isLinkCol && colType !== 'lookup') setEditingCell(col);
+            }}
           >
             {(() => {
               if (isAutoFilled) {
@@ -5417,10 +5446,16 @@ if (!health?.mongodb) {
  return (
   <React.Fragment key={row.data?._id || row.data?.id || idx}>
   <tr
-    className={`group transition-colors border-b border-slate-200 ${
-      selectedIds.includes(row.data?._id || row.data?.id) ? 'bg-blue-100/60' : !row.groupColor ? 'hover:bg-blue-50/40' : ''
+    className={`group transition-colors duration-100 border-b border-slate-200 ${
+      selectedIds.includes(row.data?._id || row.data?.id)
+        ? 'bg-blue-100/60'
+        : isEditing
+          ? 'bg-blue-50/20'
+          : !row.groupColor
+            ? 'hover:bg-blue-50/40'
+            : ''
     }`}
-    style={!selectedIds.includes(row.data?._id || row.data?.id) && row.groupColor ? { backgroundColor: row.groupColor + '22' } : undefined}
+    style={!selectedIds.includes(row.data?._id || row.data?.id) && !isEditing && row.groupColor ? { backgroundColor: row.groupColor + '22' } : undefined}
   >
     {/* CHECKBOX + EXPAND COLUMN (Sticky Left) */}
     <td className="w-12 border-r border-slate-200 text-center sticky left-0 z-20 bg-inherit px-1 py-0">
@@ -5462,21 +5497,19 @@ if (!health?.mongodb) {
               return;
             }
             // Detect which column cell was clicked via DOM position
-      const td = (e.target as HTMLElement).closest('td');
-  const tr = td?.closest('tr');
-  if (td && tr) {
-    const tds = Array.from(tr.querySelectorAll('td'));
-    const tdIdx = tds.indexOf(td as HTMLTableCellElement) - 1; 
-    const clickedCol = getTableColumns()[tdIdx];
-
-    // FIX: If clicking the star column, STOP and do not setEditingId
-    if (activeTable === 'MusicLog' && clickedCol === 'Relevance') {
-      return; 
-    }
-    
-    if (clickedCol) setEditingCell(clickedCol);
-  }
-            setEditingId(row.data?._id || row.data?.id);
+            const td = (e.target as HTMLElement).closest('td');
+            const tr = td?.closest('tr');
+            let clickedCol: string | undefined;
+            if (td && tr) {
+              const tds = Array.from(tr.querySelectorAll('td'));
+              const tdIdx = tds.indexOf(td as HTMLTableCellElement) - 1;
+              clickedCol = getTableColumns()[tdIdx];
+              // MusicLog star column — don't enter edit mode
+              if (activeTable === 'MusicLog' && clickedCol === 'Relevance') return;
+            }
+            const rowId = row.data?._id || row.data?.id;
+            if (clickedCol) setEditingCell(clickedCol);
+            setEditingId(rowId);
             const d: any = { ...row.data };
             ['DateFrom', 'DateTo', 'Date'].forEach(k => {
               if (!d[k]) return;
