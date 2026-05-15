@@ -79,8 +79,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 
 const TAG_COLORS = [
-  "bg-indigo-500/20 text-indigo-800 border-indigo-500/30 dark:text-indigo-200",
-  "bg-blue-500/20 text-blue-800 border-blue-500/30 dark:text-blue-200",
+  "bg-indigo-500/20 text-indigo-900 border-indigo-500/30 dark:text-indigo-200",
+  "bg-blue-500/20 text-blue-900border-blue-500/30 dark:text-blue-200",
   "bg-cyan-500/20 text-cyan-800 border-cyan-500/30 dark:text-cyan-200",
   "bg-teal-500/20 text-teal-800 border-teal-500/30 dark:text-teal-200",
   "bg-emerald-500/20 text-emerald-800 border-emerald-500/30 dark:text-emerald-200",
@@ -111,16 +111,16 @@ const getTagStyle = (val: any) => {
 
   const index = Math.abs(hash) % TAG_COLORS.length;
 
-  return `
-    px-2.5 py-0.5 
+   return `
+    px-2.5 py-1 
     rounded-md border 
-    font-bold text-[11px] tracking-tight whitespace-nowrap inline-block
-    shadow-[0_2px_8px_rgba(0,0,0,0.3)]
+    font-bold text-[12px] tracking-tight whitespace-nowrap inline-block
+    shadow-sm
     ${TAG_COLORS[index]}
-  `;
+  `; 
 };
 
-const UNIFORM_DROPDOWN_STYLE = "bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-semibold text-[12px] px-3 py-1 rounded-md shadow-sm tracking-tighter whitespace-nowrap inline-block";
+const UNIFORM_DROPDOWN_STYLE = "bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-semibold text-[13px] px-3 py-1.5 rounded-md shadow-sm tracking-tighter whitespace-nowrap inline-block";
 
 // Columns to show by default on mobile grid view (others are hidden until user unlocks via Fields)
 const MOBILE_PRIORITY_COLS: Record<string, string[]> = {
@@ -799,7 +799,9 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
       <div className="w-full h-10 bg-slate-100 border border-slate-200 rounded-xl px-3.5 text-[13px] font-semibold text-slate-500 flex items-center gap-2 group/readonly">
         <span className="truncate">{draft[col] || '—'}</span>
         <div className="ml-auto opacity-0 group-hover/readonly:opacity-100 transition-opacity">
-           <Badge variant="outline" className="text-[8px] border-slate-300 text-slate-400 uppercase tracking-tighter">Auto-Filled</Badge>
+          <Badge variant="outline" className="text-[10px] border-slate-300 text-slate-500 uppercase">
+  Auto-Filled
+</Badge> 
         </div>
       </div>
     );
@@ -1112,7 +1114,9 @@ if (hasDropdown) {
         <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 pb-2 space-y-5 min-h-0">
           {currentStepData.fields.map(col => (
             <div key={col}>
-              <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] block mb-2">{colLabel(col)}</label>
+             <label className="text-[11px] font-black text-slate-600 uppercase tracking-[0.15em] block mb-2">
+  {colLabel(col)}
+</label>
               {renderField(col)}
             </div>
           ))}
@@ -2248,7 +2252,7 @@ if (['Status', 'status'].includes(col)) return 'status';
 const renderCell = (col: string, item: any): React.ReactNode => {
   const val = item[col];
   const type = getColumnType(col);
-  const empty = <span className="text-slate-300 italic text-[12px]">—</span>;
+  const empty = <span className="text-slate-400 italic text-[12px]">—</span>;
 
   switch (type) {
     case 'id':
@@ -3961,7 +3965,7 @@ if (!health?.mongodb) {
           <motion.span 
             initial={{ opacity: 0 }} 
             animate={{ opacity: 1 }} 
-            className="px-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-600 block mb-4 whitespace-nowrap"
+             className="px-4 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 block mb-4"
           >
             Master Data
           </motion.span>
@@ -4027,9 +4031,9 @@ if (!health?.mongodb) {
         <div className="text-sm font-black text-white truncate uppercase">
           {user?.name || 'it_sevarpit'}
         </div>
-        <div className="text-[9px] text-brand-primary font-black uppercase tracking-widest mt-0.5 opacity-80">
-          ADMIN
-        </div>
+        <div className="text-[10px] text-brand-primary font-black uppercase tracking-widest mt-1">
+  ADMIN
+</div>
       </motion.div>
     )}
 
@@ -4503,7 +4507,7 @@ if (!health?.mongodb) {
         {/* GREETING ROW */}
         <div className="flex items-end justify-between flex-wrap gap-3">
           <div>
-            <p className="text-[10px] font-black uppercase tracking-[0.25em] text-slate-400">{greeting}</p>
+            <p className="text-[11px] font-black uppercase tracking-[0.25em] text-slate-500">{greeting}</p>
             <h1 className="text-3xl sm:text-4xl font-black text-slate-900 tracking-tighter leading-none mt-0.5">
               {user?.name?.split(' ')[0] || 'Welcome'} <span className="text-brand-primary">—</span>
             </h1>
@@ -4533,7 +4537,7 @@ if (!health?.mongodb) {
             <div key={s.label} className={`${s.bg} border ${s.border} rounded-2xl p-4`}>
               <div className={`text-3xl font-black ${s.color} leading-none`}>{s.value}</div>
               <div className="text-[11px] font-black text-slate-700 mt-1 uppercase tracking-wide">{s.label}</div>
-              <div className="text-[10px] text-slate-400 mt-0.5">{s.sub}</div>
+<div className="text-[11px] text-slate-500 mt-0.5">{s.sub}</div> 
             </div>
           ))}
         </div>
@@ -5266,7 +5270,7 @@ if (!health?.mongodb) {
          <thead className="sticky top-0 z-30 bg-slate-50 border-b border-slate-200">
   <tr>
     <th className="w-12 border-r border-b border-slate-200 px-2 py-3 bg-slate-100 text-center sticky left-0 z-40">
-      <span className="text-[10px] font-black text-slate-400">#</span>
+      <span className="text-[11px] font-black text-slate-500">#</span> 
     </th>
    {getTableColumns().map((col, i) => {
   const isSorted = sortBy?.field === col;
