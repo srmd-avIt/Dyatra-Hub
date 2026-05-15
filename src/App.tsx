@@ -869,14 +869,14 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
               if (isML) {
                 patch["Parent Event (from Session)"] = s["Parent Event"];
                 patch["Date (from Session)"] = s["Date"];
-                patch["TimeOfDay (from Session)"] = s["TimeOfDay"];
+                patch["TimeOfDay (from Session)"] = s["Time Of Day"];
                 patch["Occasion (from Session)"] = s["Occasion"];
               } else {
                 patch["Parent Event (from Session)"] = s["Parent Event"];
                 patch["Date (from Session)"] = s["Date"];
                 patch["City (from Session)"] = s["City"];
                 patch["Venue (from Session)"] = s["Venue"];
-                patch["TimeOfDay (from Session)"] = s["TimeOfDay"];
+                patch["TimeOfDay (from Session)"] = s["Time Of Day"];
                 patch["Occasion (from Session)"] = s["Occasion"];
                 patch["SessionType (from Session)"] = s["SessionType"];
               }
@@ -1393,7 +1393,9 @@ const [cellPreview, setCellPreview] = useState<{ label: string; value: string; r
   const [locations, setLocations] = useState<any[]>([]);
   const [videoSetup, setVideoSetup] = useState<any[]>([]);
   const [audioSetup, setAudioSetup] = useState<any[]>([]);
-  const [columnOrder, setColumnOrder] = useState<string[]>([]);
+  const [columnOrder, setColumnOrder] = useState<Record<string, string[]>>({});
+  const [dragOverCol, setDragOverCol] = useState<string | null>(null);
+  const dragColRef = useRef<string | null>(null);
   const [groupByField, setGroupByField] = useState<string | null>(null);
 const [sortBy, setSortBy] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
   // AI Chat State
@@ -1612,6 +1614,20 @@ const handleDeleteColumn = (colToDelete: string) => {
   setExtraColumns(newCols);
   setColumnTypes(newTypes);
   saveSettings(newCols, newTypes, hiddenColumns);
+};
+
+const handleColDrop = (fromCol: string, toCol: string) => {
+  if (fromCol === toCol) return;
+  const cols = getTableColumns(true); // full ordered list including hidden
+  const from = cols.indexOf(fromCol);
+  const to   = cols.indexOf(toCol);
+  if (from === -1 || to === -1) return;
+  const reordered = [...cols];
+  reordered.splice(from, 1);
+  reordered.splice(to, 0, fromCol);
+  const newOrder = { ...columnOrder, [activeTable]: reordered };
+  setColumnOrder(newOrder);
+  saveSettings(extraColumns, columnTypes, hiddenColumns, columnMeta, newOrder);
 };
 
 const toggleHideColumn = (col: string) => {
@@ -2076,13 +2092,14 @@ const saveSettings = async (
   cols: Record<string, string[]>,
   types: Record<string, Record<string, FieldType>>,
   hidden: Record<string, string[]>,
-  meta?: Record<string, Record<string, { linkedTable?: string; lookupField?: string }>>
+  meta?: Record<string, Record<string, { linkedTable?: string; lookupField?: string }>>,
+  order?: Record<string, string[]>
 ) => {
   try {
     await window.fetch('/api/settings/columns', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ _v: 2, columns: cols, types, hidden, meta: meta ?? columnMeta })
+      body: JSON.stringify({ _v: 2, columns: cols, types, hidden, meta: meta ?? columnMeta, order: order ?? columnOrder })
     });
   } catch (error) {
     console.error("Failed to save settings:", error);
@@ -2100,6 +2117,7 @@ useEffect(() => {
           setColumnTypes(data.types || {});
           setHiddenColumns(data.hidden || {});
           setColumnMeta(data.meta || {});
+          setColumnOrder(data.order || {});
         } else {
           setExtraColumns(data || {});
         }
@@ -2394,9 +2412,14 @@ const getTableColumns = (includeHidden = false) => {
 
   const added = extraColumns[activeTable] || [];
   const all = [...baseCols, ...added];
-  if (includeHidden) return all;
+  // Apply saved column order (drag-and-drop reordering)
+  const savedOrder = columnOrder[activeTable];
+  const ordered = savedOrder && savedOrder.length
+    ? [...savedOrder.filter(c => all.includes(c)), ...all.filter(c => !savedOrder.includes(c))]
+    : all;
+  if (includeHidden) return ordered;
   const hidden = hiddenColumns[activeTable] || [];
-  return all.filter(col => !hidden.includes(col));
+  return ordered.filter(col => !hidden.includes(col));
 };
 const handleToggleYesNo = async (item: any, col: string) => {
   const val = item[col];
@@ -3202,14 +3225,14 @@ const renderEditableRow = () => {
     if (activeTable === 'MusicLog') {
       patch["Parent Event (from Session)"] = s["Parent Event"];
       patch["Date (from Session)"] = s["Date"];
-      patch["TimeOfDay (from Session)"] = s["TimeOfDay"];
+      patch["TimeOfDay (from Session)"] = s["Time Of Day"];
       patch["Occasion (from Session)"] = s["Occasion"];
     } else {
       patch["Parent Event (from Session)"] = s["Parent Event"];
       patch["Date (from Session)"] = s["Date"];
       patch["City (from Session)"] = s["City"];
       patch["Venue (from Session)"] = s["Venue"];
-      patch["TimeOfDay (from Session)"] = s["TimeOfDay"];
+      patch["TimeOfDay (from Session)"] = s["Time Of Day"];
       patch["Occasion (from Session)"] = s["Occasion"];
       patch["SessionType (from Session)"] = s["SessionType"];
     }
@@ -3440,14 +3463,14 @@ const updateDraftOnly = (col: string, val: string) => {
       if (isML) {
         patch["Parent Event (from Session)"] = s["Parent Event"];
         patch["Date (from Session)"]         = s["Date"];
-        patch["TimeOfDay (from Session)"]    = s["TimeOfDay"];
+        patch["TimeOfDay (from Session)"]    = s["Time Of Day"];
         patch["Occasion (from Session)"]     = s["Occasion"];
       } else {
         patch["Parent Event (from Session)"] = s["Parent Event"];
         patch["Date (from Session)"]         = s["Date"];
         patch["City (from Session)"]         = s["City"];
         patch["Venue (from Session)"]        = s["Venue"];
-        patch["TimeOfDay (from Session)"]    = s["TimeOfDay"];
+        patch["TimeOfDay (from Session)"]    = s["Time Of Day"];
         patch["Occasion (from Session)"]     = s["Occasion"];
         patch["SessionType (from Session)"]  = s["SessionType"];
       }
@@ -5282,8 +5305,16 @@ if (!health?.mongodb) {
   return (
   <th
   key={i}
+  draggable
+  onDragStart={() => { dragColRef.current = col; }}
+  onDragOver={(e) => { e.preventDefault(); setDragOverCol(col); }}
+  onDragLeave={() => setDragOverCol(null)}
+  onDrop={() => { setDragOverCol(null); if (dragColRef.current) handleColDrop(dragColRef.current, col); dragColRef.current = null; }}
+  onDragEnd={() => { setDragOverCol(null); dragColRef.current = null; }}
   style={{ width: colWidths[col] || 200, minWidth: colWidths[col] || 200, position: 'relative' }}
-  className={`border-r border-b border-slate-200 p-0 font-semibold tracking-tight overflow-hidden select-none transition-colors group/header ${isSorted ? 'bg-blue-50 text-brand-primary' : 'bg-slate-50 text-slate-600'}`}
+  className={`border-r border-b p-0 font-semibold tracking-tight overflow-hidden select-none transition-colors group/header ${
+    dragOverCol === col ? 'bg-brand-primary/10 border-brand-primary border-l-2' : isSorted ? 'bg-blue-50 text-brand-primary border-slate-200' : 'bg-slate-50 text-slate-600 border-slate-200'
+  }`}
 >
       {editingHeader?.index === i ? (
         <input
@@ -5320,8 +5351,9 @@ if (!health?.mongodb) {
           <div
             onClick={() => setSortBy({ field: col, direction: sortBy?.field === col && sortBy.direction === 'asc' ? 'desc' : 'asc' })}
             onDoubleClick={() => isExtraColumn && setEditingHeader({ index: i, value: col })}
-            className="flex items-center gap-2 px-4 py-3 h-full w-full cursor-pointer hover:bg-black/5 transition-colors truncate pr-16"
+            className="flex items-center gap-2 px-4 py-3 h-full w-full cursor-grab active:cursor-grabbing hover:bg-black/5 transition-colors truncate pr-16"
           >
+            <GripVertical className="h-3 w-3 shrink-0 text-slate-300 opacity-0 group-hover/header:opacity-100 transition-opacity -ml-1.5" />
             <TypeIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
             <span className="truncate">{(() => {
               const meta = columnMeta[activeTable]?.[col];
@@ -5960,7 +5992,7 @@ if (!health?.mongodb) {
             value={newRecord.session || ''}
             onChange={(e) => {
               const s = sessions.find(s => s["Session Name"] === e.target.value);
-              if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["TimeOfDay"], occasion: s["Occasion"] });
+              if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"] });
               else setNewRecord({ ...newRecord, session: e.target.value });
             }}
           >
@@ -6015,7 +6047,7 @@ if (!health?.mongodb) {
             value={newRecord.session || ''}
             onChange={(e) => {
               const s = sessions.find(s => s["Session Name"] === e.target.value);
-              if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], city: s["City"], venue: s["Venue"], timeOfDay: s["TimeOfDay"], occasion: s["Occasion"], sessionType: s["SessionType"] });
+              if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], city: s["City"], venue: s["Venue"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"], sessionType: s["SessionType"] });
               else setNewRecord({ ...newRecord, session: e.target.value });
             }}
           >
@@ -6528,7 +6560,7 @@ if (!health?.mongodb) {
                     <label className={labelCls}>Session</label>
                     <CellDropdown value={newRecord.session || ''} options={sessionOpts} onCommit={val => {
                       const s = sessions.find((x: any) => x["Session Name"] === val);
-                      if (s) setNewRecord({...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["TimeOfDay"], occasion: s["Occasion"]});
+                      if (s) setNewRecord({...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"]});
                       else setNewRecord({...newRecord, session: val});
                     }} onCancel={() => {}} placeholder="Select session…" tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20" />
                   </div>
@@ -6607,7 +6639,7 @@ if (!health?.mongodb) {
                     <label className={labelCls}>Session</label>
                     <CellDropdown value={newRecord.session || ''} options={sessionOpts} onCommit={val => {
                       const s = sessions.find((x: any) => x["Session Name"] === val);
-                      if (s) setNewRecord({...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], city: s["City"], venue: s["Venue"], timeOfDay: s["TimeOfDay"], occasion: s["Occasion"], sessionType: s["SessionType"]});
+                      if (s) setNewRecord({...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], city: s["City"], venue: s["Venue"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"], sessionType: s["SessionType"]});
                       else setNewRecord({...newRecord, session: val});
                     }} onCancel={() => {}} placeholder="Select session…" tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20" />
                   </div>
@@ -7127,7 +7159,7 @@ if (!health?.mongodb) {
               </button>
             </div>
             <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 sm:gap-y-4">
-              {(['Parent Event', 'Date', 'City', 'Venue', 'TimeOfDay', 'Occasion', 'SessionType', 'Notes'] as const).map(field =>
+              {(['Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes'] as const).map(field =>
                 linkedSession[field] ? (
                   <div key={field}>
                     <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{field}</div>
