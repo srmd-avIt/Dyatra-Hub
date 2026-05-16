@@ -115,6 +115,7 @@ const getTagStyle = (val: any) => {
 };
 
 const UNIFORM_DROPDOWN_STYLE = "bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-semibold text-[13px] px-3 py-1.5 rounded-md shadow-sm tracking-tighter whitespace-nowrap inline-block";
+const FROZEN_STYLE: React.CSSProperties = { backgroundColor: 'rgba(250, 251, 255, 0.88)', backdropFilter: 'blur(10px) saturate(1.2)' };
 
 // Columns to show by default on mobile grid view (others are hidden until user unlocks via Fields)
 const MOBILE_PRIORITY_COLS: Record<string, string[]> = {
@@ -247,9 +248,10 @@ const CellDropdown = React.memo(function CellDropdown({
   placeholder?: string; tagClass?: string; isMinimal?: boolean;
   autoOpen?: boolean; isMulti?: boolean;
 }) {
-  const [open, setOpen] = useState(autoOpen); 
+  const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
@@ -269,15 +271,18 @@ const CellDropdown = React.memo(function CellDropdown({
     return strVal.split(',').map(v => v.trim()).filter(Boolean);
   }, [value]);
 
+  useEffect(() => { if (autoOpen) requestAnimationFrame(() => openDropdown()); }, []); // eslint-disable-line react-hooks/exhaustive-deps
   useEffect(() => { if (open) setTimeout(() => searchRef.current?.focus(), 0); }, [open]);
-  
+
   useEffect(() => {
     const h = (e: MouseEvent) => {
-      if (ref.current && !ref.current.contains(e.target as Node)) {
-        if (open) { 
-          setOpen(false); 
-          setSearch(''); 
-          if (onOutsideClick) onOutsideClick(); // Final save happens here
+      const inside = (ref.current && ref.current.contains(e.target as Node))
+                  || (panelRef.current && panelRef.current.contains(e.target as Node));
+      if (!inside) {
+        if (open) {
+          setOpen(false);
+          setSearch('');
+          if (onOutsideClick) onOutsideClick();
         }
       }
     };
@@ -350,9 +355,13 @@ const CellDropdown = React.memo(function CellDropdown({
         </div>
       )}
 
-      {/* DROPDOWN MENU */}
-      {open && (
-        <div className="absolute z-[9999] top-full left-0 mt-1 min-w-[240px] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden flex flex-col">
+      {/* DROPDOWN MENU — fixed-position so it escapes overflow:hidden ancestors */}
+      {open && panelPos && (
+        <div
+          ref={panelRef}
+          className="fixed z-[9999] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden flex flex-col"
+          style={{ top: panelPos.top, left: panelPos.left, width: panelPos.width, minWidth: 240 }}
+        >
           <div className="p-2 border-b border-slate-100 bg-slate-50/50">
             <input
               ref={searchRef}
@@ -1397,6 +1406,7 @@ const [cellPreview, setCellPreview] = useState<{ label: string; value: string; r
   const [videoSetup, setVideoSetup] = useState<any[]>([]);
   const [audioSetup, setAudioSetup] = useState<any[]>([]);
   const [columnOrder, setColumnOrder] = useState<Record<string, string[]>>({});
+  const [frozenUpTo, setFrozenUpTo] = useState<Record<string, number>>({});
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const dragColRef = useRef<string | null>(null);
   const [groupByField, setGroupByField] = useState<string | null>(null);
@@ -2096,13 +2106,14 @@ const saveSettings = async (
   types: Record<string, Record<string, FieldType>>,
   hidden: Record<string, string[]>,
   meta?: Record<string, Record<string, { linkedTable?: string; lookupField?: string }>>,
-  order?: Record<string, string[]>
+  order?: Record<string, string[]>,
+  frozen?: Record<string, number>
 ) => {
   try {
     await window.fetch('/api/settings/columns', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ _v: 2, columns: cols, types, hidden, meta: meta ?? columnMeta, order: order ?? columnOrder })
+      body: JSON.stringify({ _v: 2, columns: cols, types, hidden, meta: meta ?? columnMeta, order: order ?? columnOrder, frozen: frozen ?? frozenUpTo })
     });
   } catch (error) {
     console.error("Failed to save settings:", error);
@@ -2121,6 +2132,7 @@ useEffect(() => {
           setHiddenColumns(data.hidden || {});
           setColumnMeta(data.meta || {});
           setColumnOrder(data.order || {});
+          setFrozenUpTo(data.frozen || {});
         } else {
           setExtraColumns(data || {});
         }
@@ -2263,16 +2275,14 @@ case 'text':
         : empty;
 
     case 'link_to_record': {
-      const meta = columnMeta[activeTable]?.[col];
-      const linkedTable = meta?.linkedTable || '';
       if (!val) return empty;
       const names = String(val).split(',').map((s: string) => s.trim()).filter(Boolean);
       return (
-        <div className="flex flex-wrap gap-1 justify-center">
+        <div className="flex flex-wrap gap-1.5 justify-center">
           {names.map((n: string, i: number) => (
-            <span key={i} className="inline-flex items-center gap-1 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-[11px] font-semibold px-2 py-0.5 rounded-sm">
-              <Link2 className="h-2.5 w-2.5 shrink-0" />
+            <span key={i} className="inline-flex items-center gap-0.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-[12px] font-semibold px-2.5 py-0.5 rounded-full cursor-pointer hover:bg-brand-primary/20 transition-colors">
               {n}
+              <ArrowUpRight className="h-3 w-3 opacity-60 shrink-0" />
             </span>
           ))}
         </div>
@@ -2476,9 +2486,16 @@ const StarRating = ({ value, onSave }: { value: any; onSave: (val: number) => vo
 const renderRow = (item: any) => {
   const cols = getTableColumns();
   const getWidth = (name: string) => colWidths[name] || 200;
-  const cellStyle = (colName: string) => ({ width: getWidth(colName), minWidth: getWidth(colName), maxWidth: getWidth(colName) });
+  const frozen = frozenUpTo[activeTable] ?? -1;
+  const leftOffsets: number[] = [];
+  let acc = 48;
+  cols.forEach((c, idx) => { leftOffsets[idx] = acc; if (idx <= frozen) acc += getWidth(c); });
+  const cellStyle = (colName: string, i: number) => {
+    const base = { width: getWidth(colName), minWidth: getWidth(colName), maxWidth: getWidth(colName) };
+    return i <= frozen ? { ...base, position: 'sticky' as const, left: leftOffsets[i], zIndex: 10, ...FROZEN_STYLE } : base;
+  };
   const cellCls = "px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] text-left overflow-hidden";
-  const primaryCls = "px-4 py-3 border-r border-b border-slate-200 font-semibold text-slate-900 text-[13px] overflow-hidden bg-inherit";
+  const primaryCls = "px-4 py-3 border-r border-b border-slate-200 font-semibold text-slate-900 text-[13px] overflow-hidden";
 
   // renderExtraCells kept for backward compat but no longer called from renderRow
   const renderExtraCells = () => {
@@ -2486,7 +2503,7 @@ const renderRow = (item: any) => {
     const hidden = hiddenColumns[activeTable] || [];
     return extraKeys.filter(colName => !hidden.includes(colName)).map((colName) => {
       return (
-        <td key={colName} className={cellCls} style={cellStyle(colName)}>
+        <td key={colName} className={cellCls} style={cellStyle(colName, -1)}>
           {renderCell(colName, item)}
         </td>
       );
@@ -2513,18 +2530,22 @@ const renderRow = (item: any) => {
     {cols.map((col, i) => {
       const isPrimary = col === primaryKey;
       const isFirstCol = i === 0;
-      const style = cellStyle(col);
+      const isColFrozen = i <= frozen;
+      const isFreezeEdge = i === frozen;
+      const style = cellStyle(col, i);
       const val = item[col];
        const type = getColumnType(col);
       const isLongText = type === 'long_text';
-        const stickyBg = isFirstCol && !isMobileView ? "sticky left-[48px] z-10 bg-white group-hover:bg-slate-50" : "";
+      const stickyBg = isColFrozen
+        ? (isFreezeEdge ? 'border-r-2 border-r-brand-primary/40' : '')
+        : '';
 
       if (activeTable === 'MusicLog' && col === 'Relevance') {
   return (
     <td 
       key={col} 
       style={style} 
-            className={`border-r border-b border-slate-200 text-center h-[40px] group/star-cell p-0 ${isFirstCol ? stickyBg : 'bg-white'}`}
+            className={`border-r border-b border-slate-200 text-center h-[40px] group/star-cell p-0 ${isColFrozen ? stickyBg : 'bg-white'}`}
     >
       <StarRating 
         value={val} 
@@ -2540,7 +2561,7 @@ const renderRow = (item: any) => {
             <td
               key={col}
               style={style}
-            className={`border-r border-b border-slate-200 text-center relative group/checkbox cursor-pointer transition-colors h-[40px] ${isFirstCol ? stickyBg : 'hover:bg-slate-50'}`}
+            className={`border-r border-b border-slate-200 text-center relative group/checkbox cursor-pointer transition-colors h-[40px] ${isColFrozen ? stickyBg : 'hover:bg-slate-50'}`}
               onClick={(e) => {
                 e.stopPropagation();
                 handleToggleYesNo(item, col); 
@@ -2567,7 +2588,7 @@ const renderRow = (item: any) => {
         return (
           <td 
           key={col} 
-          className={`${isLongText ? 'px-4 py-2' : cellCls} ${isLongText ? 'whitespace-normal' : ''} ${isFirstCol ? stickyBg : ''}`} 
+          className={`${isLongText ? 'px-4 py-2' : cellCls} ${isLongText ? 'whitespace-normal' : ''} ${isColFrozen ? stickyBg : ''}`} 
           style={style}
         >
             <div className="flex flex-wrap gap-1.5 justify-center overflow-hidden">
@@ -2576,10 +2597,10 @@ const renderRow = (item: any) => {
                 return (
                   <span
                     key={idx}
-                    className={`inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-sm transition-all ${
-                      linked 
-                        ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' 
-                        : 'bg-slate-100 text-slate-700 border border-slate-300 cursor-default'
+                    className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full transition-all ${
+                      linked
+                        ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20 hover:bg-brand-primary/20 cursor-pointer'
+                        : 'bg-slate-100 text-slate-700 border border-slate-200 cursor-default'
                     }`}
                     onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
                   >
@@ -2595,7 +2616,7 @@ const renderRow = (item: any) => {
         // MusicLog: Track — brand-accent bold
         if (activeTable === 'MusicLog' && col === 'Track') {
           return (
-            <td key={col} className={`${cellCls} font-bold text-brand-accent ${isFirstCol ? stickyBg : ''}`} style={style}>
+            <td key={col} className={`${cellCls} font-bold text-brand-accent ${isColFrozen ? stickyBg : ''}`} style={style}>
               {item["Track"] || <span className="text-slate-300 italic text-[12px]">—</span>}
             </td>
           );
@@ -2610,7 +2631,7 @@ const renderRow = (item: any) => {
           const re = new RegExp(urlRegex.source, 'g');
           while ((m = re.exec(imageString)) !== null) matches.push(m[1]);
           return (
-            <td key={col} className={`${cellCls} relative group/cell ${isFirstCol ? stickyBg : ''}`} style={{ ...style, minWidth: '200px' }}>
+            <td key={col} className={`${cellCls} relative group/cell ${isColFrozen ? stickyBg : ''}`} style={{ ...style, minWidth: '200px' }}>
               <div className="flex items-center gap-2 overflow-hidden w-full relative h-full">
                 {matches.slice(0, 3).map((url, idx) => (
                   <img key={idx} src={url} loading="lazy" decoding="async" className="h-8 w-12 object-cover rounded border border-slate-300 shrink-0" alt="" />
@@ -2635,7 +2656,7 @@ const renderRow = (item: any) => {
         // Tracks: FileLink — special link display
         if (activeTable === 'Tracks' && col === 'FileLink') {
           return (
-            <td key={col} className={`${cellCls} ${isFirstCol ? stickyBg : ''}`} style={style}>
+            <td key={col} className={`${cellCls} ${isColFrozen ? stickyBg : ''}`} style={style}>
               {item["FileLink"]
                 ? <a href={item["FileLink"]} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px]">Link</a>
                 : <span className="text-slate-300 italic text-[12px]">—</span>}
@@ -2647,7 +2668,7 @@ const renderRow = (item: any) => {
        if (isPrimary) {
           const primaryVal = item[col] || item[col.toLowerCase()] || '';
           return (
-            <td key={col} className={`${primaryCls} ${isFirstCol ? stickyBg : ''}`} style={style}>
+            <td key={col} className={`${primaryCls} ${isColFrozen ? stickyBg : ''}`} style={style}>
               <div className="truncate">{primaryVal || primaryFallback}</div>
             </td>
           );
@@ -2661,7 +2682,7 @@ const renderRow = (item: any) => {
       getColumnType(col) === 'long_text' 
         ? 'px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] whitespace-normal text-left align-top' 
         : cellCls
-    } ${isFirstCol ? stickyBg : ''}`} 
+    } ${isColFrozen ? stickyBg : ''}`} 
     style={style}
   >
     {renderCell(col, item)}
@@ -3101,46 +3122,8 @@ const getProcessedData = (): any[] => {
 
   let finalResult: any[] = [];
 
-  // 2. Specialized Nested Grouping for Session
-  if (activeTable === 'Session' && !groupByField) {
-    const eventYearMap: Record<string, string> = {};
-    (events as any[]).forEach(ev => {
-      const name = ev["Event Name"] || ev.EventName;
-      const year = ev["Year"];
-      if (name && year) eventYearMap[name] = String(year);
-    });
-
-    const nestedGroups: Record<string, Record<string, any[]>> = {};
-    data.forEach(session => {
-      let year = eventYearMap[session["Parent Event"]];
-      if (!year && session["Date"]) {
-        const match = session["Date"].match(/\d{4}/);
-        if (match) year = match[0];
-      }
-      year = year || "(Empty)";
-      const parent = session["Parent Event"] || "(Empty)";
-      if (!nestedGroups[year]) nestedGroups[year] = {};
-      if (!nestedGroups[year][parent]) nestedGroups[year][parent] = [];
-      nestedGroups[year][parent].push(session);
-    });
-
-    const years = Object.keys(nestedGroups).sort().reverse();
-    years.forEach((year, yIdx) => {
-      const theme = groupColors[yIdx % groupColors.length];
-      const yearId = `year-${year}`;
-      finalResult.push({ type: 'header', level: 1, id: yearId, label: 'YEAR', value: year, count: Object.values(nestedGroups[year]).flat().length, color: theme.main });
-      
-      Object.keys(nestedGroups[year]).sort().forEach(parent => {
-        const eventId = `${yearId}-event-${parent}`;
-        finalResult.push({ type: 'header', level: 2, id: eventId, parentId: yearId, label: 'PARENT EVENT', value: parent, count: nestedGroups[year][parent].length, color: theme.main });
-        nestedGroups[year][parent].forEach(item => {
-          finalResult.push({ type: 'row', data: item, parentId: eventId, grandParentId: yearId, groupColor: theme.main });
-        });
-      });
-    });
-  } 
-  // 3. Standard Grouping for Other Tables
-  else if (groupByField || (activeTable === 'Events' && !groupByField)) {
+  // 2. Standard Grouping
+  if (groupByField || (activeTable === 'Events' && !groupByField)) {
     const activeGroupField = groupByField || 'Year';
     const groups: Record<string, any[]> = {};
     data.forEach(item => {
@@ -3323,7 +3306,7 @@ const renderEditableRow = () => {
 const handleUpdateRecord = async (draftOverride?: any) => {
   // If a cell mousedown is in-flight (user clicking a different cell in the same row),
   // skip the blur-triggered save — the click will handle saving when needed.
-  if (clickingCellRef.current) return;
+  if (clickingCellRef.current && draftOverride === undefined) return;
   const draft = draftOverride ?? editDraft;
     if (!editingId || !draft) {
     setEditingId(null);
@@ -3358,6 +3341,7 @@ const handleUpdateRecord = async (draftOverride?: any) => {
   const setter = optimisticSetter[collection];
   if (setter) setter((prev: any[]) => prev.map(r => (r._id === id || r.id === id) ? { ...r, ...draft } : r));
 
+  clickingCellRef.current = false;
   setEditingId(null);
   setEditDraft(null);
 
@@ -3415,6 +3399,10 @@ const handleExpandedSave = async (newDraft: any) => {
 const renderEditInputs = (_item: any) => {
   const cols = getTableColumns();
   const gw   = (n: string) => colWidths[n] || 200;
+  const frozen = frozenUpTo[activeTable] ?? -1;
+  const leftOffsets: number[] = [];
+  let accLeft = 48;
+  cols.forEach((c, idx) => { leftOffsets[idx] = accLeft; if (idx <= frozen) accLeft += gw(c); });
   const isEv = activeTable === 'Events';
   const isSe = activeTable === 'Session';
   const isML = activeTable === 'MusicLog';
@@ -3484,29 +3472,28 @@ const updateDraftOnly = (col: string, val: string) => {
         const colType = getColumnType(col);
         const isMulti = colType === 'badge_multi';
         const isSingleBadge = colType === 'badge' || colType === 'status' || colType === 'select';
-
-        // link_to_record cells need overflow-visible always (dropdown + chips)
         const isLinkCol = colType === 'link_to_record';
+        const isFreezeEdge = i === frozen;
 
         return (
           <td
             key={i}
-            className={`border-r border-b transition-colors ${
-              isLinkCol
-                ? 'px-1 py-0.5 border-slate-200 bg-white overflow-visible'
+            className={`border-b transition-colors ${isFreezeEdge ? 'border-r-2 border-r-brand-primary/40' : 'border-r'} ${
+              isActuallyActive && isLinkCol
+                ? 'px-1 py-0.5 border-blue-400 bg-white ring-2 ring-inset ring-blue-300 overflow-visible'
                 : isActuallyActive
-                  ? `p-0 border-blue-400 bg-white ring-2 ring-inset ring-blue-300 overflow-visible relative ${i === 0 ? 'z-30' : 'z-10'}`
+                  ? 'p-0 border-blue-400 bg-white ring-2 ring-inset ring-blue-300 overflow-visible'
                   : isAutoFilled
-                    ? 'px-4 py-3 bg-slate-50/40 cursor-not-allowed overflow-hidden'
-                    : `px-4 py-3 border-slate-200 bg-white hover:bg-blue-50/30 overflow-hidden cursor-pointer${i > 0 ? ' text-center' : ''}`
-            } ${i === 0 && !isMobileView ? `sticky left-[48px] ${!isActuallyActive ? 'z-10' : ''}` : ''}`}
+                    ? 'px-4 py-3 bg-slate-50/40 cursor-not-allowed overflow-hidden border-slate-200 text-slate-700 text-[13px]'
+                    : 'px-4 py-3 border-slate-200 bg-white overflow-hidden cursor-pointer text-slate-700 text-[13px] text-left'
+            } ${i === 0 && frozen >= 0 && !isMobileView ? `sticky left-[48px] ${!isActuallyActive ? 'z-10' : ''}` : ''}`}
             style={isActuallyActive
-              ? { width: gw(col), minWidth: gw(col), height: '40px' }
-              : { width: gw(col), minWidth: gw(col), maxWidth: gw(col), height: '40px' }}
-            onMouseDown={() => { if (!isAutoFilled && !isLinkCol && colType !== 'lookup') clickingCellRef.current = true; }}
+              ? { width: gw(col), minWidth: gw(col), height: '40px', ...(i <= frozen ? { position: 'sticky', left: leftOffsets[i], zIndex: 10, ...FROZEN_STYLE, backgroundColor: '#fff' } : {}) }
+              : { width: gw(col), minWidth: gw(col), maxWidth: gw(col), height: '40px', ...(i <= frozen ? { position: 'sticky', left: leftOffsets[i], zIndex: 10, ...FROZEN_STYLE } : {}) }}
+            onMouseDown={() => { if (!isAutoFilled && colType !== 'lookup') clickingCellRef.current = true; }}
             onClick={() => {
               clickingCellRef.current = false;
-              if (!isAutoFilled && !isLinkCol && colType !== 'lookup') setEditingCell(col);
+              if (!isAutoFilled && colType !== 'lookup') setEditingCell(col);
             }}
           >
             {(() => {
@@ -3520,8 +3507,9 @@ const updateDraftOnly = (col: string, val: string) => {
 
 
 
-              // link_to_record: always show the picker (active or not), never a plain text input
+              // link_to_record: show picker only when this cell is active
               if (colType === 'link_to_record') {
+                if (!isActuallyActive) return renderCell(col, editDraft);
                 const meta = columnMeta[activeTable]?.[col];
                 const linkedTable = meta?.linkedTable || '';
                 const linkedRecords = getDataForTable(linkedTable);
@@ -3567,9 +3555,10 @@ const updateDraftOnly = (col: string, val: string) => {
                         {names.map((sName: string, idx: number) => {
                           const linked = sessions.find((s: any) => s["Session Name"] === sName);
                           return (
-                            <Badge key={idx} className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30' : 'bg-slate-100 text-slate-700 border border-slate-300'}`}>
+                            <span key={idx} className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
                               {sName}
-                            </Badge>
+                              {linked && <ArrowUpRight className="h-3 w-3 opacity-60 shrink-0" />}
+                            </span>
                           );
                         })}
                       </div>
@@ -3645,8 +3634,9 @@ const updateDraftOnly = (col: string, val: string) => {
                     value={editDraft[col] || ''}
                     options={opts}
                     isMulti={isMulti}
-                     onCommit={val => {
-                      if (isMulti) updateDraftOnly(col, val); 
+                    autoOpen={true}
+                    onCommit={val => {
+                      if (isMulti) updateDraftOnly(col, val);
                       else col === 'Session' ? commitSession(val) : commitField(col, val);
                     }}
                     onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
@@ -5446,15 +5436,23 @@ if (!health?.mongodb) {
                     >
          <thead className="sticky top-0 z-30 bg-slate-50 border-b border-slate-200">
   <tr>
-    <th className="w-12 border-r border-b border-slate-200 px-2 py-3 bg-slate-100 text-center sticky left-0 z-40">
+    <th className={`w-12 border-r border-b border-slate-200 px-2 py-3 text-center bg-slate-100 ${(frozenUpTo[activeTable] ?? -1) >= 0 ? 'sticky left-0 z-40' : ''}`} style={(frozenUpTo[activeTable] ?? -1) >= 0 ? FROZEN_STYLE : undefined}>
       <span className="text-[11px] font-black text-slate-500">#</span> 
     </th>
-   {getTableColumns().map((col, i) => {
+   {(() => {
+  const allCols = getTableColumns();
+  const frozen = frozenUpTo[activeTable] ?? -1;
+  const leftOffsets: number[] = [];
+  let acc = 48;
+  allCols.forEach((c, idx) => { leftOffsets[idx] = acc; if (idx <= frozen) acc += (colWidths[c] || 200); });
+  return allCols.map((col, i) => {
   const isSorted = sortBy?.field === col;
   const extraIndex = (extraColumns[activeTable] || []).indexOf(col);
   const isExtraColumn = extraIndex >= 0;
   const fieldType = getColumnType(col);
   const TypeIcon = FIELD_TYPES.find(f => f.id === fieldType)?.icon || AlignLeft;
+  const isSticky = i <= frozen;
+  const isFreezeEdge = i === frozen;
 
   return (
   <th
@@ -5465,10 +5463,12 @@ if (!health?.mongodb) {
   onDragLeave={() => setDragOverCol(null)}
   onDrop={() => { setDragOverCol(null); if (dragColRef.current) handleColDrop(dragColRef.current, col); dragColRef.current = null; }}
   onDragEnd={() => { setDragOverCol(null); dragColRef.current = null; }}
-  style={{ width: colWidths[col] || 200, minWidth: colWidths[col] || 200 }}
-  className={`border-r border-b p-0 font-semibold tracking-tight overflow-hidden select-none transition-colors group/header ${
-    dragOverCol === col ? 'bg-brand-primary/10 border-brand-primary border-l-2' : isSorted ? 'bg-blue-50 text-brand-primary border-slate-200' : 'bg-slate-50 text-slate-600 border-slate-200'
-  } ${i === 0 && !isMobileView ? 'sticky left-[48px] z-30' : 'relative'}`}
+  style={{ width: colWidths[col] || 200, minWidth: colWidths[col] || 200, ...(isSticky ? { position: 'sticky' as const, left: leftOffsets[i], zIndex: 30, ...FROZEN_STYLE } : {}) }}
+  className={`border-b p-0 font-semibold tracking-tight overflow-hidden select-none transition-colors group/header ${
+    isFreezeEdge ? 'border-r-2 border-r-brand-primary/40' : 'border-r border-slate-200'
+  } ${
+    dragOverCol === col ? 'bg-brand-primary/10 border-l-2 border-l-brand-primary' : isSorted ? 'bg-blue-50 text-brand-primary' : isSticky ? 'text-slate-600' : 'bg-slate-50 text-slate-600'
+  } ${isSticky ? '' : 'relative'}`}
 >
       {editingHeader?.index === i ? (
         <input
@@ -5517,7 +5517,7 @@ if (!health?.mongodb) {
             })()}</span>
           </div>
 
-          {/* COLUMN ACTIONS — type picker for all columns, delete only for extra */}
+          {/* COLUMN ACTIONS — type picker, freeze, delete */}
           <div className="absolute right-2 flex items-center gap-0.5 opacity-0 group-hover/header:opacity-100 transition-all">
             <button
               onClick={(e) => { e.stopPropagation(); const existMeta = columnMeta[activeTable]?.[col] || {}; setEditColumnModal({ col, type: getColumnType(col), extraIndex, linkedTable: existMeta.linkedTable || '', lookupField: existMeta.lookupField || '' }); }}
@@ -5525,6 +5525,19 @@ if (!health?.mongodb) {
               title="Change field type"
             >
               <Settings2 className="h-3 w-3" />
+            </button>
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                const newFrozen = i === frozen ? -1 : i;
+                const next = { ...frozenUpTo, [activeTable]: newFrozen };
+                setFrozenUpTo(next);
+                saveSettings(extraColumns, columnTypes, hiddenColumns, columnMeta, columnOrder, next);
+              }}
+              className={`p-1 rounded transition-all ${i <= frozen ? 'text-brand-primary' : 'text-slate-400 hover:text-brand-primary'}`}
+              title={i <= frozen ? (i === frozen ? 'Unfreeze' : 'Freeze up to here') : 'Freeze up to here'}
+            >
+              <Layers className="h-3 w-3" />
             </button>
             {isExtraColumn && (
               <button
@@ -5542,7 +5555,8 @@ if (!health?.mongodb) {
       <div onMouseDown={(e) => handleMouseDown(e, col)} className="absolute right-0 top-0 h-full w-[10px] cursor-col-resize hover:bg-brand-primary/50 z-20" />
     </th>
   );
-})}
+  });
+  })()}
 
     {/* The Dynamic Column PLUS button */}
     <th className="w-12 border-b border-slate-200 bg-slate-50 hover:bg-slate-100 cursor-pointer">
@@ -5639,16 +5653,14 @@ if (!health?.mongodb) {
     className={`group transition-colors duration-100 border-b border-slate-200 ${
       selectedIds.includes(row.data?._id || row.data?.id)
         ? 'bg-blue-100/60'
-        : isEditing
-          ? 'bg-blue-50/20'
-          : !row.groupColor
-            ? 'hover:bg-blue-50/40'
-            : ''
+        : !row.groupColor
+          ? 'hover:bg-blue-50/40'
+          : ''
     }`}
-    style={!selectedIds.includes(row.data?._id || row.data?.id) && !isEditing && row.groupColor ? { backgroundColor: row.groupColor + '22' } : undefined}
+    style={!selectedIds.includes(row.data?._id || row.data?.id) && row.groupColor ? { backgroundColor: row.groupColor + '22' } : undefined}
   >
     {/* CHECKBOX + EXPAND COLUMN (Sticky Left) */}
-    <td className="w-12 border-r border-slate-200 text-center sticky left-0 z-20 bg-inherit px-1 py-0">
+    <td className={`w-12 border-r border-slate-200 text-center px-1 py-0 ${(frozenUpTo[activeTable] ?? -1) >= 0 ? 'sticky left-0 z-20' : ''}`} style={(frozenUpTo[activeTable] ?? -1) >= 0 ? FROZEN_STYLE : undefined}>
       <div className="relative flex items-center justify-center h-full">
         {/* Row index — visible by default, fades on hover */}
         <span className={`absolute text-[10px] font-mono text-slate-400 transition-opacity duration-150 group-hover:opacity-0 ${
