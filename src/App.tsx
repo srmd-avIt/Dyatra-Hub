@@ -80,7 +80,7 @@ import { motion, AnimatePresence } from 'motion/react';
 
 const TAG_COLORS = [
   "bg-indigo-500/20 text-indigo-900 border-indigo-500/30 dark:text-indigo-200",
-  "bg-blue-500/20 text-blue-900border-blue-500/30 dark:text-blue-200",
+  
   "bg-cyan-500/20 text-cyan-800 border-cyan-500/30 dark:text-cyan-200",
   "bg-teal-500/20 text-teal-800 border-teal-500/30 dark:text-teal-200",
   "bg-emerald-500/20 text-emerald-800 border-emerald-500/30 dark:text-emerald-200",
@@ -626,6 +626,8 @@ const COL_LABEL_MAP: Record<string, string> = {
   '🕘 Session': 'Session',
   'DateFrom': 'Start Date',
   'DateTo': 'End Date',
+  'DateFrom (from Event)': 'Event Start',
+  'DateTo (from Event)': 'Event End',
   'ShareFacts?': 'Sharing Facts',
   'is Led Required?': 'LED Required',
 };
@@ -2148,86 +2150,8 @@ const filteredData = getActiveData().filter((item: any) => {
   const searchStr = searchQuery.toLowerCase();
   if (!searchStr) return true;
   
-  if (activeTable === 'Session') {
-  return (
-    item["Session Name"]?.toLowerCase().includes(searchStr) || 
-    item["Parent Event"]?.toLowerCase().includes(searchStr) || 
-    item["Venue"]?.toLowerCase().includes(searchStr) || 
-    item["City"]?.toLowerCase().includes(searchStr) ||
-    item["Occasion"]?.toLowerCase().includes(searchStr)
-  );
-}
-  
- if (activeTable === 'MusicLog') {
-  return (
-    item["Track"]?.toLowerCase().includes(searchStr) || 
-    item["Session"]?.toLowerCase().includes(searchStr) || 
-    item["PlayID"]?.toString().includes(searchStr) ||
-    item["Theme"]?.toLowerCase().includes(searchStr)
-  );
-}
-
-  if (activeTable === 'Events') {
-    return (
-      item["Event Name"]?.toLowerCase().includes(searchStr) || 
-      (item["Sessions"] || item["Imported table"])?.toLowerCase().includes(searchStr) ||
-      item["Year"]?.toString().includes(searchStr)
-    );
-  }
-
-if (activeTable === 'VideoLog') {
-  return (
-    item["VideoTitle"]?.toLowerCase().includes(searchStr) || 
-    item["Session"]?.toLowerCase().includes(searchStr) || 
-    item["VideoPlayId"]?.toString().includes(searchStr) ||
-    item["Parent Event (from Session)"]?.toLowerCase().includes(searchStr)
-  );
-}
-
-if (activeTable === 'Guidance & Learning') {
-  return (
-    item["Guidance/Learning"]?.toLowerCase().includes(searchStr) || 
-    item["Event"]?.toLowerCase().includes(searchStr) || 
-    item["Category"]?.toLowerCase().includes(searchStr) ||
-    item["GuidanceFrom"]?.toLowerCase().includes(searchStr)
-  );
-}
-if (activeTable === 'LED') {
-  return (
-    item["🕘 Session"]?.toLowerCase().includes(searchStr) || 
-    item["Vendor"]?.toLowerCase().includes(searchStr) || 
-    item["LedId"]?.toString().includes(searchStr) ||
-    item["CentreLed"]?.toLowerCase().includes(searchStr)
-  );
-}
-
-if (activeTable === 'DyatraChecklist') {
-  return (
-    item["Task"]?.toLowerCase().includes(searchStr) || 
-    item["Category"]?.toLowerCase().includes(searchStr) || 
-    item["TaskGroup"]?.toLowerCase().includes(searchStr) ||
-    item["Details"]?.toLowerCase().includes(searchStr)
-  );
-}
-
-if (activeTable === 'DataSharing') {
-  return (
-    item["Sevak"]?.toLowerCase().includes(searchStr) || 
-    item["Dept"]?.toLowerCase().includes(searchStr) || 
-    item["EmailId"]?.toLowerCase().includes(searchStr)
-  );
-}
-
-if (activeTable === 'Tracks') {
-  return (
-    (item["Title"] || "").toLowerCase().includes(searchStr) || 
-    (item["Artist"] || "").toLowerCase().includes(searchStr) || 
-    (item["Album"] || "").toLowerCase().includes(searchStr) ||
-    (item["Tags"] || "").toLowerCase().includes(searchStr)
-  );
-}
   return Object.values(item).some(val => 
-    typeof val === 'string' && val.toLowerCase().includes(searchStr)
+    val !== null && val !== undefined && String(val).toLowerCase().includes(searchStr)
   );
 });
 const [extraColumns, setExtraColumns] = useState<Record<string, string[]>>({});
@@ -2593,7 +2517,7 @@ const renderRow = (item: any) => {
       const val = item[col];
        const type = getColumnType(col);
       const isLongText = type === 'long_text';
-      const stickyBg = isFirstCol ? "sticky left-[48px] z-10 bg-white group-hover:bg-slate-50" : "";
+        const stickyBg = isFirstCol && !isMobileView ? "sticky left-[48px] z-10 bg-white group-hover:bg-slate-50" : "";
 
       if (activeTable === 'MusicLog' && col === 'Relevance') {
   return (
@@ -2650,9 +2574,9 @@ const renderRow = (item: any) => {
               {names.length > 0 ? names.map((sName, idx) => {
                 const linked = sessions.find((s: any) => s["Session Name"] === sName);
                 return (
-                  <Badge
+                  <span
                     key={idx}
-                    className={`text-[12px] font-semibold px-2 py-0.5 rounded-sm shadow-sm transition-all ${
+                    className={`inline-flex items-center gap-1 text-[12px] font-semibold px-2 py-0.5 rounded-sm transition-all ${
                       linked 
                         ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' 
                         : 'bg-slate-100 text-slate-700 border border-slate-300 cursor-default'
@@ -2660,8 +2584,8 @@ const renderRow = (item: any) => {
                     onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
                   >
                     {sName}
-                    {linked && <ArrowUpRight className="inline h-3 w-3 ml-0.5 opacity-60" />}
-                  </Badge>
+                    {linked && <ArrowUpRight className="shrink-0 h-3 w-3 opacity-60" />}
+                  </span>
                 );
               }) : <span className="text-slate-300 italic text-[12px]">—</span>}
             </div>
@@ -2680,30 +2604,30 @@ const renderRow = (item: any) => {
         // LED: Images — thumbnail gallery with expand button
         if (activeTable === 'LED' && col === 'Images') {
           const imageString = item["Images"] || "";
-          const urlRegex = /\((https?:\/\/[^)]+)\)/g;
+          const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
           const matches: string[] = [];
           let m;
           const re = new RegExp(urlRegex.source, 'g');
           while ((m = re.exec(imageString)) !== null) matches.push(m[1]);
           return (
             <td key={col} className={`${cellCls} relative group/cell ${isFirstCol ? stickyBg : ''}`} style={{ ...style, minWidth: '200px' }}>
-              <div className="flex items-center gap-1.5 overflow-hidden">
-                {matches.length === 0
-                  ? <span className="text-slate-300 italic text-[10px]">No Images</span>
-                  : <>
-                      {matches.slice(0, 3).map((url, idx) => (
-                        <img key={idx} src={url} loading="lazy" decoding="async" className="h-8 w-12 object-cover rounded border border-slate-300 shrink-0" alt="" />
-                      ))}
-                      {matches.length > 3 && <span className="text-[10px] font-black text-slate-400">+{matches.length - 3}</span>}
-                    </>
-                }
+              <div className="flex items-center gap-2 overflow-hidden w-full relative h-full">
+                {matches.slice(0, 3).map((url, idx) => (
+                  <img key={idx} src={url} loading="lazy" decoding="async" className="h-8 w-12 object-cover rounded border border-slate-300 shrink-0" alt="" />
+                ))}
+                {matches.length > 3 && <span className="text-[10px] font-black text-slate-400 shrink-0">+{matches.length - 3}</span>}
+                
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setImageManager({ item: { ...item }, column: "Images", isOpen: true }); }}
+                  className={`h-8 shrink-0 rounded border-2 border-dashed border-slate-300 flex items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary transition-colors bg-slate-50 hover:bg-white ${
+                    matches.length > 0 ? 'w-8 opacity-0 group-hover/cell:opacity-100 absolute right-2 z-20 shadow-md' : 'px-3'
+                  }`}
+                  title="Add Media"
+                >
+                  <Plus className="h-4 w-4" />
+                  {matches.length === 0 && <span className="text-[9px] font-black uppercase tracking-widest">Add Media</span>}
+                </button>
               </div>
-              <button
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setImageManager({ item: { ...item }, column: "Images", isOpen: true }); }}
-                className="absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover/cell:opacity-100 bg-white border border-slate-300 rounded shadow-lg p-1.5 text-slate-500 hover:text-brand-primary transition-all z-20"
-              >
-                <ArrowUpRight className="h-3.5 w-3.5" />
-              </button>
             </td>
           );
         }
@@ -2945,15 +2869,49 @@ const toggleGroup = (groupId: string) => {
     setIsAddModalOpen(true);
   };
 
+  const activeTableRefForSave = useRef(activeTable);
+
   useEffect(() => {
-     setGroupByField(null);
-  setSortBy(null);
-  setExpandedGroups([]);
-  setSearchQuery('');
+    activeTableRefForSave.current = activeTable;
+    const saved = localStorage.getItem(`dyatra_table_settings_${activeTable}`);
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setGroupByField(parsed.groupByField !== undefined ? parsed.groupByField : null);
+        setSortBy(parsed.sortBy !== undefined ? parsed.sortBy : null);
+        setViewMode(parsed.viewMode || 'grid');
+        setCollapsedGroups(parsed.collapsedGroups || []);
+        setSearchQuery(parsed.searchQuery || '');
+      } catch (e) {
+        setGroupByField(null);
+        setSortBy(null);
+        setCollapsedGroups([]);
+        setSearchQuery('');
+        setViewMode('grid');
+      }
+    } else {
+      setGroupByField(null);
+      setSortBy(null);
+      setCollapsedGroups([]);
+      setSearchQuery('');
+      setViewMode('grid');
+    }
+    setExpandedGroups([]);
     setNewRecord({});
-    
- 
-}, [activeTable]);
+  }, [activeTable]);
+
+  useEffect(() => {
+    if (activeTableRefForSave.current === activeTable) {
+      const settings = {
+        groupByField,
+        sortBy,
+        viewMode,
+        collapsedGroups,
+        searchQuery
+      };
+      localStorage.setItem(`dyatra_table_settings_${activeTable}`, JSON.stringify(settings));
+    }
+  }, [groupByField, sortBy, viewMode, collapsedGroups, searchQuery, activeTable]);
 
 useEffect(() => {
   if (!editingId) setEditingCell(null);
@@ -2981,6 +2939,23 @@ useEffect(() => {
     document.removeEventListener('mousedown', handleClickOutside);
   };
 }, [editingId, editDraft]);
+
+  // Load col widths
+  useEffect(() => {
+    const savedWidths = localStorage.getItem('dyatra_col_widths');
+    if (savedWidths) {
+      try {
+        setColWidths(JSON.parse(savedWidths));
+      } catch (e) {}
+    }
+  }, []);
+
+  // Save col widths
+  useEffect(() => {
+    if (Object.keys(colWidths).length > 0) {
+      localStorage.setItem('dyatra_col_widths', JSON.stringify(colWidths));
+    }
+  }, [colWidths]);
 
 
 useEffect(() => {
@@ -3077,35 +3052,36 @@ const handleGoogleLogin = async () => {
     localStorage.removeItem('dyatra_user');
   };
 
-  const fileInputRef = useRef<HTMLInputElement>(null);
-const [uploadingSessionId, setUploadingSessionId] = useState<string | null>(null);
-
-const handleMediaUpload = async (event: React.ChangeEvent<HTMLInputElement>, sessionId: string) => {
-  const file = event.target.files?.[0];
-  if (!file) return;
-
-  // In a real app, you would upload to S3/Cloudinary here.
-  // For now, we create a local preview URL to simulate success.
-  const imageUrl = URL.createObjectURL(file);
-  
-  // Here you would typically call window.fetch(`/api/sessions/${sessionId}/media`, ...)
-  console.log(`Uploading ${file.name} to session ${sessionId}`);
-  alert(`Simulated upload for: ${file.name}`);
-};
-
-// Inside App function at the top
-const [sessionImages, setSessionImages] = useState<Record<string, string[]>>({});
-const [activeUploadId, setActiveUploadId] = useState<string | null>(null);
-
-const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+const handleDirectImageUpload = (e: React.ChangeEvent<HTMLInputElement>, item: any, collectionName: string, setter: React.Dispatch<React.SetStateAction<any[]>>) => {
+  e.stopPropagation();
   const file = e.target.files?.[0];
-  if (file && activeUploadId) {
-    const imageUrl = URL.createObjectURL(file); // Creates a temporary link to your local file
-    setSessionImages(prev => ({
-      ...prev,
-      [activeUploadId]: [...(prev[activeUploadId] || []), imageUrl]
-    }));
+  if (!file) return;
+  if (file.size > 10 * 1024 * 1024) { 
+    alert('File too large (max 10 MB)'); 
+    return; 
   }
+  const reader = new FileReader();
+  reader.onloadend = () => {
+    const base64Url = reader.result as string;
+    const currentImages = item["Images"] || "";
+    const newImageStr = `${currentImages} (${base64Url})`.trim();
+    const updatedItem = { ...item, ["Images"]: newImageStr };
+    const id = item._id || item.id;
+    
+    setter(prev => prev.map(r => (r._id === id || r.id === id) ? updatedItem : r));
+    
+    window.fetch(`/api/${collectionName}/${id}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(updatedItem)
+    }).catch(err => {
+      console.error(err);
+      setter(prev => prev.map(r => (r._id === id || r.id === id) ? item : r));
+      alert("Failed to upload image");
+    });
+  };
+  reader.readAsDataURL(file);
+  e.target.value = '';
 };
 
 
@@ -3253,7 +3229,7 @@ const renderEditableRow = () => {
       {cols.map((col, i) => (
         <td
           key={i}
-          className={`px-2 py-2 border-r border-b border-slate-400 ${i === 0 ? 'bg-blue-100 sticky left-[48px] z-10' : 'bg-blue-50/50'}`}
+          className={`px-2 py-2 border-r border-b border-slate-400 ${i === 0 ? (isMobileView ? 'bg-blue-100' : 'bg-blue-100 sticky left-[48px] z-10') : 'bg-blue-50/50'}`}
           style={{ width: getWidth(col), minWidth: getWidth(col), maxWidth: getWidth(col) }}
         >
           {(() => {
@@ -3523,7 +3499,7 @@ const updateDraftOnly = (col: string, val: string) => {
                   : isAutoFilled
                     ? 'px-4 py-3 bg-slate-50/40 cursor-not-allowed overflow-hidden'
                     : `px-4 py-3 border-slate-200 bg-white hover:bg-blue-50/30 overflow-hidden cursor-pointer${i > 0 ? ' text-center' : ''}`
-            } ${i === 0 ? `sticky left-[48px] ${!isActuallyActive ? 'z-10' : ''}` : ''}`}
+            } ${i === 0 && !isMobileView ? `sticky left-[48px] ${!isActuallyActive ? 'z-10' : ''}` : ''}`}
             style={isActuallyActive
               ? { width: gw(col), minWidth: gw(col), height: '40px' }
               : { width: gw(col), minWidth: gw(col), maxWidth: gw(col), height: '40px' }}
@@ -3761,16 +3737,6 @@ const memoizedData = useMemo(() => getProcessedData(), [
   collapsedGroups
 ]);
 
-const deleteImage = (sessionId: string, imageIndex: number) => {
-  setSessionImages(prev => {
-    const currentImages = [...(prev[sessionId] || [])];
-    currentImages.splice(imageIndex, 1); // Remove the specific image
-    return {
-      ...prev,
-      [sessionId]: currentImages
-    };
-  });
-};
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
 
@@ -4162,7 +4128,7 @@ if (!health?.mongodb) {
   >
     <Layers className="h-4 w-4 text-slate-500 mr-2 shrink-0" />
     <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-6">
-      {groupByField || "No Grouping"}
+      {groupByField ? colLabel(groupByField) : "No Grouping"}
     </span>
     <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isGroupOpen ? 'rotate-180' : ''}`} />
   </button>
@@ -4178,7 +4144,7 @@ if (!health?.mongodb) {
         >
           <button onClick={() => { setGroupByField(null); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Grouping</button>
           {getTableColumns().map(col => (
-            <button key={col} onClick={() => { setGroupByField(col); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{col}</button>
+            <button key={col} onClick={() => { setGroupByField(col); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{colLabel(col)}</button>
           ))}
         </motion.div>
       </>
@@ -4193,7 +4159,7 @@ if (!health?.mongodb) {
   >
     <ArrowUpDown className="h-4 w-4 text-slate-500 mr-2 shrink-0" />
     <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-10">
-      {sortBy ? `By ${sortBy.field}` : "No Sort"}
+      {sortBy ? `By ${colLabel(sortBy.field)}` : "No Sort"}
     </span>
     {sortBy && (
       <button
@@ -4217,7 +4183,7 @@ if (!health?.mongodb) {
         >
           <button onClick={() => { setSortBy(null); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Sort</button>
           {getTableColumns().map(col => (
-            <button key={col} onClick={() => { setSortBy({ field: col, direction: 'asc' }); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{col}</button>
+            <button key={col} onClick={() => { setSortBy({ field: col, direction: 'asc' }); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{colLabel(col)}</button>
           ))}
         </motion.div>
       </>
@@ -4258,7 +4224,7 @@ if (!health?.mongodb) {
                   onClick={() => toggleHideColumn(col)}
                   className="w-full flex items-center justify-between px-4 py-2 hover:bg-slate-50 transition-colors"
                 >
-                  <span className={`text-[12px] font-semibold truncate ${isHidden ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{col}</span>
+                  <span className={`text-[12px] font-semibold truncate ${isHidden ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{colLabel(col)}</span>
                   {isHidden
                     ? <EyeOff className="h-3.5 w-3.5 text-slate-400 shrink-0 ml-2" />
                     : <Eye className="h-3.5 w-3.5 text-brand-primary shrink-0 ml-2" />}
@@ -4347,7 +4313,7 @@ if (!health?.mongodb) {
               className="flex items-center gap-1 bg-brand-primary/10 text-brand-primary text-[10px] font-black uppercase px-2 py-1 rounded-lg border border-brand-primary/20 shrink-0"
             >
               <Layers className="h-3 w-3" />
-              {groupByField}
+              {colLabel(groupByField)}
               <X className="h-3 w-3" />
             </button>
           )}
@@ -4357,7 +4323,7 @@ if (!health?.mongodb) {
               className="flex items-center gap-1 bg-slate-100 text-slate-700 text-[10px] font-black uppercase px-2 py-1 rounded-lg border border-slate-200 shrink-0"
             >
               <ArrowUpDown className="h-3 w-3" />
-              {sortBy.field} {sortBy.direction === 'asc' ? '↑' : '↓'}
+              {colLabel(sortBy.field)} {sortBy.direction === 'asc' ? '↑' : '↓'}
               <X className="h-3 w-3" />
             </button>
           )}
@@ -4400,7 +4366,7 @@ if (!health?.mongodb) {
                   <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${groupByField === col ? 'border-white bg-white' : 'border-slate-300'}`}>
                     {groupByField === col && <span className="h-2 w-2 rounded-full bg-brand-primary block" />}
                   </span>
-                  <span className="truncate">{col}</span>
+                  <span className="truncate">{colLabel(col)}</span>
                 </button>
               ))}
             </div>
@@ -4449,7 +4415,7 @@ if (!health?.mongodb) {
                     <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${sortBy?.field === col ? 'border-white bg-white' : 'border-slate-300'}`}>
                       {sortBy?.field === col && <span className="h-2 w-2 rounded-full bg-slate-800 block" />}
                     </span>
-                    <span className="truncate">{col}</span>
+                    <span className="truncate">{colLabel(col)}</span>
                   </div>
                   {sortBy?.field === col && (
                     <span className="shrink-0 text-[11px] font-black opacity-80">{sortBy.direction === 'asc' ? '↑ ASC' : '↓ DESC'}</span>
@@ -4492,7 +4458,7 @@ if (!health?.mongodb) {
                     onClick={() => toggleHideColumn(col)}
                     className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center justify-between px-4 gap-3 ${isHidden ? 'bg-slate-50 text-slate-400 border-slate-200' : 'bg-white text-slate-700 border-slate-200'}`}
                   >
-                    <span className="truncate">{col}</span>
+                    <span className="truncate">{colLabel(col)}</span>
                     {isHidden
                       ? <EyeOff className="h-4 w-4 text-slate-300 shrink-0" />
                       : <Eye className="h-4 w-4 text-brand-primary shrink-0" />}
@@ -4744,13 +4710,37 @@ if (!health?.mongodb) {
           {/* FIELDS */}
           <div className="space-y-2 sm:space-y-4 flex-1">
             <div className="space-y-0.5">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Start Date</label>
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">{colLabel('DateFrom')}</label>
               <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateFrom || "—"}</div>
             </div>
             <div className="space-y-0.5">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">End Date</label>
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">{colLabel('DateTo')}</label>
               <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateTo || "—"}</div>
             </div>
+            {(item.Sessions || item["Imported table"]) && (
+              <div className="space-y-0.5">
+                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Sessions</label>
+                <div className="flex flex-wrap gap-1.5 overflow-hidden">
+                  {String(item.Sessions || item["Imported table"]).split(',').map((tag: string, idx: number) => {
+                    const sName = tag.trim();
+                    const linked = sessions.find((s: any) => s["Session Name"] === sName);
+                    return (
+                      <span
+                        key={idx}
+                        className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-sm border ${
+                          linked ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-700 border-slate-300 cursor-default'
+                        }`}
+                        onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
+                        style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word'}}
+                      >
+                        {sName}
+                        {linked && <ArrowUpRight className="h-3 w-3 shrink-0 opacity-60" />}
+                      </span>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
             {item.Occasion && (
               <div className="space-y-0.5">
                 <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Occasion</label>
@@ -4940,9 +4930,13 @@ if (!health?.mongodb) {
 
             {/* Event context */}
             {item["Event"] && (
-              <div className="flex items-center gap-1.5">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Event</span>
-                <span className={`${getTagStyle(item["Event"])} !text-[10px]`} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Event"]}</span>
+              <div className="space-y-1 mt-1">
+                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Event</span>
+                <div className="flex flex-wrap gap-1.5">
+                  {String(item["Event"]).split(',').map((eName: string, idx: number) => (
+                    <span key={idx} className={`${getTagStyle(eName.trim())} !text-[10px]`} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{eName.trim()}</span>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -4963,7 +4957,6 @@ if (!health?.mongodb) {
                   activeTable === 'Session' ? (
                     /* --- 1. SESSION TIMELINE VIEW --- */
                     <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
-                        <input type="file" ref={fileInputRef} className="hidden" accept="image/*" onChange={handleFileChange} />
 
                   {/* The Vertical Line: Hidden on very small screens or moved left */}
                   <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
@@ -4973,63 +4966,136 @@ if (!health?.mongodb) {
                             <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />
                           </div>
                         )}
-                        {[...filteredData]
-                          .sort((a, b) => {
-                            const ta = a["Date"] ? new Date(a["Date"]).getTime() : Infinity;
-                            const tb = b["Date"] ? new Date(b["Date"]).getTime() : Infinity;
-                            if (isNaN(ta)) return 1;
-                            if (isNaN(tb)) return -1;
-                            return ta - tb;
-                          })
-                          .map((item: any, idx: number) => {
-                            const sessionId = item.id || item._id;
-                            const images = sessionImages[sessionId] || [];
-                            return (
-                              <motion.div key={sessionId} onClick={() => setViewingRecord(item)} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8 group cursor-pointer">
-                                <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
-                            <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
-                              <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${idx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
-                            </div>
-                          </div>
-                                <div className="flex-1 bg-brand-surface border border-slate-800/90 rounded-2xl md:rounded-3xl p-4 md:p-8 shadow-2xl transition-all">
-                            <div className="flex flex-col sm:flex-row justify-between items-start mb-4 md:mb-6 gap-2">
-                  <div className="space-y-1">
-                    {/* 1. PARENT EVENT NAME */}
-                    <div className="text-[9px] md:text-[11px] font-black text-brand-primary uppercase tracking-[0.2em]">
-                                  {item["Parent Event"] || "MASTER EVENT"}
-                                </div>
-                                <h3 className="text-xl md:text-3xl font-black text-white tracking-tight leading-tight">
-                                  {item["Session Name"]}
-                                </h3>
-                    
-                    {/* 3. METADATA ROW */}
-                     <div className="flex flex-wrap items-center gap-x-4 gap-y-2 mt-2 md:mt-4 text-[9px] md:text-[10px] font-bold text-slate-500 uppercase">
-                                  <div className="flex items-center gap-1.5"><Calendar className="h-3 md:h-3.5 w-3 md:w-3.5" /> {item["Date"]}</div>
-                                  <div className="flex items-center gap-1.5"><Clock className="h-3 md:h-3.5 w-3 md:w-3.5" /> {item["Time Of Day"]}</div>
-                                  <div className="flex items-center gap-1.5"><MapPin className="h-3 md:h-3.5 w-3 md:w-3.5" /> {item["Venue"]}</div>
+                        {(() => {
+                          const grouped: Record<string, any[]> = {};
+                          [...filteredData]
+                            .sort((a, b) => {
+                              const ta = a["Date"] ? new Date(a["Date"]).getTime() : Infinity;
+                              const tb = b["Date"] ? new Date(b["Date"]).getTime() : Infinity;
+                              if (isNaN(ta)) return 1;
+                              if (isNaN(tb)) return -1;
+                              return ta - tb;
+                            })
+                            .forEach((item: any) => {
+                              const parent = item["Parent Event"] || "Unlinked Sessions";
+                              if (!grouped[parent]) grouped[parent] = [];
+                              grouped[parent].push(item);
+                            });
+
+                          return Object.entries(grouped).map(([eventName, items], eventIdx) => (
+                            <motion.div key={eventName} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8 group">
+                              <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
+                                <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
+                                  <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${eventIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
                                 </div>
                               </div>
-                              {item["SessionType"] && (
-                                <Badge className="bg-brand-primary/10 text-brand-primary text-[8px] md:text-[9px] px-2 py-0.5">
-                                  {item["SessionType"]}
-                                </Badge>
-                              )}
-                            </div>
-                                   <div className="flex overflow-x-auto md:flex-wrap gap-3 md:gap-4 items-center pb-2 md:pb-0 scrollbar-hide">
+                              <div className="flex-1 mt-3 md:mt-4">
+                                <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">
+                                  {eventName}
+                                </h3>
+                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
+                                  {items.map((item: any) => {
+                                    const sessionId = item.id || item._id;
+                                    
+                                    const sessionImagesFromDb = item["Images"] || "";
+                                    const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
+                                    const images: string[] = [];
+                                    let m;
+                                    const re = new RegExp(urlRegex.source, 'g');
+                                    while ((m = re.exec(sessionImagesFromDb)) !== null) images.push(m[1]);
+
+                                    return (
+                                      <div key={sessionId} onClick={() => setViewingRecord(item)} className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col sm:min-h-[280px] overflow-hidden group/card">
+                                        <div className="text-[13px] sm:text-base font-black text-slate-900 mb-2 sm:mb-5 leading-tight flex justify-between items-start gap-2">
+                                          <span>{item["Session Name"] || "Untitled Session"}</span>
+                                          {item["SessionType"] && (
+                                            <Badge className="bg-brand-primary/10 text-brand-primary text-[8px] sm:text-[9px] px-2 py-0.5 shrink-0 border-none font-bold">
+                                              {item["SessionType"]}
+                                            </Badge>
+                                          )}
+                                        </div>
+                                        
+                                        <div className="space-y-2 sm:space-y-4 flex-1">
+                                          <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-0.5">
+                                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Date</label>
+                                              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item["Date"] || "—"}</div>
+                                            </div>
+                                            <div className="space-y-0.5">
+                                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Time Of Day</label>
+                                              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item["Time Of Day"] || "—"}</div>
+                                            </div>
+                                          </div>
+                                          
+                                          <div className="grid grid-cols-2 gap-3">
+                                            <div className="space-y-0.5">
+                                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">City</label>
+                                              <div className="text-[11px] sm:text-[12px] font-semibold text-slate-700 truncate">{item["City"] || "—"}</div>
+                                            </div>
+                                            <div className="space-y-0.5">
+                                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Venue</label>
+                                              <div className="text-[11px] sm:text-[12px] font-semibold text-slate-700 truncate">{item["Venue"] || "—"}</div>
+                                            </div>
+                                          </div>
+
+                                          {item["Occasion"] && (
+                                            <div className="space-y-0.5">
+                                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Occasion</label>
+                                              <div className="flex flex-wrap gap-1 overflow-hidden">
+                                                {String(item["Occasion"]).split(',').map((t: string, i: number) => (
+                                                  <span key={i} className={getTagStyle(t.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{t.trim()}</span>
+                                                ))}
+                                              </div>
+                                            </div>
+                                          )}
+                                        </div>
+                                        
+                                        <div className="mt-4 flex overflow-x-auto gap-2 md:gap-3 scrollbar-hide pb-1">
                               {images.map((imgSrc, imgIdx) => (
-                                <div key={imgIdx} className="relative h-32 md:h-40 w-48 md:w-64 shrink-0 rounded-xl overflow-hidden border border-slate-800">
+                                            <div key={imgIdx} className="relative h-20 md:h-24 w-28 md:w-36 shrink-0 rounded-xl overflow-hidden border border-slate-200 group/sessionimg hover:ring-2 hover:ring-brand-primary transition-all" onClick={(e) => e.stopPropagation()}>
                                   <img src={imgSrc} loading="lazy" decoding="async" className="h-full w-full object-cover" alt="Upload" />
+                                  
+                                  <button 
+                                    onClick={(e) => {
+                                      e.stopPropagation();
+                                      if (!window.confirm("Remove this image?")) return;
+                                      const entries: string[] = [];
+                                      const re = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
+                                      let matchResult;
+                                      while ((matchResult = re.exec(item["Images"] || "")) !== null) entries.push(matchResult[0]);
+                                      entries.splice(imgIdx, 1);
+                                      const updated = { ...item, ["Images"]: entries.join(' ') };
+                                      setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r));
+                                      window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) });
+                                    }}
+                                                className="absolute top-1 right-1 p-1.5 bg-black/60 text-white rounded-lg opacity-0 group-hover/sessionimg:opacity-100 hover:bg-red-600 transition-all shadow-sm"
+                                    title="Remove Image"
+                                  >
+                                                <Trash2 className="h-3 w-3" />
+                                  </button>
                                 </div>
                               ))}
-                                    <button onClick={(e) => { e.stopPropagation(); setActiveUploadId(sessionId); fileInputRef.current?.click(); }} className="h-32 md:h-40 w-32 md:w-48 shrink-0 rounded-xl border-2 border-dashed border-slate-700 flex flex-col items-center justify-center gap-2 text-slate-500 opacity-0 group-hover:opacity-100 transition-opacity">
-                                <Plus className="h-5 w-5" />
-                                <span className="text-[8px] font-black uppercase">Add Media</span>
-                              </button>
+                              <div 
+                                onClick={(e) => {
+                                  e.stopPropagation();
+                                  const fileInput = e.currentTarget.querySelector('input[type="file"]') as HTMLInputElement;
+                                  if (fileInput) fileInput.click();
+                                }}
+                                            className="h-20 md:h-24 w-20 md:w-24 shrink-0 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary/50 transition-colors cursor-pointer bg-slate-50 hover:bg-white"
+                              >
+                                            <Plus className="h-4 w-4 pointer-events-none" />
+                                            <span className="text-[7px] md:text-[8px] font-black uppercase pointer-events-none">Add Media</span>
+                                <input type="file" accept="image/*" className="hidden" onClick={(e) => e.stopPropagation()} onChange={(e) => handleDirectImageUpload(e, item, 'sessions', setSessions as any)} />
+                              </div>
                             </div>
-                          </div>
-                        </motion.div>
-                      );
-                    })}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            </motion.div>
+                          ));
+                        })()}
                       </div>
                     </div>
                   ) :activeTable === 'MusicLog' ? (
@@ -5074,7 +5140,25 @@ if (!health?.mongodb) {
           <div className="overflow-hidden">
             <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Session</div>
             {item["Session"]
-              ? <span className={getTagStyle(item["Session"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Session"]}</span>
+              ? <div className="flex flex-wrap gap-1.5 overflow-hidden">
+                  {String(item["Session"]).split(',').map((tag: string, idx: number) => {
+                    const sName = tag.trim();
+                    const linked = sessions.find((s: any) => s["Session Name"] === sName);
+                    return (
+                      <span
+                        key={idx}
+                        className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-sm border ${
+                          linked ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-700 border-slate-300 cursor-default'
+                        }`}
+                        onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
+                        style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word'}}
+                      >
+                        {sName}
+                        {linked && <ArrowUpRight className="h-3 w-3 shrink-0 opacity-60" />}
+                      </span>
+                    );
+                  })}
+                </div>
               : <span className="text-slate-300 italic text-[10px]">—</span>}
           </div>
 
@@ -5082,7 +5166,11 @@ if (!health?.mongodb) {
           {item["Parent Event (from Session)"] && (
             <div className="overflow-hidden">
               <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Event</div>
-              <span className={getTagStyle(item["Parent Event (from Session)"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Parent Event (from Session)"]}</span>
+              <div className="flex flex-wrap gap-1.5 overflow-hidden">
+                {String(item["Parent Event (from Session)"]).split(',').map((eName: string, idx: number) => (
+                  <span key={idx} className={getTagStyle(eName.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{eName.trim()}</span>
+                ))}
+              </div>
             </div>
           )}
 
@@ -5152,15 +5240,49 @@ if (!health?.mongodb) {
             <div className="overflow-hidden">
               <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Session</div>
               {item["Session"]
-                ? <span className={getTagStyle(item["Session"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Session"]}</span>
+                ? <div className="flex flex-wrap gap-1.5 overflow-hidden">
+                    {String(item["Session"]).split(',').map((tag: string, idx: number) => {
+                      const sName = tag.trim();
+                      const linked = sessions.find((s: any) => s["Session Name"] === sName);
+                      return (
+                        <span
+                          key={idx}
+                          className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-sm border ${
+                            linked ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-700 border-slate-300 cursor-default'
+                          }`}
+                          onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
+                          style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word'}}
+                        >
+                          {sName}
+                          {linked && <ArrowUpRight className="h-3 w-3 shrink-0 opacity-60" />}
+                        </span>
+                      );
+                    })}
+                  </div>
                 : <span className="text-slate-300 italic text-[10px]">—</span>}
             </div>
+
+            {/* PARENT EVENT */}
+            {item["Parent Event (from Session)"] && (
+              <div className="overflow-hidden">
+                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Event</div>
+                <div className="flex flex-wrap gap-1.5 overflow-hidden">
+                  {String(item["Parent Event (from Session)"]).split(',').map((eName: string, idx: number) => (
+                    <span key={idx} className={getTagStyle(eName.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{eName.trim()}</span>
+                  ))}
+                </div>
+              </div>
+            )}
 
             {/* CITY */}
             <div className="overflow-hidden">
               <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">City</div>
               {item["City (from Session)"]
-                ? <span className={getTagStyle(item["City (from Session)"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["City (from Session)"]}</span>
+                ? <div className="flex flex-wrap gap-1 overflow-hidden">
+                    {String(item["City (from Session)"]).split(',').map((cName: string, idx: number) => (
+                      <span key={idx} className={getTagStyle(cName.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{cName.trim()}</span>
+                    ))}
+                  </div>
                 : <span className="text-slate-300 italic text-[10px]">—</span>}
             </div>
           </div>
@@ -5292,7 +5414,7 @@ if (!health?.mongodb) {
                             </div>
                           </div>
                         ) : (
-                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{item.city || item.artist || item.category || "—"}</p>
+                          <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{item.city || item.artist || item.category || item.DateFrom || "—"}</p>
                         )}
                       </div>
                     </motion.div>
@@ -5346,7 +5468,7 @@ if (!health?.mongodb) {
   style={{ width: colWidths[col] || 200, minWidth: colWidths[col] || 200 }}
   className={`border-r border-b p-0 font-semibold tracking-tight overflow-hidden select-none transition-colors group/header ${
     dragOverCol === col ? 'bg-brand-primary/10 border-brand-primary border-l-2' : isSorted ? 'bg-blue-50 text-brand-primary border-slate-200' : 'bg-slate-50 text-slate-600 border-slate-200'
-  } ${i === 0 ? 'sticky left-[48px] z-30' : 'relative'}`}
+  } ${i === 0 && !isMobileView ? 'sticky left-[48px] z-30' : 'relative'}`}
 >
       {editingHeader?.index === i ? (
         <input
@@ -5391,7 +5513,7 @@ if (!health?.mongodb) {
               const meta = columnMeta[activeTable]?.[col];
               if (meta?.lookupField && meta?.linkedTable) return `${meta.lookupField} (from ${meta.linkedTable})`;
               if (meta?.linkedTable && fieldType === 'link_to_record') return `Linked to ${meta.linkedTable}`;
-              return col;
+              return colLabel(col);
             })()}</span>
           </div>
 
@@ -5486,7 +5608,7 @@ if (!health?.mongodb) {
           {/* 1. FIELD NAME (TOP) */}
           <div className="flex items-center gap-1">
             <span className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] leading-none">
-              {row.label}
+              {colLabel(row.label)}
             </span>
           </div>
               <div className="flex items-center gap-2">
@@ -5574,6 +5696,11 @@ if (!health?.mongodb) {
               clickedCol = getTableColumns()[tdIdx];
               // MusicLog star column — don't enter edit mode
               if (activeTable === 'MusicLog' && clickedCol === 'Relevance') return;
+              // LED Images column — don't enter inline edit mode (manager handles it)
+              if (activeTable === 'LED' && clickedCol === 'Images') {
+                 setImageManager({ item: { ...row.data }, column: "Images", isOpen: true });
+                 return;
+              }
             }
             const rowId = row.data?._id || row.data?.id;
             if (clickedCol) setEditingCell(clickedCol);
@@ -6117,8 +6244,8 @@ if (!health?.mongodb) {
       <Input value={newRecord.event || ''} onChange={(e) => setNewRecord({...newRecord, event: e.target.value})} placeholder="Event Name" className="bg-brand-bg" />
     </div>
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-      <Input type="date" value={newRecord.dateFrom || ''} onChange={(e) => setNewRecord({...newRecord, dateFrom: e.target.value})} placeholder="Date From" className="bg-brand-bg text-xs" />
-      <Input type="date" value={newRecord.dateTo || ''} onChange={(e) => setNewRecord({...newRecord, dateTo: e.target.value})} placeholder="Date To" className="bg-brand-bg text-xs" />
+      <Input type="date" value={newRecord.dateFrom || ''} onChange={(e) => setNewRecord({...newRecord, dateFrom: e.target.value})} placeholder="Start Date" className="bg-brand-bg text-xs" />
+      <Input type="date" value={newRecord.dateTo || ''} onChange={(e) => setNewRecord({...newRecord, dateTo: e.target.value})} placeholder="End Date" className="bg-brand-bg text-xs" />
       <Input value={newRecord.year || ''} onChange={(e) => setNewRecord({...newRecord, year: e.target.value})} placeholder="Year" className="bg-brand-bg text-xs" />
     </div>
     <div className="grid grid-cols-2 gap-4">
@@ -6461,11 +6588,11 @@ if (!health?.mongodb) {
               content: (
                 <div className="space-y-5">
                   <div>
-                    <label className={labelCls}>Date From</label>
+                    <label className={labelCls}>{colLabel('DateFrom')}</label>
                     <input type="date" className={inputCls} value={newRecord.DateFrom || ''} onChange={e => setNewRecord({...newRecord, DateFrom: e.target.value})} />
                   </div>
                   <div>
-                    <label className={labelCls}>Date To</label>
+                    <label className={labelCls}>{colLabel('DateTo')}</label>
                     <input type="date" className={inputCls} value={newRecord.DateTo || ''} onChange={e => setNewRecord({...newRecord, DateTo: e.target.value})} />
                   </div>
                 </div>
@@ -7051,8 +7178,8 @@ if (!health?.mongodb) {
                 <div className="space-y-5">
                   {getTableColumns().map((col: string) => (
                     <div key={col}>
-                      <label className={labelCls}>{col}</label>
-                      <input className={inputCls} value={newRecord[col] || ''} onChange={e => setNewRecord({...newRecord, [col]: e.target.value})} placeholder={`${col}…`} />
+                      <label className={labelCls}>{colLabel(col)}</label>
+                      <input className={inputCls} value={newRecord[col] || ''} onChange={e => setNewRecord({...newRecord, [col]: e.target.value})} placeholder={`${colLabel(col)}…`} />
                     </div>
                   ))}
                 </div>
