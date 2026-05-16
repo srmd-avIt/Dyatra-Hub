@@ -2229,9 +2229,9 @@ case 'text':
 
     case 'badge_multi':
       return val ? (
-        <div className="flex flex-wrap gap-1 justify-center">
+        <div className="flex flex-wrap gap-1.5 justify-start">
           {String(val).split(',').map((t: string, i: number) => (
-            <span key={i} className={getTagStyle(t.trim())}>
+            <span key={i} className={getTagStyle(t.trim())} style={{ maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'left' }}>
               {t.trim()}
             </span>
           ))}
@@ -2273,9 +2273,9 @@ case 'text':
       if (!val) return empty;
       const names = String(val).split(',').map((s: string) => s.trim()).filter(Boolean);
       return (
-        <div className="flex flex-wrap gap-1.5 justify-center">
+        <div className="flex flex-wrap gap-1.5 justify-start">
           {names.map((n: string, i: number) => (
-            <span key={i} className="inline-flex items-center gap-0.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-[12px] font-semibold px-2.5 py-0.5 rounded-full cursor-pointer hover:bg-brand-primary/20 transition-colors">
+            <span key={i} className="inline-flex items-center gap-0.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-[12px] font-semibold px-2.5 py-0.5 rounded-full cursor-pointer hover:bg-brand-primary/20 transition-colors" style={{ maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'left' }}>
               {n}
               <ArrowUpRight className="h-3 w-3 opacity-60 shrink-0" />
             </span>
@@ -2583,10 +2583,10 @@ const renderRow = (item: any) => {
         return (
           <td 
           key={col} 
-          className={`${isLongText ? 'px-4 py-2' : cellCls} ${isLongText ? 'whitespace-normal' : ''} ${isColFrozen ? stickyBg : ''}`} 
+          className={`px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] text-left align-top whitespace-normal ${isColFrozen ? stickyBg : ''}`} 
           style={style}
         >
-            <div className="flex flex-wrap gap-1.5 justify-center overflow-hidden">
+            <div className="flex flex-wrap gap-1.5 justify-start">
               {names.length > 0 ? names.map((sName, idx) => {
                 const linked = sessions.find((s: any) => s["Session Name"] === sName);
                 return (
@@ -2597,6 +2597,7 @@ const renderRow = (item: any) => {
                         ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20 hover:bg-brand-primary/20 cursor-pointer'
                         : 'bg-slate-100 text-slate-700 border border-slate-200 cursor-default'
                     }`}
+                    style={{ maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'left' }}
                     onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
                   >
                     {sName}
@@ -2670,11 +2671,12 @@ const renderRow = (item: any) => {
         }
 
         // ── TYPE-DRIVEN for all other columns ─────────────────────────────
+        const needsWrap = type === 'long_text' || type === 'link_to_record' || type === 'badge_multi';
         return (
   <td 
     key={col} 
     className={`${
-      getColumnType(col) === 'long_text' 
+      needsWrap 
         ? 'px-4 py-3 border-r border-b border-slate-200 text-slate-700 text-[13px] whitespace-normal text-left align-top' 
         : cellCls
     } ${isColFrozen ? stickyBg : ''}`} 
@@ -3546,11 +3548,11 @@ const updateDraftOnly = (col: string, val: string) => {
                   const val = editDraft[col] || '';
                   const names = typeof val === 'string' ? val.split(',').map((s: string) => s.trim()).filter(Boolean) : [];
                   return names.length > 0
-                    ? <div className="flex flex-wrap gap-1.5 justify-center overflow-hidden">
+                    ? <div className="flex flex-wrap gap-1.5 justify-start">
                         {names.map((sName: string, idx: number) => {
                           const linked = sessions.find((s: any) => s["Session Name"] === sName);
                           return (
-                            <span key={idx} className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
+                            <span key={idx} className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20' : 'bg-slate-100 text-slate-700 border border-slate-200'}`} style={{ maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'left' }}>
                               {sName}
                               {linked && <ArrowUpRight className="h-3 w-3 opacity-60 shrink-0" />}
                             </span>
@@ -5192,11 +5194,6 @@ if (!health?.mongodb) {
                                 </h3>
                                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
                                   {items.map((item: any) => {
-                                    const isUnlinked = !item["Session"];
-                                    const tagClasses = getTagStyle(item["Session"] || " ").split(' ');
-                                    const bgCls = isUnlinked ? 'bg-slate-50' : (tagClasses.find((c: string) => c.startsWith('bg-')) || 'bg-slate-50');
-                                    const textCls = isUnlinked ? 'text-slate-500' : (tagClasses.find((c: string) => c.startsWith('text-')) || 'text-slate-500');
-
                                     return (
                                     <motion.div
                                       key={item.id || item._id}
@@ -5204,15 +5201,15 @@ if (!health?.mongodb) {
                                       whileHover={{ y: -4 }}
                                       className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
                                     >
-                                      {/* COLOR-CODED HEADER ACCENT */}
-                                      <div className={`px-4 py-4 border-b border-slate-100 flex items-center justify-between gap-3 transition-colors ${bgCls}`}>
-                                        <div className="flex items-center gap-3 min-w-0">
-                                          <div className="h-9 w-9 shrink-0 bg-white/60 backdrop-blur-md rounded-xl flex items-center justify-center shadow-sm border border-white/40">
-                                            <Music className={`h-4 w-4 ${textCls}`} />
+                                      {/* HEADER ACCENT */}
+                                      <div className="px-4 py-4 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3 transition-colors">
+                                        <div className="flex items-start gap-3 min-w-0">
+                                          <div className="h-9 w-9 shrink-0 bg-white rounded-xl flex items-center justify-center shadow-sm border border-slate-200">
+                                            <Music className="h-4 w-4 text-brand-primary" />
                                           </div>
-                                          <div className="min-w-0">
+                                          <div className="min-w-0 pt-0.5">
                                             <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Track</div>
-                                            <div className="text-lg sm:text-xl font-black text-slate-900 leading-tight truncate">{item["Track"] || "Unknown Track"}</div>
+                                            <div className="text-lg sm:text-xl font-black text-slate-900 leading-tight break-words">{item["Track"] || "Unknown Track"}</div>
                                           </div>
                                         </div>
                                         <div className="text-right shrink-0">
