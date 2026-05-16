@@ -4993,9 +4993,16 @@ if (!health?.mongodb) {
                               return ta - tb;
                             })
                             .forEach((item: any) => {
-                              const parent = item["Parent Event"] || "Unlinked Sessions";
-                              if (!grouped[parent]) grouped[parent] = [];
-                              grouped[parent].push(item);
+                              const parentRaw = item["Parent Event"];
+                              const parents = parentRaw 
+                                ? String(parentRaw).split(',').map((p: string) => p.trim()).filter(Boolean) 
+                                : ["Unlinked Sessions"];
+                              if (parents.length === 0) parents.push("Unlinked Sessions");
+
+                              parents.forEach(parent => {
+                                if (!grouped[parent]) grouped[parent] = [];
+                                grouped[parent].push(item);
+                              });
                             });
 
                           return Object.entries(grouped).map(([eventName, items], eventIdx) => (
@@ -5115,106 +5122,186 @@ if (!health?.mongodb) {
                       </div>
                     </div>
                   ) :activeTable === 'MusicLog' ? (
-  /* --- RESPONSIVE MUSIC LOG GALLERY --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
-    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-    {filteredData.map((item: any) => (
-      <motion.div
-        key={item.id || item._id}
-        onClick={() => setViewingRecord(item)}
-        whileHover={{ y: -4 }}
-        className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
-      >
-        {/* HEADER ACCENT */}
-        <div className="bg-gradient-to-br from-brand-primary/10 to-brand-accent/10 px-4 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3 min-w-0">
-            <div className="h-9 w-9 shrink-0 bg-brand-primary rounded-xl flex items-center justify-center shadow-md shadow-brand-primary/20">
-              <Music className="h-4 w-4 text-white" />
-            </div>
-            <div className="min-w-0">
-              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Play ID</div>
-              <div className="text-xl font-black text-slate-900 leading-none">{item["PlayID"] || "—"}</div>
-            </div>
-          </div>
-          <div className="text-right shrink-0">
-            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Date</div>
-            <div className="text-[11px] font-bold text-slate-600 font-mono">{item["Date (from Session)"] || "—"}</div>
-          </div>
-        </div>
+                    /* --- RESPONSIVE MUSIC LOG TIMELINE --- */
+                    <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
+                      <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
+                      <div className="space-y-8 md:space-y-12">
+                        {filteredData.length === 0 && (
+                          <div className="pl-12">
+                            <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />
+                          </div>
+                        )}
+                        {(() => {
+                          const grouped: Record<string, any[]> = {};
+                          
+                          [...filteredData]
+                            .sort((a, b) => {
+                              // 1. Date
+                              const ta = a["Date (from Session)"] ? new Date(a["Date (from Session)"]).getTime() : Infinity;
+                              const tb = b["Date (from Session)"] ? new Date(b["Date (from Session)"]).getTime() : Infinity;
+                              if (ta !== tb) return ta - tb;
+                              
+                              // 2. Time of Day
+                              const timeA = a["TimeOfDay (from Session)"] ? String(a["TimeOfDay (from Session)"]).trim() : "";
+                              const timeB = b["TimeOfDay (from Session)"] ? String(b["TimeOfDay (from Session)"]).trim() : "";
+                              const getWeight = (t: string) => {
+                                const lower = t.toLowerCase();
+                                if (lower.includes('morn')) return 1;
+                                if (lower.includes('aft')) return 2;
+                                if (lower.includes('eve')) return 3;
+                                if (lower.includes('night')) return 4;
+                                return 99;
+                              };
+                              const wA = getWeight(timeA);
+                              const wB = getWeight(timeB);
+                              if (wA !== wB) return wA - wB;
 
-        {/* BODY */}
-        <div className="p-4 space-y-3 flex-1">
-          {/* TRACK — most prominent */}
-          <div>
-            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Track</div>
-            <div className="text-[13px] font-black text-brand-accent leading-snug">
-              {item["Track"] || "—"}
-            </div>
-          </div>
+                              // 3. Session name
+                              const sA = a["Session"] || "";
+                              const sB = b["Session"] || "";
+                              if (sA !== sB) return sA.localeCompare(sB);
+                              
+                              // 4. Order
+                              const orderA = Number(a["Order"]) || 9999;
+                              const orderB = Number(b["Order"]) || 9999;
+                              return orderA - orderB;
+                            })
+                            .forEach((item: any) => {
+                              const parentRaw = item["Parent Event (from Session)"];
+                              const parents = parentRaw 
+                                ? String(parentRaw).split(',').map((p: string) => p.trim()).filter(Boolean) 
+                                : ["Unlinked Logs"];
+                              if (parents.length === 0) parents.push("Unlinked Logs");
 
-          {/* SESSION */}
-          <div className="overflow-hidden">
-            <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Session</div>
-            {item["Session"]
-              ? <div className="flex flex-wrap gap-1.5 overflow-hidden">
-                  {String(item["Session"]).split(',').map((tag: string, idx: number) => {
-                    const sName = tag.trim();
-                    const linked = sessions.find((s: any) => s["Session Name"] === sName);
-                    return (
-                      <span
-                        key={idx}
-                        className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-sm border ${
-                          linked ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-700 border-slate-300 cursor-default'
-                        }`}
-                        onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
-                        style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word'}}
-                      >
-                        {sName}
-                        {linked && <ArrowUpRight className="h-3 w-3 shrink-0 opacity-60" />}
-                      </span>
-                    );
-                  })}
-                </div>
-              : <span className="text-slate-300 italic text-[10px]">—</span>}
-          </div>
+                              parents.forEach(parent => {
+                                if (!grouped[parent]) grouped[parent] = [];
+                                grouped[parent].push(item);
+                              });
+                            });
 
-          {/* PARENT EVENT */}
-          {item["Parent Event (from Session)"] && (
-            <div className="overflow-hidden">
-              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Event</div>
-              <div className="flex flex-wrap gap-1.5 overflow-hidden">
-                {String(item["Parent Event (from Session)"]).split(',').map((eName: string, idx: number) => (
-                  <span key={idx} className={getTagStyle(eName.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{eName.trim()}</span>
-                ))}
-              </div>
-            </div>
-          )}
+                          return Object.entries(grouped).map(([eventName, items], eventIdx) => (
+                            <motion.div key={eventName} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8 group">
+                              <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
+                                <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
+                                  <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${eventIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
+                                </div>
+                              </div>
+                              <div className="flex-1 mt-3 md:mt-4 min-w-0">
+                                <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">
+                                  {eventName}
+                                </h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
+                                  {items.map((item: any) => {
+                                    const isUnlinked = !item["Session"];
+                                    const tagClasses = getTagStyle(item["Session"] || " ").split(' ');
+                                    const bgCls = isUnlinked ? 'bg-slate-50' : (tagClasses.find((c: string) => c.startsWith('bg-')) || 'bg-slate-50');
+                                    const textCls = isUnlinked ? 'text-slate-500' : (tagClasses.find((c: string) => c.startsWith('text-')) || 'text-slate-500');
 
-          {/* RELEVANCE STARS */}
-          {item["Relevance"] && (
-            <div className="flex items-center gap-0.5 mt-2">
-              {[1, 2, 3, 4, 5].map(star => (
-                <Star
-                  key={star}
-                  className={`h-3 w-3 ${
-                    star <= Number(item["Relevance"])
-                      ? 'fill-yellow-400 text-yellow-400'
-                      : 'text-slate-200'
-                  }`}
-                />
-              ))}
-            </div>
-          )}
-        </div>
-      </motion.div>
-    ))}
-    {!searchQuery && <motion.div
-      onClick={openAddModal}
-      className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"
-    >
-      <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
-      <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Music Entry</span>
-    </motion.div>}
+                                    return (
+                                    <motion.div
+                                      key={item.id || item._id}
+                                      onClick={() => setViewingRecord(item)}
+                                      whileHover={{ y: -4 }}
+                                      className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
+                                    >
+                                      {/* COLOR-CODED HEADER ACCENT */}
+                                      <div className={`px-4 py-4 border-b border-slate-100 flex items-center justify-between gap-3 transition-colors ${bgCls}`}>
+                                        <div className="flex items-center gap-3 min-w-0">
+                                          <div className="h-9 w-9 shrink-0 bg-white/60 backdrop-blur-md rounded-xl flex items-center justify-center shadow-sm border border-white/40">
+                                            <Music className={`h-4 w-4 ${textCls}`} />
+                                          </div>
+                                          <div className="min-w-0">
+                                            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Track</div>
+                                            <div className="text-lg sm:text-xl font-black text-slate-900 leading-tight truncate">{item["Track"] || "Unknown Track"}</div>
+                                          </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                          <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Date</div>
+                                          <div className="text-[11px] font-bold text-slate-700 font-mono">{item["Date (from Session)"] || "—"}</div>
+                                        </div>
+                                      </div>
+
+                                      {/* BODY */}
+                                      <div className="p-4 space-y-3 flex-1">
+                                        {/* HIERARCHICAL CONTEXT */}
+                                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                                          <div className="relative">
+                                            {/* Continuous vertical line */}
+                                            <div className="absolute top-2 bottom-3 left-[9px] w-[2px] bg-slate-200" />
+
+                                            {/* Session */}
+                                            <div className="relative flex items-start gap-3 mb-3">
+                                              <div className="h-5 w-5 rounded-md bg-violet-100 border border-violet-200 flex items-center justify-center shrink-0 z-10">
+                                                <MessageSquare className="h-3 w-3 text-violet-600" />
+                                              </div>
+                                              <div className="min-w-0 flex-1 pt-0.5">
+                                                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Session</div>
+                                                {item["Session"] ? (
+                                                  <span 
+                                                    className="text-[11px] font-bold text-brand-primary hover:underline cursor-pointer truncate block"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      const linked = sessions.find((s: any) => s["Session Name"] === item["Session"]);
+                                                      if (linked) setLinkedSession(linked);
+                                                    }}
+                                                  >
+                                                    {item["Session"]}
+                                                  </span>
+                                                ) : (
+                                                  <span className="text-[11px] font-bold text-slate-500 truncate block">—</span>
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            {/* Time Of Day */}
+                                            <div className="relative flex items-start gap-3">
+                                              <div className="h-5 w-5 rounded-md bg-orange-100 border border-orange-200 flex items-center justify-center shrink-0 z-10">
+                                                <Clock className="h-3 w-3 text-orange-600" />
+                                              </div>
+                                              <div className="min-w-0 flex-1 pt-0.5">
+                                                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Time Of Day</div>
+                                                <div className="text-[11px] font-bold text-slate-600 truncate">
+                                                  {item["TimeOfDay (from Session)"] || "—"}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                        {/* RELEVANCE STARS */}
+                                        {item["Relevance"] && (
+                                          <div className="flex items-center gap-0.5 mt-2">
+                                            {[1, 2, 3, 4, 5].map(star => (
+                                              <Star
+                                                key={star}
+                                                className={`h-3 w-3 ${
+                                                  star <= Number(item["Relevance"])
+                                                    ? 'fill-yellow-400 text-yellow-400'
+                                                    : 'text-slate-200'
+                                                }`}
+                                              />
+                                            ))}
+                                          </div>
+                                        )}
+                                      </div>
+                                    </motion.div>
+                                  );
+                                  })}
+                                </div>
+                              </div>
+                            </motion.div>
+                          ));
+                        })()}
+                        {!searchQuery && (
+                          <motion.div
+                            onClick={openAddModal}
+                            className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]"
+                          >
+                            <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
+                            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Music Entry</span>
+                          </motion.div>
+                        )}
+                      </div>
                     </div>
                   ) : activeTable === 'VideoLog' ? (
   /* --- RESPONSIVE VIDEOLOG GALLERY (Airtable Style) --- */
