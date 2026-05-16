@@ -848,13 +848,13 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
           onCommit={val => {
             // Auto-fill any lookup columns pointing to the same linkedTable
             const patch: Record<string, string> = { [col]: val };
-            const firstName = val.split(',').map((s: string) => s.trim()).filter(Boolean)[0];
-            const linkedRecord = firstName ? records.find((r: any) => r[nameField] === firstName) : null;
+            const names = val.split(',').map((s: string) => s.trim()).filter(Boolean);
+            const linkedRecs = names.map((n: string) => records.find((r: any) => r[nameField] === n)).filter(Boolean);
             const tableMeta = columnMeta[tableName] || {};
             for (const c of columns) {
               const cm = tableMeta[c];
               if (cm?.linkedTable === linkedTable && cm?.lookupField && columnTypes[tableName]?.[c] === 'lookup') {
-                patch[c] = linkedRecord ? (linkedRecord[cm.lookupField] ?? '') : '';
+                patch[c] = linkedRecs.map((r: any) => r[cm.lookupField!] ?? '').filter(Boolean).join(', ');
               }
             }
             const nd = { ...draftRef.current, ...patch };
@@ -1704,10 +1704,11 @@ const confirmAddColumn = async () => {
       if (collection) {
         const records = getActiveData();
         for (const record of records) {
-          const linkedName = (record[linkCol] || '').split(',')[0].trim();
-          if (!linkedName) continue;
-          const linkedRecord = linkedData.find(r => r[nameField] === linkedName);
-          const fillValue = linkedRecord ? (linkedRecord[lookupField] ?? '') : '';
+          const linkedNames = (record[linkCol] || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+          if (!linkedNames.length) continue;
+          const fillValue = linkedNames
+            .map((n: string) => { const r = linkedData.find((lr: any) => lr[nameField] === n); return r ? (r[lookupField] ?? '') : ''; })
+            .filter(Boolean).join(', ');
           const id = record._id || record.id;
           if (!id) continue;
           const body = { ...record, [name]: fillValue };
@@ -1820,24 +1821,18 @@ const buildLookupPatch = (
   const nameField = getPrimaryField(linkedTable);
   const linkedData = getDataForTable(linkedTable);
 
-  // Find the first linked record to pull field values from
-  const firstName = linkedNames.split(',').map(s => s.trim()).filter(Boolean)[0];
-  const linkedRecord = firstName ? linkedData.find(r => r[nameField] === firstName) : null;
+  const names = linkedNames.split(',').map(s => s.trim()).filter(Boolean);
+  const linkedRecords = names.map(n => linkedData.find(r => r[nameField] === n)).filter(Boolean);
 
   const patch: Record<string, string> = {};
-  // Scan all columns for lookup fields pointing to this same linkedTable
   const allCols = [
     ...(getTableColumns() as string[]),
     ...(extraColumns[activeTable] || []),
   ];
   for (const col of allCols) {
     const colMeta = columnMeta[activeTable]?.[col];
-    if (
-      colMeta?.linkedTable === linkedTable &&
-      colMeta?.lookupField &&
-      (columnTypes[activeTable]?.[col] === 'lookup')
-    ) {
-      patch[col] = linkedRecord ? (linkedRecord[colMeta.lookupField] ?? '') : '';
+    if (colMeta?.linkedTable === linkedTable && colMeta?.lookupField && columnTypes[activeTable]?.[col] === 'lookup') {
+      patch[col] = linkedRecords.map(r => r[colMeta.lookupField!] ?? '').filter(Boolean).join(', ');
     }
   }
   return patch;
@@ -3956,42 +3951,73 @@ if (!health?.mongodb) {
         )}
         
         <div className="space-y-1">
-          {[
-            { icon: LayoutGrid,  label: 'Home',                table: 'Home' },
-            { icon: Calendar,    label: 'Events',               table: 'Events' },
-            { icon: MessageSquare, label: 'Sessions',           table: 'Session' },
-            { icon: Music,       label: 'Music Log',            table: 'MusicLog' },
-            { icon: Video,       label: 'Video Log',            table: 'VideoLog' },
-            { icon: FileText,    label: 'Guidance & Learning',  table: 'Guidance & Learning' },
-            { icon: Monitor,     label: 'LED',                  table: 'LED' },
-            { icon: CheckSquare, label: "D'yatra Checklist",    table: 'DyatraChecklist' },
-            { icon: Search,      label: 'Data Sharing',         table: 'DataSharing' },
-            { icon: Video,       label: 'Video Setup',          table: 'VideoSetup' },
-            { icon: Volume2,      label: 'Audio Setup',          table: 'AudioSetup' },
-            { icon: Play,        label: 'Tracks',               table: 'Tracks' },
-          ].map((item) => (
-            <button
-              key={item.table}
-              onClick={() => { setActiveTable(item.table); setViewingRecord(null); if (isMobileView) setIsSidebarOpen(false); }}
-              title={!isSidebarOpen ? item.label : ""}
-              className={`w-full flex items-center rounded-xl transition-all duration-200 group
-              ${isSidebarOpen ? 'px-4 py-3 gap-4' : 'p-3 justify-center'}
-              ${activeTable === item.table
-                ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20'
-                : 'text-slate-400 hover:text-white hover:bg-slate-800/40'}`}
-            >
-              <item.icon className={`h-5 w-5 shrink-0 transition-transform ${activeTable === item.table ? '' : 'group-hover:scale-110'}`} />
-              {isSidebarOpen && (
-                <motion.span
-                  initial={{ opacity: 0, x: -10 }}
-                  animate={{ opacity: 1, x: 0 }}
-                  className="text-sm font-bold whitespace-nowrap overflow-hidden text-ellipsis"
-                >
-                  {item.label}
-                </motion.span>
-              )}
-            </button>
-          ))}
+          {(() => {
+            const navGroups: { groupLabel?: string; items: { icon: any; label: string; table: string }[] }[] = [
+              {
+                items: [
+                  { icon: LayoutGrid,    label: 'Home',               table: 'Home' },
+                  { icon: Calendar,      label: 'Events',              table: 'Events' },
+                  { icon: MessageSquare, label: 'Sessions',            table: 'Session' },
+                  { icon: FileText,      label: 'Guidance & Learning', table: 'Guidance & Learning' },
+                  { icon: Monitor,       label: 'LED',                 table: 'LED' },
+                  { icon: CheckSquare,   label: "D'yatra Checklist",   table: 'DyatraChecklist' },
+                  { icon: Search,        label: 'Data Sharing',        table: 'DataSharing' },
+                ],
+              },
+              {
+                groupLabel: 'Audio',
+                items: [
+                  { icon: Music,   label: 'Music Log',   table: 'MusicLog' },
+                  { icon: Volume2, label: 'Audio Setup',  table: 'AudioSetup' },
+                  { icon: Play,    label: 'Tracks',       table: 'Tracks' },
+                ],
+              },
+              {
+                groupLabel: 'Video',
+                items: [
+                  { icon: Video, label: 'Video Log',   table: 'VideoLog' },
+                  { icon: Video, label: 'Video Setup', table: 'VideoSetup' },
+                ],
+              },
+            ];
+            return navGroups.map((group, gi) => (
+              <div key={gi} className={gi > 0 ? 'mt-3' : ''}>
+                {group.groupLabel && isSidebarOpen && (
+                  <div className="px-4 mb-1 mt-2">
+                    <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">{group.groupLabel}</span>
+                  </div>
+                )}
+                {group.groupLabel && !isSidebarOpen && (
+                  <div className="flex justify-center mb-1 mt-2">
+                    <div className="w-4 h-px bg-slate-700" />
+                  </div>
+                )}
+                {group.items.map((item) => (
+                  <button
+                    key={item.table}
+                    onClick={() => { setActiveTable(item.table); setViewingRecord(null); if (isMobileView) setIsSidebarOpen(false); }}
+                    title={!isSidebarOpen ? item.label : ''}
+                    className={`w-full flex items-center rounded-xl transition-all duration-200 group
+                    ${isSidebarOpen ? 'px-4 py-3 gap-4' : 'p-3 justify-center'}
+                    ${activeTable === item.table
+                      ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/40'}`}
+                  >
+                    <item.icon className={`h-5 w-5 shrink-0 transition-transform ${activeTable === item.table ? '' : 'group-hover:scale-110'}`} />
+                    {isSidebarOpen && (
+                      <motion.span
+                        initial={{ opacity: 0, x: -10 }}
+                        animate={{ opacity: 1, x: 0 }}
+                        className="text-sm font-bold whitespace-nowrap overflow-hidden text-ellipsis"
+                      >
+                        {item.label}
+                      </motion.span>
+                    )}
+                  </button>
+                ))}
+              </div>
+            ));
+          })()}
         </div>
       </div>
 
