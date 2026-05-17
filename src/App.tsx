@@ -1226,27 +1226,43 @@ if (hasDropdown) {
   );
 });
 
-const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], onSessionClick }: { item: any, columns: string[], onBack: () => void, tableName: string, sessions?: any[], onSessionClick?: (s: any) => void }) => {
+const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], onSessionClick, onEdit, onDelete }: { item: any, columns: string[], onBack: () => void, tableName: string, sessions?: any[], onSessionClick?: (s: any) => void, onEdit?: () => void, onDelete?: () => void }) => {
   return (
-    <motion.div 
-      initial={{ opacity: 0, y: 10 }} 
-      animate={{ opacity: 1, y: 0 }} 
+    <motion.div
+      initial={{ opacity: 0, y: 10 }}
+      animate={{ opacity: 1, y: 0 }}
       className="w-full space-y-6 pb-20"
     >
       {/* 1. TOP NAVIGATION */}
-      <div className="flex flex-col gap-1 mb-6 px-4 md:px-8 pt-2">
-        <Button
-          variant="outline"
-          onClick={onBack}
-          className="self-start bg-white border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl px-3 py-2 h-auto text-[12px] font-semibold shadow-sm"
-        >
-          <ChevronLeft className="h-3.5 w-3.5 mr-1" />
-          Back to {tableName}
-        </Button>
-        <h2 className="text-2xl font-black uppercase tracking-tight flex gap-2 mt-1">
-          <span className="text-black">Record</span>
-          <span className="text-brand-primary">Details</span>
-        </h2>
+      <div className="flex items-center justify-between gap-2 mb-6 px-4 md:px-8 pt-2">
+        <div className="flex flex-col gap-1">
+          <Button
+            variant="outline"
+            onClick={onBack}
+            className="self-start bg-white border-slate-200 text-slate-600 hover:bg-slate-50 rounded-xl px-3 py-2 h-auto text-[12px] font-semibold shadow-sm"
+          >
+            <ChevronLeft className="h-3.5 w-3.5 mr-1" />
+            Back to {tableName}
+          </Button>
+          <h2 className="text-2xl font-black uppercase tracking-tight flex gap-2 mt-1">
+            <span className="text-black">Record</span>
+            <span className="text-brand-primary">Details</span>
+          </h2>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          {onEdit && (
+            <button onClick={onEdit} className="h-9 px-4 flex items-center gap-1.5 bg-brand-primary text-white rounded-xl text-[12px] font-black uppercase tracking-widest shadow-sm hover:bg-brand-primary/90 transition-colors">
+              <Pencil className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Edit</span>
+            </button>
+          )}
+          {onDelete && (
+            <button onClick={() => { if (window.confirm('Delete this record?')) onDelete?.(); }} className="h-9 px-4 flex items-center gap-1.5 bg-red-50 text-red-600 border border-red-200 rounded-xl text-[12px] font-black uppercase tracking-widest hover:bg-red-100 transition-colors">
+              <Trash2 className="h-3.5 w-3.5" />
+              <span className="hidden sm:inline">Delete</span>
+            </button>
+          )}
+        </div>
       </div>
 
       {/* 2. CENTERED CONTAINER */}
@@ -1640,6 +1656,30 @@ const handleBulkDelete = async () => {
   } catch (e) {
     console.error('Delete failed', e);
   }
+};
+
+const handleDeleteRecord = async (record: any) => {
+  const id = record._id || record.id;
+  if (!id) return;
+  let collection = '';
+  switch (activeTable) {
+    case 'Events': collection = 'events'; break;
+    case 'Session': collection = 'sessions'; break;
+    case 'MusicLog': collection = 'musiclog'; break;
+    case 'VideoLog': collection = 'videolog'; break;
+    case 'Tracks': collection = 'media'; break;
+    case 'DyatraChecklist': collection = 'checklist'; break;
+    case 'Guidance & Learning': collection = 'guidance'; break;
+    case 'LED': collection = 'led_details'; break;
+    case 'DataSharing': collection = 'locations'; break;
+    case 'VideoSetup': collection = 'videosetup'; break;
+    case 'AudioSetup': collection = 'audiosetup'; break;
+    default: return;
+  }
+  try {
+    await window.fetch(`/api/${collection}/${id}`, { method: 'DELETE' });
+    fetchActiveTable();
+  } catch (e) { console.error('Delete failed', e); }
 };
 
 const handleDeleteColumn = (colToDelete: string) => {
@@ -2174,7 +2214,7 @@ useEffect(() => {
 
   if (user) loadColumns();
 }, [user]);
-const filteredData = getActiveData().filter((item: any) => {
+const filteredData: any[] = getActiveData().filter((item: any) => {
   // --- 1. FILTER BY ACTIVE EVENT ---
   if (selectedEventId) {
     const selectedName = selectedEventId.toLowerCase();
@@ -2192,10 +2232,36 @@ const filteredData = getActiveData().filter((item: any) => {
   const searchStr = searchQuery.toLowerCase();
   if (!searchStr) return true;
   
-  return Object.values(item).some(val => 
+  return Object.values(item).some(val =>
     val !== null && val !== undefined && String(val).toLowerCase().includes(searchStr)
   );
 });
+// Sorted + grouped data for visual/card view (respects sortBy and groupByField)
+const sortedVisualData: any[] = (() => {
+  const d = [...filteredData];
+  d.sort((a, b) => {
+    // Primary: group field
+    if (groupByField) {
+      const ga = String(a[groupByField] ?? '');
+      const gb = String(b[groupByField] ?? '');
+      if (ga !== gb) return ga.localeCompare(gb);
+    }
+    // Secondary: explicit sort
+    if (sortBy) {
+      const va = String(a[sortBy.field] ?? '');
+      const vb = String(b[sortBy.field] ?? '');
+      return sortBy.direction === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
+    }
+    // Default for Events: chronological
+    if (!groupByField && !sortBy && activeTable === 'Events') {
+      const ta = a.DateFrom ? new Date(a.DateFrom).getTime() : Infinity;
+      const tb = b.DateFrom ? new Date(b.DateFrom).getTime() : Infinity;
+      return isNaN(ta) ? 1 : isNaN(tb) ? -1 : ta - tb;
+    }
+    return 0;
+  });
+  return d;
+})();
 const [extraColumns, setExtraColumns] = useState<Record<string, string[]>>({});
 const [columnTypes, setColumnTypes] = useState<Record<string, Record<string, FieldType>>>({});
 const [hiddenColumns, setHiddenColumns] = useState<Record<string, string[]>>({});
@@ -2338,19 +2404,19 @@ const getTableColumns = (includeHidden = false) => {
 
   switch (activeTable) {
     case 'Events':
-      baseCols = ['Event Name', 'DateFrom', 'DateTo', 'Occasion', 'City', 'Venue', 'Sessions', 'Year'];
+      baseCols = ['Event Name', 'DateFrom', 'DateTo', 'Occasion', 'City', 'Venue', 'Sessions', 'Year', 'Attachments'];
       break;
     case 'Session':
-      baseCols = ['Session Name', 'Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes'];
+      baseCols = ['Session Name', 'Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes', 'Attachments'];
       break;
     case 'MusicLog':
-      baseCols = ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID'];
+      baseCols = ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID', 'Attachments'];
       break;
     case 'Tracks':
       baseCols = ['Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'];
       break;
     case 'VideoLog':
-      baseCols = ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList'];
+      baseCols = ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList', 'Attachments'];
       break;
     case 'Guidance & Learning':
       baseCols = ['LearningId', 'Event', 'DateFrom (from Event)', 'DateTo (from Event)', 'Year (from Event)', 'City', 'GuidanceFrom', 'Guidance/Learning', 'Category', 'Attachments'];
@@ -2362,7 +2428,7 @@ const getTableColumns = (includeHidden = false) => {
       baseCols = ['Task', 'Details', 'TaskGroup', 'OrderId', 'People Involved', 'Typical Timeline', 'Category', 'Period', 'Attachment'];
       break;
     case 'DataSharing':
-      baseCols = ['Sevak', 'Dept', 'EmailId', 'ShareFacts?', 'ShareData'];
+      baseCols = ['Sevak', 'Dept', 'EmailId', 'ShareFacts?', 'ShareData', 'Attachments'];
       break;
     case 'VideoSetup':
       baseCols = ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'];
@@ -2858,27 +2924,68 @@ useEffect(() => {
 }, [user, imageManager?.isOpen]); // Add imageManager.isOpen as a dependency
 
  const handleAddRecord = async () => {
-  // Determine which collection to save to
   let collection = '';
-  const data = { ...newRecord };
+  const data: Record<string, any> = { ...newRecord };
+
+  // Remap camelCase form keys → exact MongoDB field names per table
+  const remap = (from: string, to: string) => { if (from in data) { data[to] = data[from]; delete data[from]; } };
 
   switch (activeTable) {
     case 'Events': collection = 'events'; break;
-    case 'Session': collection = 'sessions'; break;
-      case 'MusicLog': collection = 'musiclog'; break; // Targeted collection
-    case 'VideoLog': collection = 'videolog'; break; // Targeted collection
-    case 'Tracks': 
-  collection = 'media'; 
-  // We set both just to be safe so your filter always finds it
-  data.type = 'track'; 
-  data.Type = 'track'; 
-  break;
-    case 'DyatraChecklist': collection = 'checklist'; break;
-    case 'Guidance & Learning': collection = 'guidance'; break;
+    case 'Session':
+      collection = 'sessions';
+      remap('name', 'Session Name'); remap('parentEvent', 'Parent Event');
+      remap('date', 'Date'); remap('city', 'City'); remap('venue', 'Venue');
+      remap('timeOfDay', 'Time Of Day'); remap('occasion', 'Occasion');
+      remap('sessionType', 'SessionType'); remap('notes', 'Notes');
+      break;
+    case 'MusicLog':
+      collection = 'musiclog';
+      remap('playId', 'PlayID'); remap('session', 'Session');
+      remap('parentEvent', 'Parent Event (from Session)');
+      remap('date', 'Date (from Session)'); remap('timeOfDay', 'TimeOfDay (from Session)');
+      remap('occasion', 'Occasion (from Session)'); remap('notes', 'Notes');
+      remap('order', 'Order'); remap('playedAt', 'PlayedAt'); remap('track', 'Track');
+      remap('theme', 'Theme'); remap('relevance', 'Relevance'); remap('patrank', 'Patrank');
+      remap('topic', 'Topic'); remap('cue', 'Cue'); remap('ppgRemarks', 'PPG'); remap('trackId', 'TrackID');
+      break;
+    case 'VideoLog':
+      collection = 'videolog';
+      remap('session', 'Session'); remap('parentEvent', 'Parent Event (from Session)');
+      remap('date', 'Date (from Session)'); remap('city', 'City (from Session)');
+      remap('venue', 'Venue (from Session)'); remap('timeOfDay', 'TimeOfDay (from Session)');
+      remap('occasion', 'Occasion (from Session)'); remap('sessionType', 'SessionType (from Session)');
+      remap('duration', 'Duration'); remap('proposalsList', 'ProposalsList');
+      break;
+    case 'Tracks':
+      collection = 'media';
+      data.type = 'track'; data.Type = 'track';
+      remap('title', 'Title'); remap('artist', 'Artist'); remap('album', 'Album');
+      remap('duration', 'Duration'); remap('durationTime', 'DurationTime');
+      remap('bpm', 'BPM'); remap('key', 'Key'); remap('source', 'Source');
+      remap('fileLink', 'FileLink'); remap('tags', 'Tags'); remap('lyrics', 'Lyrics');
+      remap('lexiconID', 'LexiconID'); remap('lastUpdated', 'LastUpdated'); remap('plays', 'Plays');
+      break;
+    case 'DyatraChecklist':
+      collection = 'checklist';
+      remap('task', 'Task'); remap('category', 'Category');
+      break;
+    case 'Guidance & Learning':
+      collection = 'guidance';
+      remap('event', 'Event'); remap('city', 'City'); remap('guidanceFrom', 'GuidanceFrom');
+      remap('guidanceLearning', 'Guidance/Learning'); remap('category', 'Category');
+      remap('attachments', 'Attachments');
+      break;
     case 'LED': collection = 'led_details'; break;
     case 'DataSharing': collection = 'locations'; break;
-    case 'VideoSetup': collection = 'videosetup'; break;
-    case 'AudioSetup': collection = 'audiosetup'; break;
+    case 'VideoSetup':
+      collection = 'videosetup';
+      remap('name', 'Name'); remap('notes', 'Notes'); remap('attachments', 'Attachments');
+      break;
+    case 'AudioSetup':
+      collection = 'audiosetup';
+      remap('name', 'Name'); remap('notes', 'Notes'); remap('attachments', 'Attachments');
+      break;
   }
 
   setIsAdding(true);
@@ -4190,8 +4297,8 @@ if (!health?.mongodb) {
   </div>}
 
 
-  {/* 1. GROUP BY + SORT BY (data grid only) */}
-  {activeTable !== 'Home' && viewMode === 'grid' && <>
+  {/* 1. GROUP BY + SORT BY */}
+  {activeTable !== 'Home' && (viewMode === 'grid' || viewMode === 'visual') && <>
   <div className="relative hidden sm:block">
   <button
     onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
@@ -4309,8 +4416,8 @@ if (!health?.mongodb) {
   </div>
   )}
 
-  {/* Mobile Group By + Sort By buttons (data grid only) */}
-  {activeTable !== 'Home' && viewMode === 'grid' && (
+  {/* Mobile Group By + Sort By buttons */}
+  {activeTable !== 'Home' && (viewMode === 'grid' || viewMode === 'visual') && (
     <div className="sm:hidden flex items-center gap-1.5">
       <button
         onClick={() => setMobileGroupOpen(true)}
@@ -4717,6 +4824,8 @@ if (!health?.mongodb) {
                 onBack={() => setViewingRecord(null)}
                 sessions={sessions}
                 onSessionClick={(s) => setLinkedSession(s)}
+                onEdit={() => setExpandedRecord(viewingRecord)}
+                onDelete={() => { handleDeleteRecord(viewingRecord); setViewingRecord(null); }}
               />
             ) : (
               <>
@@ -4753,16 +4862,8 @@ if (!health?.mongodb) {
                   activeTable === 'Events' ? (
   /* --- RESPONSIVE EVENTS GALLERY (Airtable Style) --- */
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
-    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-    {[...filteredData]
-      .sort((a, b) => {
-        const ta = a.DateFrom ? new Date(a.DateFrom).getTime() : Infinity;
-        const tb = b.DateFrom ? new Date(b.DateFrom).getTime() : Infinity;
-        if (isNaN(ta)) return 1;
-        if (isNaN(tb)) return -1;
-        return ta - tb;
-      })
-      .map((item: any) => (
+    {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+    {sortedVisualData.map((item: any) => (
         <motion.div
           key={item.id || item._id}
           onClick={() => setViewingRecord(item)}
@@ -4845,8 +4946,8 @@ if (!health?.mongodb) {
 ) : activeTable === 'Tracks' ? (
   /* --- TRACKS GALLERY VIEW (Airtable Style) --- */
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
-    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-    {filteredData.map((item: any) => (
+    {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+    {sortedVisualData.map((item: any) => (
       <motion.div
         key={item.id || item._id}
         onClick={() => setViewingRecord(item)}
@@ -4888,8 +4989,8 @@ if (!health?.mongodb) {
 ) : activeTable === 'DataSharing' ? (
   /* --- DATA SHARING GALLERY VIEW (Airtable Style) --- */
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
-    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-    {filteredData.map((item: any) => (
+    {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+    {sortedVisualData.map((item: any) => (
         <motion.div
           key={item.id || item._id}
           onClick={() => setViewingRecord(item)}
@@ -4935,8 +5036,8 @@ if (!health?.mongodb) {
 ) : activeTable === 'Guidance & Learning' ? (
   /* --- GUIDANCE & LEARNING GALLERY VIEW --- */
   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
-    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-    {filteredData.map((item: any) => {
+    {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+    {sortedVisualData.map((item: any) => {
       // Logic to extract URL from Airtable format: (https://...)
       const attachmentString = item["Attachments"] || "";
       const match = attachmentString.match(/\((https?:\/\/[^)]+)\)/);
@@ -5564,8 +5665,8 @@ if (!health?.mongodb) {
                   ) : (
                     /* --- 2. STANDARD GRID VIEW --- */
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
-                  {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-                  {filteredData.map((item: any) => (
+                  {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+                  {sortedVisualData.map((item: any) => (
                     <motion.div
                       key={item.id || item._id}
                       onClick={() => setViewingRecord(item)}
