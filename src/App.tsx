@@ -116,7 +116,7 @@ const getTagStyle = (val: any) => {
 };
 
 const UNIFORM_DROPDOWN_STYLE = "bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-semibold text-[13px] px-3 py-1.5 rounded-md shadow-sm tracking-tighter whitespace-nowrap inline-block";
-const FROZEN_STYLE: React.CSSProperties = { backgroundColor: 'rgba(250, 251, 255, 0.88)', backdropFilter: 'blur(10px) saturate(1.2)' };
+const FROZEN_STYLE: React.CSSProperties = { backgroundColor: 'rgba(255, 255, 255, 0.72)', backdropFilter: 'blur(18px) saturate(1.8)', WebkitBackdropFilter: 'blur(18px) saturate(1.8)', boxShadow: 'inset -1px 0 0 #e2e8f0, inset 0 -1px 0 #e2e8f0' };
 
 // Columns to show by default on mobile grid view (others are hidden until user unlocks via Fields)
 const MOBILE_PRIORITY_COLS: Record<string, string[]> = {
@@ -2627,15 +2627,14 @@ const renderRow = (item: any) => {
                 return (
                   <span
                     key={idx}
-                    className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full transition-all ${
+                    className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full max-w-full min-w-0 transition-all ${
                       linked
                         ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20 hover:bg-brand-primary/20 cursor-pointer'
                         : 'bg-slate-100 text-slate-700 border border-slate-200 cursor-default'
                     }`}
-                    style={{ maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'left' }}
                     onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
                   >
-                    {sName}
+                    <span className="truncate">{sName}</span>
                     {linked && <ArrowUpRight className="shrink-0 h-3 w-3 opacity-60" />}
                   </span>
                 );
@@ -3595,8 +3594,8 @@ const updateDraftOnly = (col: string, val: string) => {
                         {names.map((sName: string, idx: number) => {
                           const linked = sessions.find((s: any) => s["Session Name"] === sName);
                           return (
-                            <span key={idx} className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20' : 'bg-slate-100 text-slate-700 border border-slate-200'}`} style={{ maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'left' }}>
-                              {sName}
+                            <span key={idx} className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full max-w-full min-w-0 ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
+                              <span className="truncate">{sName}</span>
                               {linked && <ArrowUpRight className="h-3 w-3 opacity-60 shrink-0" />}
                             </span>
                           );
