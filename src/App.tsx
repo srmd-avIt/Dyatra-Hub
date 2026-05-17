@@ -4980,105 +4980,112 @@ if (!health?.mongodb) {
                 {viewMode === 'visual' ? (
                   activeTable === 'Events' ? (
   /* --- RESPONSIVE EVENTS GALLERY (Airtable Style) --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
-    {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-    {sortedVisualData.map((item: any) => (
-        <motion.div
-          key={item.id || item._id}
-          onClick={() => setViewingRecord(item)}
-          whileHover={{ y: -4 }}
-          className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col sm:min-h-[280px] overflow-hidden"
-        >
-          {/* EVENT NAME */}
-          <div className="text-[13px] sm:text-base font-black text-slate-900 mb-2 sm:mb-5 leading-tight">
-            {item["Event Name"] || item.EventName || "Untitled Event"}
+  (() => {
+    const renderEventCard = (item: any) => (
+      <motion.div
+        key={item.id || item._id}
+        onClick={() => setViewingRecord(item)}
+        whileHover={{ y: -4 }}
+        className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col sm:min-h-[280px] overflow-hidden"
+      >
+        <div className="text-[13px] sm:text-base font-black text-slate-900 mb-2 sm:mb-5 leading-tight">
+          {item["Event Name"] || item.EventName || "Untitled Event"}
+        </div>
+        <div className="space-y-2 sm:space-y-4 flex-1">
+          <div className="space-y-0.5">
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">{colLabel('DateFrom')}</label>
+            <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateFrom || "—"}</div>
           </div>
-
-          {/* FIELDS */}
-          <div className="space-y-2 sm:space-y-4 flex-1">
-            <div className="space-y-0.5">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">{colLabel('DateFrom')}</label>
-              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateFrom || "—"}</div>
-            </div>
-            <div className="space-y-0.5">
-              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">{colLabel('DateTo')}</label>
-              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateTo || "—"}</div>
-            </div>
-            {(item.Sessions || item["Imported table"]) && (
-              <div className="space-y-0.5">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Sessions</label>
-                <div className="flex flex-wrap gap-1.5 overflow-hidden">
-                  {String(item.Sessions || item["Imported table"]).split(',').map((tag: string, idx: number) => {
-                    const sName = tag.trim();
-                    const linked = sessions.find((s: any) => s["Session Name"] === sName);
-                    return (
-                      <span
-                        key={idx}
-                        className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-sm border ${
-                          linked ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-700 border-slate-300 cursor-default'
-                        }`}
-                        onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
-                        style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word'}}
-                      >
-                        {sName}
-                        {linked && <ArrowUpRight className="h-3 w-3 shrink-0 opacity-60" />}
-                      </span>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
-            {item.Occasion && (
-              <div className="space-y-0.5">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Occasion</label>
-                <div className="flex flex-wrap gap-1 overflow-hidden">
-                  {String(item.Occasion).split(',').map((t: string, i: number) => (
-                    <span key={i} className={getTagStyle(t.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{t.trim()}</span>
-                  ))}
-                </div>
-              </div>
-            )}
-            {item.Venue && (
-              <div className="hidden sm:block space-y-0.5">
-                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Venue</label>
-                <div className="text-[11px] font-semibold text-slate-600 truncate">{item.Venue}</div>
-              </div>
-            )}
-            {item.City && (
-              <div className="block sm:hidden text-[11px] font-semibold text-slate-500 truncate mt-1">
-                <MapPin className="h-3 w-3 inline mr-1 opacity-50" />{item.City}
-              </div>
-            )}
+          <div className="space-y-0.5">
+            <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">{colLabel('DateTo')}</label>
+            <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateTo || "—"}</div>
           </div>
-        </motion.div>
-      ))}
+          {(item.Sessions || item["Imported table"]) && (
+            <div className="space-y-0.5">
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Sessions</label>
+              <div className="flex flex-wrap gap-1.5 overflow-hidden">
+                {String(item.Sessions || item["Imported table"]).split(',').map((tag: string, idx: number) => {
+                  const sName = tag.trim();
+                  const linked = sessions.find((s: any) => s["Session Name"] === sName);
+                  return (
+                    <span key={idx} className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-sm border ${linked ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-700 border-slate-300 cursor-default'}`} onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word'}}>
+                      {sName}{linked && <ArrowUpRight className="h-3 w-3 shrink-0 opacity-60" />}
+                    </span>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+          {item.Occasion && (
+            <div className="space-y-0.5">
+              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Occasion</label>
+              <div className="flex flex-wrap gap-1 overflow-hidden">
+                {String(item.Occasion).split(',').map((t: string, i: number) => (
+                  <span key={i} className={getTagStyle(t.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{t.trim()}</span>
+                ))}
+              </div>
+            </div>
+          )}
+          {item.Venue && (<div className="hidden sm:block space-y-0.5"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Venue</label><div className="text-[11px] font-semibold text-slate-600 truncate">{item.Venue}</div></div>)}
+          {item.City && (<div className="block sm:hidden text-[11px] font-semibold text-slate-500 truncate mt-1"><MapPin className="h-3 w-3 inline mr-1 opacity-50" />{item.City}</div>)}
+        </div>
+      </motion.div>
+    );
 
-    {/* ADD EVENT CARD */}
-    {filteredData.length > 0 && !searchQuery && <motion.div
-      onClick={openAddModal}
-      className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"
-    >
-      <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
-      <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Event</span>
-    </motion.div>}
-  </div>
+    if (groupByField) {
+      const grouped: Record<string, any[]> = {};
+      sortedVisualData.forEach((item: any) => {
+        const raw = String(item[groupByField] || '');
+        const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+        (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
+      });
+      return (
+        <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
+          <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
+          <div className="space-y-8 md:space-y-12">
+            {sortedVisualData.length === 0 && <div className="pl-12"><EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} /></div>}
+            {Object.entries(grouped).map(([groupValue, groupItems], groupIdx) => (
+              <motion.div key={groupValue} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8">
+                <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
+                  <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
+                    <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${groupIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
+                  </div>
+                </div>
+                <div className="flex-1 mt-3 md:mt-4">
+                  <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">{groupValue}</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
+                    {groupItems.map((item: any) => renderEventCard(item))}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+            {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Event</span></motion.div>}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
+        {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+        {sortedVisualData.map((item: any) => renderEventCard(item))}
+        {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Event</span></motion.div>}
+      </div>
+    );
+  })()
 ) : activeTable === 'Tracks' ? (
   /* --- TRACKS GALLERY VIEW (Airtable Style) --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
-    {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-    {sortedVisualData.map((item: any) => (
+  (() => {
+    const renderTrackCard = (item: any) => (
       <motion.div
         key={item.id || item._id}
         onClick={() => setViewingRecord(item)}
         whileHover={{ y: -2 }}
         className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[150px] sm:min-h-[220px] overflow-hidden"
       >
-        {/* TRACK TITLE */}
         <div className="text-[12px] sm:text-[14px] font-bold text-slate-900 mb-2 sm:mb-5 leading-tight border-b border-slate-50 pb-1 sm:pb-2">
           {item["Title"] || item.title || "Unknown Track"}
         </div>
-
-        {/* CARD FIELDS */}
         <div className="space-y-2 sm:space-y-4 flex-1">
           <div className="space-y-0.5">
             <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Artist</label>
@@ -5094,417 +5101,320 @@ if (!health?.mongodb) {
           </div>
         </div>
       </motion.div>
-    ))}
+    );
 
-    {/* ADD TRACK CARD */}
-    {filteredData.length > 0 && !searchQuery && <motion.div
-      onClick={openAddModal}
-      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[150px] sm:min-h-[220px]"
-    >
-      <Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" />
-      <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add track</span>
-    </motion.div>}
-  </div>
+    if (groupByField) {
+      const grouped: Record<string, any[]> = {};
+      sortedVisualData.forEach((item: any) => {
+        const raw = String(item[groupByField] || '');
+        const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+        (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
+      });
+      return (
+        <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
+          <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
+          <div className="space-y-8 md:space-y-12">
+            {sortedVisualData.length === 0 && <div className="pl-12"><EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} /></div>}
+            {Object.entries(grouped).map(([groupValue, groupItems], groupIdx) => (
+              <motion.div key={groupValue} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8">
+                <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
+                  <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
+                    <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${groupIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
+                  </div>
+                </div>
+                <div className="flex-1 mt-3 md:mt-4">
+                  <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">{groupValue}</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                    {groupItems.map((item: any) => renderTrackCard(item))}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+            {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[150px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add track</span></motion.div>}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
+        {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+        {sortedVisualData.map((item: any) => renderTrackCard(item))}
+        {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[150px] sm:min-h-[220px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add track</span></motion.div>}
+      </div>
+    );
+  })()
 ) : activeTable === 'DataSharing' ? (
   /* --- DATA SHARING GALLERY VIEW (Airtable Style) --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
-    {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-    {sortedVisualData.map((item: any) => (
-        <motion.div
-          key={item.id || item._id}
-          onClick={() => setViewingRecord(item)}
-          whileHover={{ y: -2 }}
-          className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[160px] sm:min-h-[240px] overflow-hidden"
-        >
-          {/* SEVAK NAME */}
-          <div className="text-[13px] sm:text-[15px] font-bold text-slate-900 mb-2 sm:mb-4">
-            {item["Sevak"] || "Unknown Sevak"}
+  (() => {
+    const renderDataCard = (item: any) => (
+      <motion.div
+        key={item.id || item._id}
+        onClick={() => setViewingRecord(item)}
+        whileHover={{ y: -2 }}
+        className="bg-white border border-slate-200 rounded-xl p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[160px] sm:min-h-[240px] overflow-hidden"
+      >
+        <div className="text-[13px] sm:text-[15px] font-bold text-slate-900 mb-2 sm:mb-4">{item["Sevak"] || "Unknown Sevak"}</div>
+        <div className="space-y-2 sm:space-y-4 flex-1">
+          <div className="space-y-0.5 overflow-hidden">
+            <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Dept</label>
+            {item["Dept"] ? <span className={getTagStyle(item["Dept"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Dept"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
           </div>
-
-          {/* CARD FIELDS */}
-          <div className="space-y-2 sm:space-y-4 flex-1">
-            <div className="space-y-0.5 overflow-hidden">
-              <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Dept</label>
-              {item["Dept"] ? <span className={getTagStyle(item["Dept"])} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{item["Dept"]}</span> : <span className="text-slate-300 italic text-[10px]">—</span>}
-            </div>
-            <div className="space-y-0.5 hidden sm:block">
-              <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Email</label>
-              <div className="text-[11px] font-medium text-slate-600 truncate">{item["EmailId"] || "—"}</div>
-            </div>
-            <div className="space-y-0.5">
-              <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Sharing Facts</label>
-              <div className="pt-0.5">
-                {item["ShareFacts?"] === 'Yes'
-                  ? <span className={getTagStyle('Yes')}>Yes</span>
-                  : <span className="text-slate-300 italic text-[10px]">No</span>}
-              </div>
-            </div>
+          <div className="space-y-0.5 hidden sm:block">
+            <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Email</label>
+            <div className="text-[11px] font-medium text-slate-600 truncate">{item["EmailId"] || "—"}</div>
           </div>
-        </motion.div>
-    ))}
+          <div className="space-y-0.5">
+            <label className="text-[9px] font-medium text-slate-400 uppercase tracking-tight block">Sharing Facts</label>
+            <div className="pt-0.5">{item["ShareFacts?"] === 'Yes' ? <span className={getTagStyle('Yes')}>Yes</span> : <span className="text-slate-300 italic text-[10px]">No</span>}</div>
+          </div>
+        </div>
+      </motion.div>
+    );
 
-    {/* ADD RECORD CARD */}
-    {filteredData.length > 0 && !searchQuery && <motion.div
-      onClick={openAddModal}
-      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[160px] sm:min-h-[240px]"
-    >
-      <Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" />
-      <span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add record</span>
-    </motion.div>}
-  </div>
+    if (groupByField) {
+      const grouped: Record<string, any[]> = {};
+      sortedVisualData.forEach((item: any) => {
+        const raw = String(item[groupByField] || '');
+        const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+        (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
+      });
+      return (
+        <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
+          <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
+          <div className="space-y-8 md:space-y-12">
+            {sortedVisualData.length === 0 && <div className="pl-12"><EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} /></div>}
+            {Object.entries(grouped).map(([groupValue, groupItems], groupIdx) => (
+              <motion.div key={groupValue} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8">
+                <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
+                  <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
+                    <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${groupIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
+                  </div>
+                </div>
+                <div className="flex-1 mt-3 md:mt-4">
+                  <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">{groupValue}</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                    {groupItems.map((item: any) => renderDataCard(item))}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+            {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[120px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add record</span></motion.div>}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
+        {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+        {sortedVisualData.map((item: any) => renderDataCard(item))}
+        {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[160px] sm:min-h-[240px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add record</span></motion.div>}
+      </div>
+    );
+  })()
 ) : activeTable === 'Guidance & Learning' ? (
   /* --- GUIDANCE & LEARNING GALLERY VIEW --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
-    {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-    {sortedVisualData.map((item: any) => {
-      // Logic to extract URL from Airtable format: (https://...)
+  (() => {
+    const renderGuidanceCard = (item: any) => {
       const attachmentString = item["Attachments"] || "";
       const match = attachmentString.match(/\((https?:\/\/[^)]+)\)/);
       const imageUrl = match ? match[1] : null;
-
       return (
-        <motion.div 
-          key={item.id || item._id} 
-          onClick={() => setViewingRecord(item)}
-          whileHover={{ y: -2 }}
-          className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[240px] sm:min-h-[380px]"
-        >
-          {/* IMAGE AREA */}
+        <motion.div key={item.id || item._id} onClick={() => setViewingRecord(item)} whileHover={{ y: -2 }} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[240px] sm:min-h-[380px]">
           <div className="h-28 sm:h-48 w-full bg-slate-50 border-b border-slate-100 flex items-center justify-center overflow-hidden">
-            {imageUrl ? (
-              <img
-                src={imageUrl}
-                loading="lazy"
-                decoding="async"
-                className="w-full h-full object-cover transition-transform duration-500 hover:scale-105"
-                alt="Attachment"
-              />
-            ) : (
-              <div className="flex flex-col items-center gap-2 opacity-20">
-                <Monitor className="h-12 w-12 text-slate-400" />
-              </div>
-            )}
+            {imageUrl ? <img src={imageUrl} loading="lazy" decoding="async" className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" alt="Attachment" /> : <div className="flex flex-col items-center gap-2 opacity-20"><Monitor className="h-12 w-12 text-slate-400" /></div>}
           </div>
-
-          {/* 2. CARD CONTENT */}
           <div className="p-5 flex-1 flex flex-col gap-3">
-            {/* ID badge + Category row */}
             <div className="flex items-center justify-between gap-2">
-              <span className="font-mono text-[10px] font-bold text-brand-primary bg-brand-primary/8 border border-brand-primary/15 px-2 py-0.5 rounded">
-                {item["LearningId"] || "—"}
-              </span>
-              {item["Category"] && (
-                <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded truncate max-w-[120px]">
-                  {item["Category"]}
-                </span>
-              )}
+              <span className="font-mono text-[10px] font-bold text-brand-primary bg-brand-primary/8 border border-brand-primary/15 px-2 py-0.5 rounded">{item["LearningId"] || "—"}</span>
+              {item["Category"] && <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 px-2 py-0.5 rounded truncate max-w-[120px]">{item["Category"]}</span>}
             </div>
-
-            {/* Guidance text — primary content */}
-            <div className="flex-1">
-              <p className="text-[13px] text-slate-800 font-medium leading-relaxed">
-                {item["Guidance/Learning"] || <span className="text-slate-300 italic">No content</span>}
-              </p>
-            </div>
-
-            {/* GuidanceFrom sub-label */}
-            {item["GuidanceFrom"] && (
-              <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Guidance From</span>
-                <span className="text-[11px] font-semibold text-slate-600 truncate">{item["GuidanceFrom"]}</span>
-              </div>
-            )}
-
-            {/* Event context */}
-            {item["Event"] && (
-              <div className="space-y-1 mt-1">
-                <span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Event</span>
-                <div className="flex flex-wrap gap-1.5">
-                  {String(item["Event"]).split(',').map((eName: string, idx: number) => (
-                    <span key={idx} className={`${getTagStyle(eName.trim())} !text-[10px]`} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{eName.trim()}</span>
-                  ))}
-                </div>
-              </div>
-            )}
+            <div className="flex-1"><p className="text-[13px] text-slate-800 font-medium leading-relaxed">{item["Guidance/Learning"] || <span className="text-slate-300 italic">No content</span>}</p></div>
+            {item["GuidanceFrom"] && <div className="flex items-center gap-1.5 pt-1 border-t border-slate-100"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Guidance From</span><span className="text-[11px] font-semibold text-slate-600 truncate">{item["GuidanceFrom"]}</span></div>}
+            {item["Event"] && <div className="space-y-1 mt-1"><span className="text-[9px] font-black text-slate-400 uppercase tracking-widest block">Event</span><div className="flex flex-wrap gap-1.5">{String(item["Event"]).split(',').map((eName: string, idx: number) => <span key={idx} className={`${getTagStyle(eName.trim())} !text-[10px]`} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{eName.trim()}</span>)}</div></div>}
           </div>
         </motion.div>
       );
-    })}
+    };
 
-    {/* ADD FEEDBACK CARD */}
-    {filteredData.length > 0 && !searchQuery && <motion.div
-      onClick={openAddModal}
-      className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[240px] sm:min-h-[380px]"
-    >
-      <Plus className="h-6 w-6 mb-2" />
-      <span className="text-[10px] font-black uppercase tracking-widest">Add Guidance & Learning</span>
-    </motion.div>}
-  </div>
+    if (groupByField) {
+      const grouped: Record<string, any[]> = {};
+      sortedVisualData.forEach((item: any) => {
+        const raw = String(item[groupByField] || '');
+        const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+        (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
+      });
+      return (
+        <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
+          <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
+          <div className="space-y-8 md:space-y-12">
+            {sortedVisualData.length === 0 && <div className="pl-12"><EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} /></div>}
+            {Object.entries(grouped).map(([groupValue, groupItems], groupIdx) => (
+              <motion.div key={groupValue} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8">
+                <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
+                  <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
+                    <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${groupIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
+                  </div>
+                </div>
+                <div className="flex-1 mt-3 md:mt-4">
+                  <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">{groupValue}</h3>
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5">
+                    {groupItems.map((item: any) => renderGuidanceCard(item))}
+                  </div>
+                </div>
+              </motion.div>
+            ))}
+            {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[120px]"><Plus className="h-6 w-6 mb-2" /><span className="text-[10px] font-black uppercase tracking-widest">Add Guidance & Learning</span></motion.div>}
+          </div>
+        </div>
+      );
+    }
+
+    return (
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
+        {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+        {sortedVisualData.map((item: any) => renderGuidanceCard(item))}
+        {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[240px] sm:min-h-[380px]"><Plus className="h-6 w-6 mb-2" /><span className="text-[10px] font-black uppercase tracking-widest">Add Guidance & Learning</span></motion.div>}
+      </div>
+    );
+  })()
 ) :
                   activeTable === 'Session' ? (
-                    /* --- 1. SESSION TIMELINE VIEW --- */
-                    <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
-
-                  {/* The Vertical Line: Hidden on very small screens or moved left */}
-                  <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
-                      <div className="space-y-8 md:space-y-12">
-                        {filteredData.length === 0 && (
-                          <div className="pl-12">
-                            <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />
+                  /* --- SESSION CARD VIEW --- */
+                  (() => {
+                    const expandedData = filteredData.flatMap((item: any) => {
+                      const parentsList = String(item["Parent Event"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const datesList = String(item["Date"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const timesList = String(item["Time Of Day"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const citiesList = String(item["City"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const venuesList = String(item["Venue"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const maxLen = Math.max(parentsList.length, datesList.length, timesList.length, citiesList.length, venuesList.length, 1);
+                      const result = [];
+                      for (let i = 0; i < maxLen; i++) {
+                        result.push({ ...item, _originalItem: item, "Parent Event": parentsList[i] || parentsList[0] || "Unlinked Sessions", "Date": datesList[i] || datesList[0] || "", "Time Of Day": timesList[i] || timesList[0] || "", "City": citiesList[i] || citiesList[0] || "", "Venue": venuesList[i] || venuesList[0] || "" });
+                      }
+                      return result;
+                    });
+                    const sortedData = [...expandedData].sort((a, b) => {
+                      const ta = a["Date"] ? new Date(a["Date"]).getTime() : Infinity;
+                      const tb = b["Date"] ? new Date(b["Date"]).getTime() : Infinity;
+                      if (isNaN(ta)) return 1; if (isNaN(tb)) return -1; return ta - tb;
+                    });
+                    const renderSessionCard = (item: any) => {
+                      const realItem = item._originalItem || item;
+                      const sessionId = realItem.id || realItem._id;
+                      const sessionImagesFromDb = item["Images"] || "";
+                      const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
+                      const images: string[] = [];
+                      let m; const re = new RegExp(urlRegex.source, 'g');
+                      while ((m = re.exec(sessionImagesFromDb)) !== null) images.push(m[1]);
+                      return (
+                        <div key={`${sessionId}-${item["Parent Event"]}`} onClick={() => setViewingRecord(realItem)} className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col sm:min-h-[280px] overflow-hidden group/card">
+                          <div className="text-[13px] sm:text-base font-black text-slate-900 mb-2 sm:mb-5 leading-tight flex justify-between items-start gap-2">
+                            <span>{item["Session Name"] || "Untitled Session"}</span>
+                            {item["SessionType"] && <Badge className="bg-brand-primary/10 text-brand-primary text-[8px] sm:text-[9px] px-2 py-0.5 shrink-0 border-none font-bold">{item["SessionType"]}</Badge>}
                           </div>
-                        )}
-                        {(() => {
-                          const grouped: Record<string, any[]> = {};
-                          
-                          const expandedData = filteredData.flatMap((item: any) => {
-                            const parentsList = String(item["Parent Event"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const datesList = String(item["Date"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const timesList = String(item["Time Of Day"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const citiesList = String(item["City"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const venuesList = String(item["Venue"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            
-                            const maxLen = Math.max(parentsList.length, datesList.length, timesList.length, citiesList.length, venuesList.length, 1);
-                            const result = [];
-                            for (let i = 0; i < maxLen; i++) {
-                              result.push({
-                                ...item,
-                                _originalItem: item,
-                                "Parent Event": parentsList[i] || parentsList[0] || "Unlinked Sessions",
-                                "Date": datesList[i] || datesList[0] || "",
-                                "Time Of Day": timesList[i] || timesList[0] || "",
-                                "City": citiesList[i] || citiesList[0] || "",
-                                "Venue": venuesList[i] || venuesList[0] || "",
-                              });
-                            }
-                            return result;
-                          });
-
-                          [...expandedData]
-                            .sort((a, b) => {
-                              const ta = a["Date"] ? new Date(a["Date"]).getTime() : Infinity;
-                              const tb = b["Date"] ? new Date(b["Date"]).getTime() : Infinity;
-                              if (isNaN(ta)) return 1;
-                              if (isNaN(tb)) return -1;
-                              return ta - tb;
-                            })
-                            .forEach((item: any) => {
-                              const parent = item["Parent Event"];
-                              if (!grouped[parent]) grouped[parent] = [];
-                              grouped[parent].push(item);
-                            });
-
-                          return Object.entries(grouped).map(([eventName, items], eventIdx) => (
-                            <motion.div key={eventName} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8 group">
-                              <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
-                                <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
-                                  <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${eventIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
-                                </div>
-                              </div>
-                              <div className="flex-1 mt-3 md:mt-4">
-                                <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">
-                                  {eventName}
-                                </h3>
-                                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
-                                  {items.map((item: any) => {
-                                    const realItem = item._originalItem || item;
-                                    const sessionId = realItem.id || realItem._id;
-                                    
-                                    const sessionImagesFromDb = item["Images"] || "";
-                                    const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
-                                    const images: string[] = [];
-                                    let m;
-                                    const re = new RegExp(urlRegex.source, 'g');
-                                    while ((m = re.exec(sessionImagesFromDb)) !== null) images.push(m[1]);
-
-                                    return (
-                                      <div key={`${sessionId}-${item["Parent Event"]}`} onClick={() => setViewingRecord(realItem)} className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col sm:min-h-[280px] overflow-hidden group/card">
-                                        <div className="text-[13px] sm:text-base font-black text-slate-900 mb-2 sm:mb-5 leading-tight flex justify-between items-start gap-2">
-                                          <span>{item["Session Name"] || "Untitled Session"}</span>
-                                          {item["SessionType"] && (
-                                            <Badge className="bg-brand-primary/10 text-brand-primary text-[8px] sm:text-[9px] px-2 py-0.5 shrink-0 border-none font-bold">
-                                              {item["SessionType"]}
-                                            </Badge>
-                                          )}
-                                        </div>
-                                        
-                                        <div className="space-y-2 sm:space-y-4 flex-1">
-                                          <div className="grid grid-cols-2 gap-3">
-                                            <div className="space-y-0.5">
-                                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Date</label>
-                                              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item["Date"] || "—"}</div>
-                                            </div>
-                                            <div className="space-y-0.5">
-                                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Time Of Day</label>
-                                              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item["Time Of Day"] || "—"}</div>
-                                            </div>
-                                          </div>
-                                          
-                                          <div className="grid grid-cols-2 gap-3">
-                                            <div className="space-y-0.5">
-                                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">City</label>
-                                              <div className="text-[11px] sm:text-[12px] font-semibold text-slate-700 truncate">{item["City"] || "—"}</div>
-                                            </div>
-                                            <div className="space-y-0.5">
-                                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Venue</label>
-                                              <div className="text-[11px] sm:text-[12px] font-semibold text-slate-700 truncate">{item["Venue"] || "—"}</div>
-                                            </div>
-                                          </div>
-
-                                          {item["Occasion"] && (
-                                            <div className="space-y-0.5">
-                                              <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Occasion</label>
-                                              <div className="flex flex-wrap gap-1 overflow-hidden">
-                                                {String(item["Occasion"]).split(',').map((t: string, i: number) => (
-                                                  <span key={i} className={getTagStyle(t.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{t.trim()}</span>
-                                                ))}
-                                              </div>
-                                            </div>
-                                          )}
-                                        </div>
-                                        
-                                        <div className="mt-4 flex overflow-x-auto gap-2 md:gap-3 scrollbar-hide pb-1">
-                              {images.map((imgSrc, imgIdx) => (
-                                            <div key={imgIdx} className="relative h-20 md:h-24 w-28 md:w-36 shrink-0 rounded-xl overflow-hidden border border-slate-200 group/sessionimg hover:ring-2 hover:ring-brand-primary transition-all" onClick={(e) => e.stopPropagation()}>
-                                  <img src={imgSrc} loading="lazy" decoding="async" className="h-full w-full object-cover" alt="Upload" />
-                                  
-                                  <button 
-                                    onClick={(e) => {
-                                      e.stopPropagation();
-                                      if (!window.confirm("Remove this image?")) return;
-                                      const entries: string[] = [];
-                                      const re = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
-                                      let matchResult;
-                                      while ((matchResult = re.exec(item["Images"] || "")) !== null) entries.push(matchResult[0]);
-                                      entries.splice(imgIdx, 1);
-                                          const updated = { ...realItem, ["Images"]: entries.join(' ') };
-                                      setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r));
-                                      window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) });
-                                    }}
-                                                className="absolute top-1 right-1 p-1.5 bg-black/60 text-white rounded-lg opacity-0 group-hover/sessionimg:opacity-100 hover:bg-red-600 transition-all shadow-sm"
-                                    title="Remove Image"
-                                  >
-                                                <Trash2 className="h-3 w-3" />
-                                  </button>
-                                </div>
-                              ))}
-                              <div 
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  const fileInput = e.currentTarget.querySelector('input[type="file"]') as HTMLInputElement;
-                                  if (fileInput) fileInput.click();
-                                }}
-                                            className="h-20 md:h-24 w-20 md:w-24 shrink-0 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary/50 transition-colors cursor-pointer bg-slate-50 hover:bg-white"
-                              >
-                                            <Plus className="h-4 w-4 pointer-events-none" />
-                                            <span className="text-[7px] md:text-[8px] font-black uppercase pointer-events-none">Add Media</span>
-                                <input type="file" accept="image/*" className="hidden" onClick={(e) => e.stopPropagation()} onChange={(e) => handleDirectImageUpload(e, item, 'sessions', setSessions as any)} />
-                              </div>
+                          <div className="space-y-2 sm:space-y-4 flex-1">
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-0.5"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Date</label><div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item["Date"] || "—"}</div></div>
+                              <div className="space-y-0.5"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Time Of Day</label><div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item["Time Of Day"] || "—"}</div></div>
                             </div>
-                                      </div>
-                                    );
-                                  })}
-                                </div>
+                            <div className="grid grid-cols-2 gap-3">
+                              <div className="space-y-0.5"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">City</label><div className="text-[11px] sm:text-[12px] font-semibold text-slate-700 truncate">{item["City"] || "—"}</div></div>
+                              <div className="space-y-0.5"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Venue</label><div className="text-[11px] sm:text-[12px] font-semibold text-slate-700 truncate">{item["Venue"] || "—"}</div></div>
+                            </div>
+                            {item["Occasion"] && (
+                              <div className="space-y-0.5">
+                                <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Occasion</label>
+                                <div className="flex flex-wrap gap-1 overflow-hidden">{String(item["Occasion"]).split(',').map((t: string, i: number) => <span key={i} className={getTagStyle(t.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{t.trim()}</span>)}</div>
                               </div>
-                            </motion.div>
-                          ));
-                        })()}
-                      </div>
-                    </div>
-                  ) :activeTable === 'MusicLog' ? (
-                    /* --- RESPONSIVE MUSIC LOG TIMELINE --- */
-                    <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
-                      <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
-                      <div className="space-y-8 md:space-y-12">
-                        {filteredData.length === 0 && (
-                          <div className="pl-12">
-                            <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />
+                            )}
                           </div>
-                        )}
-                        {(() => {
-                          const grouped: Record<string, any[]> = {};
-                          
-                          const expandedData = filteredData.flatMap((item: any) => {
-                            const sessionsList = String(item["Session"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const parentsList = String(item["Parent Event (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const datesList = String(item["Date (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const timesList = String(item["TimeOfDay (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const tracksList = String(item["Track"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            
-                            const maxLen = Math.max(sessionsList.length, parentsList.length, datesList.length, timesList.length, tracksList.length, 1);
-                            const result = [];
-                            
-                            for (let i = 0; i < maxLen; i++) {
-                              result.push({
-                                ...item,
-                                _originalItem: item,
-                                "Session": sessionsList[i] || sessionsList[0] || "",
-                                "Parent Event (from Session)": parentsList[i] || parentsList[0] || "Unlinked Logs",
-                                "Date (from Session)": datesList[i] || datesList[0] || "",
-                                "TimeOfDay (from Session)": timesList[i] || timesList[0] || "",
-                                "Track": tracksList[i] || tracksList[0] || "Unknown Track",
-                              });
-                            }
-                            return result;
-                          });
-
-                          [...expandedData]
-                            .sort((a, b) => {
-                              // 1. Date
-                              const ta = a["Date (from Session)"] ? new Date(a["Date (from Session)"]).getTime() : Infinity;
-                              const tb = b["Date (from Session)"] ? new Date(b["Date (from Session)"]).getTime() : Infinity;
-                              if (ta !== tb) return ta - tb;
-                              
-                              // 2. Time of Day
-                              const timeA = a["TimeOfDay (from Session)"] ? String(a["TimeOfDay (from Session)"]).trim() : "";
-                              const timeB = b["TimeOfDay (from Session)"] ? String(b["TimeOfDay (from Session)"]).trim() : "";
-                              const getWeight = (t: string) => {
-                                const lower = t.toLowerCase();
-                                if (lower.includes('morn')) return 1;
-                                if (lower.includes('aft')) return 2;
-                                if (lower.includes('eve')) return 3;
-                                if (lower.includes('night')) return 4;
-                                return 99;
-                              };
-                              const wA = getWeight(timeA);
-                              const wB = getWeight(timeB);
-                              if (wA !== wB) return wA - wB;
-
-                              // 3. Session name
-                              const sA = a["Session"] || "";
-                              const sB = b["Session"] || "";
-                              if (sA !== sB) return sA.localeCompare(sB);
-                              
-                              // 4. Order
-                              const orderA = Number(a["Order"]) || 9999;
-                              const orderB = Number(b["Order"]) || 9999;
-                              return orderA - orderB;
-                            })
-                            .forEach((item: any) => {
-                              const parent = item["Parent Event (from Session)"];
-                              if (!grouped[parent]) grouped[parent] = [];
-                              grouped[parent].push(item);
-                            });
-
-                          return Object.entries(grouped).map(([eventName, items], eventIdx) => (
-                            <motion.div key={eventName} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8 group">
-                              <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
-                                <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
-                                  <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${eventIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
-                                </div>
+                          <div className="mt-4 flex overflow-x-auto gap-2 md:gap-3 scrollbar-hide pb-1">
+                            {images.map((imgSrc, imgIdx) => (
+                              <div key={imgIdx} className="relative h-20 md:h-24 w-28 md:w-36 shrink-0 rounded-xl overflow-hidden border border-slate-200 group/sessionimg hover:ring-2 hover:ring-brand-primary transition-all" onClick={(e) => e.stopPropagation()}>
+                                <img src={imgSrc} loading="lazy" decoding="async" className="h-full w-full object-cover" alt="Upload" />
+                                <button onClick={(e) => { e.stopPropagation(); if (!window.confirm("Remove this image?")) return; const entries: string[] = []; const re2 = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g; let mr; while ((mr = re2.exec(item["Images"] || "")) !== null) entries.push(mr[0]); entries.splice(imgIdx, 1); const updated = { ...realItem, ["Images"]: entries.join(' ') }; setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r)); window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) }); }} className="absolute top-1 right-1 p-1.5 bg-black/60 text-white rounded-lg opacity-0 group-hover/sessionimg:opacity-100 hover:bg-red-600 transition-all shadow-sm" title="Remove Image"><Trash2 className="h-3 w-3" /></button>
                               </div>
-                              <div className="flex-1 mt-3 md:mt-4 min-w-0">
-                                <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">
-                                  {eventName}
-                                </h3>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
-                                  {items.map((item: any) => {
-                                    return (
-                                    <motion.div
-                                      key={`${item.id || item._id}-${item["Session"]}-${item["Track"]}`}
-                                      onClick={() => setViewingRecord(item._originalItem || item)}
-                                      whileHover={{ y: -4 }}
-                                      className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
-                                    >
+                            ))}
+                            <div onClick={(e) => { e.stopPropagation(); const fi = e.currentTarget.querySelector('input[type="file"]') as HTMLInputElement; if (fi) fi.click(); }} className="h-20 md:h-24 w-20 md:w-24 shrink-0 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary/50 transition-colors cursor-pointer bg-slate-50 hover:bg-white">
+                              <Plus className="h-4 w-4 pointer-events-none" /><span className="text-[7px] md:text-[8px] font-black uppercase pointer-events-none">Add Media</span>
+                              <input type="file" accept="image/*" className="hidden" onClick={(e) => e.stopPropagation()} onChange={(e) => handleDirectImageUpload(e, item, 'sessions', setSessions as any)} />
+                            </div>
+                          </div>
+                        </div>
+                      );
+                    };
+                    if (groupByField) {
+                      const grouped: Record<string, any[]> = {};
+                      sortedData.forEach((item: any) => {
+                        const raw = String(item[groupByField] || '');
+                        const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+                        (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
+                      });
+                      return (
+                        <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
+                          <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
+                          <div className="space-y-8 md:space-y-12">
+                            {filteredData.length === 0 && <div className="pl-12"><EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} /></div>}
+                            {Object.entries(grouped).map(([groupValue, groupItems], groupIdx) => (
+                              <motion.div key={groupValue} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8 group">
+                                <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6"><div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0"><div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${groupIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} /></div></div>
+                                <div className="flex-1 mt-3 md:mt-4">
+                                  <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">{groupValue}</h3>
+                                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">{groupItems.map((item: any) => renderSessionCard(item))}</div>
+                                </div>
+                              </motion.div>
+                            ))}
+                            {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[120px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Session</span></motion.div>}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 py-4 md:py-6">
+                        {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+                        {sortedData.map((item: any) => renderSessionCard(item))}
+                        {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} whileHover={{ y: -4 }} className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[280px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Session</span></motion.div>}
+                      </div>
+                    );
+                  })()
+                  ) :activeTable === 'MusicLog' ? (
+                  /* --- MUSIC LOG CARD VIEW --- */
+                  (() => {
+                    const mlExpandedData = filteredData.flatMap((item: any) => {
+                      const sessionsList = String(item["Session"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const parentsList = String(item["Parent Event (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const datesList = String(item["Date (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const timesList = String(item["TimeOfDay (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const tracksList = String(item["Track"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const maxLen = Math.max(sessionsList.length, parentsList.length, datesList.length, timesList.length, tracksList.length, 1);
+                      const result = [];
+                      for (let i = 0; i < maxLen; i++) {
+                        result.push({ ...item, _originalItem: item, "Session": sessionsList[i] || sessionsList[0] || "", "Parent Event (from Session)": parentsList[i] || parentsList[0] || "Unlinked Logs", "Date (from Session)": datesList[i] || datesList[0] || "", "TimeOfDay (from Session)": timesList[i] || timesList[0] || "", "Track": tracksList[i] || tracksList[0] || "Unknown Track" });
+                      }
+                      return result;
+                    });
+                    const mlGetWeight = (t: string) => { const lower = t.toLowerCase(); if (lower.includes('morn')) return 1; if (lower.includes('aft')) return 2; if (lower.includes('eve')) return 3; if (lower.includes('night')) return 4; return 99; };
+                    const mlSortedData = [...mlExpandedData].sort((a, b) => {
+                      const ta = a["Date (from Session)"] ? new Date(a["Date (from Session)"]).getTime() : Infinity;
+                      const tb = b["Date (from Session)"] ? new Date(b["Date (from Session)"]).getTime() : Infinity;
+                      if (ta !== tb) return ta - tb;
+                      const wA = mlGetWeight(String(a["TimeOfDay (from Session)"] || "").trim());
+                      const wB = mlGetWeight(String(b["TimeOfDay (from Session)"] || "").trim());
+                      if (wA !== wB) return wA - wB;
+                      const sA = a["Session"] || ""; const sB = b["Session"] || "";
+                      if (sA !== sB) return sA.localeCompare(sB);
+                      return (Number(a["Order"]) || 9999) - (Number(b["Order"]) || 9999);
+                    });
+                    const renderMusicCard = (item: any) => (
+                    <motion.div
+                      key={`${item.id || item._id}-${item["Session"]}-${item["Track"]}`}
+                      onClick={() => setViewingRecord(item._originalItem || item)}
+                      whileHover={{ y: -4 }}
+                      className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
+                    >
                                       {/* HEADER ACCENT */}
                                       <div className="px-4 py-4 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3 transition-colors">
                                         <div className="flex items-start gap-3 min-w-0">
@@ -5587,205 +5497,191 @@ if (!health?.mongodb) {
                                       </div>
                                     </motion.div>
                                   );
-                                  })}
+                    if (groupByField) {
+                      const mlGrouped: Record<string, any[]> = {};
+                      mlSortedData.forEach((item: any) => {
+                        const raw = String(item[groupByField] || '');
+                        const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+                        (keys.length > 0 ? keys : ['—']).forEach((k: string) => { if (!mlGrouped[k]) mlGrouped[k] = []; mlGrouped[k].push(item); });
+                      });
+                      return (
+                        <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
+                          <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
+                          <div className="space-y-8 md:space-y-12">
+                            {mlSortedData.length === 0 && <div className="pl-12"><EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} /></div>}
+                            {Object.entries(mlGrouped).map(([groupValue, groupItems], groupIdx) => (
+                              <motion.div key={groupValue} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8">
+                                <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
+                                  <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
+                                    <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${groupIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
+                                  </div>
                                 </div>
-                              </div>
-                            </motion.div>
-                          ));
-                        })()}
+                                <div className="flex-1 mt-3 md:mt-4">
+                                  <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">{groupValue}</h3>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+                                    {groupItems.map((gItem: any) => renderMusicCard(gItem))}
+                                  </div>
+                                </div>
+                              </motion.div>
+                            ))}
+                            {filteredData.length > 0 && !searchQuery && (
+                              <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]">
+                                <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
+                                <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Music Entry</span>
+                              </motion.div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 py-4 sm:py-6">
+                        {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+                        {mlSortedData.map((item: any) => renderMusicCard(item))}
                         {filteredData.length > 0 && !searchQuery && (
-                          <motion.div
-                            onClick={openAddModal}
-                            className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]"
-                          >
+                          <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]">
                             <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
                             <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Music Entry</span>
                           </motion.div>
                         )}
                       </div>
-                    </div>
+                    );
+                  })()
                   ) : activeTable === 'VideoLog' ? (
-                    /* --- RESPONSIVE VIDEO LOG TIMELINE --- */
-                    <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
-                      <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
-                      <div className="space-y-8 md:space-y-12">
-                        {filteredData.length === 0 && (
-                          <div className="pl-12">
-                            <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />
+                  /* --- VIDEO LOG CARD VIEW --- */
+                  (() => {
+                    const vlExpandedData = filteredData.flatMap((item: any) => {
+                      const sessionsList = String(item["Session"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const parentsList = String(item["Parent Event (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const datesList = String(item["Date (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const timesList = String(item["TimeOfDay (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const videosList = String(item["VideoTitle"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                      const maxLen = Math.max(sessionsList.length, parentsList.length, datesList.length, timesList.length, videosList.length, 1);
+                      const result = [];
+                      for (let i = 0; i < maxLen; i++) {
+                        result.push({ ...item, _originalItem: item, "Session": sessionsList[i] || sessionsList[0] || "", "Parent Event (from Session)": parentsList[i] || parentsList[0] || "Unlinked Logs", "Date (from Session)": datesList[i] || datesList[0] || "", "TimeOfDay (from Session)": timesList[i] || timesList[0] || "", "VideoTitle": videosList[i] || videosList[0] || "Untitled Video" });
+                      }
+                      return result;
+                    });
+                    const vlGetWeight = (t: string) => { const lower = t.toLowerCase(); if (lower.includes('morn')) return 1; if (lower.includes('aft')) return 2; if (lower.includes('eve')) return 3; if (lower.includes('night')) return 4; return 99; };
+                    const vlSortedData = [...vlExpandedData].sort((a, b) => {
+                      const ta = a["Date (from Session)"] ? new Date(a["Date (from Session)"]).getTime() : Infinity;
+                      const tb = b["Date (from Session)"] ? new Date(b["Date (from Session)"]).getTime() : Infinity;
+                      if (ta !== tb) return ta - tb;
+                      const wA = vlGetWeight(String(a["TimeOfDay (from Session)"] || "").trim());
+                      const wB = vlGetWeight(String(b["TimeOfDay (from Session)"] || "").trim());
+                      if (wA !== wB) return wA - wB;
+                      const sA = a["Session"] || ""; const sB = b["Session"] || "";
+                      if (sA !== sB) return sA.localeCompare(sB);
+                      return 0;
+                    });
+                    const renderVideoCard = (item: any) => (
+                      <motion.div
+                        key={`${item.id || item._id}-${item["Session"]}-${item["VideoTitle"]}`}
+                        onClick={() => setViewingRecord(item._originalItem || item)}
+                        whileHover={{ y: -4 }}
+                        className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
+                      >
+                        <div className="px-4 py-4 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3 transition-colors">
+                          <div className="flex items-start gap-3 min-w-0">
+                            <div className="h-9 w-9 shrink-0 bg-white rounded-xl flex items-center justify-center shadow-sm border border-slate-200">
+                              <Video className="h-4 w-4 text-brand-primary" />
+                            </div>
+                            <div className="min-w-0 pt-0.5">
+                              <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Video Title</div>
+                              <div className="text-lg sm:text-xl font-black text-slate-900 leading-tight break-words">{item["VideoTitle"] || "Untitled Video"}</div>
+                            </div>
                           </div>
-                        )}
-                        {(() => {
-                          const grouped: Record<string, any[]> = {};
-                          
-                          const expandedData = filteredData.flatMap((item: any) => {
-                            const sessionsList = String(item["Session"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const parentsList = String(item["Parent Event (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const datesList = String(item["Date (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const timesList = String(item["TimeOfDay (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            const videosList = String(item["VideoTitle"] || "").split(',').map(s => s.trim()).filter(Boolean);
-                            
-                            const maxLen = Math.max(sessionsList.length, parentsList.length, datesList.length, timesList.length, videosList.length, 1);
-                            const result = [];
-                            
-                            for (let i = 0; i < maxLen; i++) {
-                              result.push({
-                                ...item,
-                                _originalItem: item,
-                                "Session": sessionsList[i] || sessionsList[0] || "",
-                                "Parent Event (from Session)": parentsList[i] || parentsList[0] || "Unlinked Logs",
-                                "Date (from Session)": datesList[i] || datesList[0] || "",
-                                "TimeOfDay (from Session)": timesList[i] || timesList[0] || "",
-                                "VideoTitle": videosList[i] || videosList[0] || "Untitled Video",
-                              });
-                            }
-                            return result;
-                          });
-
-                          [...expandedData]
-                            .sort((a, b) => {
-                              // 1. Date
-                              const ta = a["Date (from Session)"] ? new Date(a["Date (from Session)"]).getTime() : Infinity;
-                              const tb = b["Date (from Session)"] ? new Date(b["Date (from Session)"]).getTime() : Infinity;
-                              if (ta !== tb) return ta - tb;
-                              
-                              // 2. Time of Day
-                              const timeA = a["TimeOfDay (from Session)"] ? String(a["TimeOfDay (from Session)"]).trim() : "";
-                              const timeB = b["TimeOfDay (from Session)"] ? String(b["TimeOfDay (from Session)"]).trim() : "";
-                              const getWeight = (t: string) => {
-                                const lower = t.toLowerCase();
-                                if (lower.includes('morn')) return 1;
-                                if (lower.includes('aft')) return 2;
-                                if (lower.includes('eve')) return 3;
-                                if (lower.includes('night')) return 4;
-                                return 99;
-                              };
-                              const wA = getWeight(timeA);
-                              const wB = getWeight(timeB);
-                              if (wA !== wB) return wA - wB;
-
-                              // 3. Session name
-                              const sA = a["Session"] || "";
-                              const sB = b["Session"] || "";
-                              if (sA !== sB) return sA.localeCompare(sB);
-                              
-                              return 0;
-                            })
-                            .forEach((item: any) => {
-                              const parent = item["Parent Event (from Session)"];
-                              if (!grouped[parent]) grouped[parent] = [];
-                              grouped[parent].push(item);
-                            });
-
-                          return Object.entries(grouped).map(([eventName, items], eventIdx) => (
-                            <motion.div key={eventName} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8 group">
-                              <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
-                                <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
-                                  <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${eventIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
+                          <div className="text-right shrink-0">
+                            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Date</div>
+                            <div className="text-[11px] font-bold text-slate-700 font-mono">{item["Date (from Session)"] || "—"}</div>
+                          </div>
+                        </div>
+                        <div className="p-4 space-y-3 flex-1">
+                          <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                            <div className="relative">
+                              <div className="absolute top-2 bottom-3 left-[9px] w-[2px] bg-slate-200" />
+                              <div className="relative flex items-start gap-3 mb-3">
+                                <div className="h-5 w-5 rounded-md bg-violet-100 border border-violet-200 flex items-center justify-center shrink-0 z-10">
+                                  <MessageSquare className="h-3 w-3 text-violet-600" />
+                                </div>
+                                <div className="min-w-0 flex-1 pt-0.5">
+                                  <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Session</div>
+                                  {item["Session"] ? (
+                                    <span className="text-[11px] font-bold text-brand-primary hover:underline cursor-pointer truncate block" onClick={(e) => { e.stopPropagation(); const linked = sessions.find((s: any) => s["Session Name"] === item["Session"]); if (linked) setLinkedSession(linked); }}>{item["Session"]}</span>
+                                  ) : (
+                                    <span className="text-[11px] font-bold text-slate-500 truncate block">—</span>
+                                  )}
                                 </div>
                               </div>
-                              <div className="flex-1 mt-3 md:mt-4 min-w-0">
-                                <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">
-                                  {eventName}
-                                </h3>
-                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
-                                  {items.map((item: any) => {
-                                    return (
-                                    <motion.div
-                                      key={`${item.id || item._id}-${item["Session"]}-${item["VideoTitle"]}`}
-                                      onClick={() => setViewingRecord(item._originalItem || item)}
-                                      whileHover={{ y: -4 }}
-                                      className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
-                                    >
-                                      {/* HEADER ACCENT */}
-                                      <div className="px-4 py-4 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3 transition-colors">
-                                        <div className="flex items-start gap-3 min-w-0">
-                                          <div className="h-9 w-9 shrink-0 bg-white rounded-xl flex items-center justify-center shadow-sm border border-slate-200">
-                                            <Video className="h-4 w-4 text-brand-primary" />
-                                          </div>
-                                          <div className="min-w-0 pt-0.5">
-                                            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Video Title</div>
-                                            <div className="text-lg sm:text-xl font-black text-slate-900 leading-tight break-words">{item["VideoTitle"] || "Untitled Video"}</div>
-                                          </div>
-                                        </div>
-                                        <div className="text-right shrink-0">
-                                          <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Date</div>
-                                          <div className="text-[11px] font-bold text-slate-700 font-mono">{item["Date (from Session)"] || "—"}</div>
-                                        </div>
-                                      </div>
-
-                                      {/* BODY */}
-                                      <div className="p-4 space-y-3 flex-1">
-                                        {/* HIERARCHICAL CONTEXT */}
-                                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
-                                          <div className="relative">
-                                            {/* Continuous vertical line */}
-                                            <div className="absolute top-2 bottom-3 left-[9px] w-[2px] bg-slate-200" />
-
-                                            {/* Session */}
-                                            <div className="relative flex items-start gap-3 mb-3">
-                                              <div className="h-5 w-5 rounded-md bg-violet-100 border border-violet-200 flex items-center justify-center shrink-0 z-10">
-                                                <MessageSquare className="h-3 w-3 text-violet-600" />
-                                              </div>
-                                              <div className="min-w-0 flex-1 pt-0.5">
-                                                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Session</div>
-                                                {item["Session"] ? (
-                                                  <span 
-                                                    className="text-[11px] font-bold text-brand-primary hover:underline cursor-pointer truncate block"
-                                                    onClick={(e) => {
-                                                      e.stopPropagation();
-                                                      const linked = sessions.find((s: any) => s["Session Name"] === item["Session"]);
-                                                      if (linked) setLinkedSession(linked);
-                                                    }}
-                                                  >
-                                                    {item["Session"]}
-                                                  </span>
-                                                ) : (
-                                                  <span className="text-[11px] font-bold text-slate-500 truncate block">—</span>
-                                                )}
-                                              </div>
-                                            </div>
-
-                                            {/* Time Of Day */}
-                                            <div className="relative flex items-start gap-3">
-                                              <div className="h-5 w-5 rounded-md bg-orange-100 border border-orange-200 flex items-center justify-center shrink-0 z-10">
-                                                <Clock className="h-3 w-3 text-orange-600" />
-                                              </div>
-                                              <div className="min-w-0 flex-1 pt-0.5">
-                                                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Time Of Day</div>
-                                                <div className="text-[11px] font-bold text-slate-600 truncate">
-                                                  {item["TimeOfDay (from Session)"] || "—"}
-                                                </div>
-                                              </div>
-                                            </div>
-                                          </div>
-                                        </div>
-
-                                      
-                                      </div>
-                                    </motion.div>
-                                  );
-                                  })}
+                              <div className="relative flex items-start gap-3">
+                                <div className="h-5 w-5 rounded-md bg-orange-100 border border-orange-200 flex items-center justify-center shrink-0 z-10">
+                                  <Clock className="h-3 w-3 text-orange-600" />
+                                </div>
+                                <div className="min-w-0 flex-1 pt-0.5">
+                                  <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Time Of Day</div>
+                                  <div className="text-[11px] font-bold text-slate-600 truncate">{item["TimeOfDay (from Session)"] || "—"}</div>
                                 </div>
                               </div>
-                            </motion.div>
-                          ));
-                        })()}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    );
+                    if (groupByField) {
+                      const vlGrouped: Record<string, any[]> = {};
+                      vlSortedData.forEach((item: any) => {
+                        const raw = String(item[groupByField] || '');
+                        const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+                        (keys.length > 0 ? keys : ['—']).forEach((k: string) => { if (!vlGrouped[k]) vlGrouped[k] = []; vlGrouped[k].push(item); });
+                      });
+                      return (
+                        <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
+                          <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
+                          <div className="space-y-8 md:space-y-12">
+                            {vlSortedData.length === 0 && <div className="pl-12"><EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} /></div>}
+                            {Object.entries(vlGrouped).map(([groupValue, groupItems], groupIdx) => (
+                              <motion.div key={groupValue} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8">
+                                <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
+                                  <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
+                                    <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${groupIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
+                                  </div>
+                                </div>
+                                <div className="flex-1 mt-3 md:mt-4">
+                                  <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">{groupValue}</h3>
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6">
+                                    {groupItems.map((gItem: any) => renderVideoCard(gItem))}
+                                  </div>
+                                </div>
+                              </motion.div>
+                            ))}
+                            {filteredData.length > 0 && !searchQuery && (
+                              <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]">
+                                <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
+                                <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Video Entry</span>
+                              </motion.div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    }
+                    return (
+                      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 py-4 sm:py-6">
+                        {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+                        {vlSortedData.map((item: any) => renderVideoCard(item))}
                         {filteredData.length > 0 && !searchQuery && (
-                          <motion.div
-                            onClick={openAddModal}
-                            className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]"
-                          >
+                          <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]">
                             <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
                             <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Video Entry</span>
                           </motion.div>
                         )}
                       </div>
-                    </div>
+                    );
+                  })()
                   ) : (
                     /* --- 2. STANDARD GRID VIEW --- */
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
-                  {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-                  {sortedVisualData.map((item: any) => (
+                  (() => {
+                    const renderGenericCard = (item: any) => (
                     <motion.div
                       key={item.id || item._id}
                       onClick={() => setViewingRecord(item)}
@@ -5927,17 +5823,50 @@ if (!health?.mongodb) {
                         )}
                       </div>
                     </motion.div>
-                  ))}
-                  {filteredData.length > 0 && !searchQuery && <motion.div
-                    onClick={openAddModal}
-                    whileHover={{ y: -4 }}
-                    className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/40 transition-all bg-white min-h-[160px]"
-                  >
-                    <Plus className="h-6 w-6 mb-3" />
-                    <span className="text-[10px] font-black uppercase tracking-[0.2em]">New {activeTable} Entry</span>
-                  </motion.div>}
-                  </div>
-                  )
+                  );
+
+                  if (groupByField) {
+                    const grouped: Record<string, any[]> = {};
+                    sortedVisualData.forEach((item: any) => {
+                      const raw = String(item[groupByField] || '');
+                      const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
+                      (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
+                    });
+                    return (
+                      <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
+                        <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
+                        <div className="space-y-8 md:space-y-12">
+                          {sortedVisualData.length === 0 && <div className="pl-12"><EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} /></div>}
+                          {Object.entries(grouped).map(([groupValue, groupItems], groupIdx) => (
+                            <motion.div key={groupValue} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8">
+                              <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
+                                <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
+                                  <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${groupIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
+                                </div>
+                              </div>
+                              <div className="flex-1 mt-3 md:mt-4">
+                                <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">{groupValue}</h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
+                                  {groupItems.map((item: any) => renderGenericCard(item))}
+                                </div>
+                              </div>
+                            </motion.div>
+                          ))}
+                          {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} whileHover={{ y: -4 }} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/40 transition-all bg-white min-h-[120px]"><Plus className="h-6 w-6 mb-3" /><span className="text-[10px] font-black uppercase tracking-[0.2em]">New {activeTable} Entry</span></motion.div>}
+                        </div>
+                      </div>
+                    );
+                  }
+
+                  return (
+                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
+                      {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
+                      {sortedVisualData.map((item: any) => renderGenericCard(item))}
+                      {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} whileHover={{ y: -4 }} className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/40 transition-all bg-white min-h-[160px]"><Plus className="h-6 w-6 mb-3" /><span className="text-[10px] font-black uppercase tracking-[0.2em]">New {activeTable} Entry</span></motion.div>}
+                    </div>
+                  );
+                  })()
+                )
                 ) : (
                   /* --- 3. DATA GRID VIEW (Table) --- */
                   /* --- 3. WHITE EXCEL / AIRTABLE STYLE GRID VIEW --- */
