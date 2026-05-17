@@ -75,6 +75,7 @@ import {
   GripVertical,
   Share2,
   Volume2,
+  Film,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -254,6 +255,7 @@ const CellDropdown = React.memo(function CellDropdown({
   const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
+  const [localAddedOptions, setLocalAddedOptions] = useState<string[]>([]);
 
   const openDropdown = () => {
     if (ref.current) {
@@ -299,7 +301,15 @@ const CellDropdown = React.memo(function CellDropdown({
 
   const pick = (val: string) => {
     const trimmedVal = val.trim();
+    if (!isMulti && trimmedVal === '') {
+      onCommit('');
+      setOpen(false);
+      setSearch('');
+      return;
+    }
     if (!trimmedVal) return;
+
+    setLocalAddedOptions(prev => prev.includes(trimmedVal) ? prev : [...prev, trimmedVal]);
 
     if (isMulti) {
       const isSelected = selectedValues.includes(trimmedVal);
@@ -309,6 +319,7 @@ const CellDropdown = React.memo(function CellDropdown({
       
       // Update parent draft but don't close
       onCommit(nextArray.join(', '));
+      setSearch('');
     } else {
       onCommit(trimmedVal);
       setOpen(false);
@@ -316,7 +327,7 @@ const CellDropdown = React.memo(function CellDropdown({
     }
   };
 
-  const safeOptions = options.filter(o => o != null);
+  const safeOptions = Array.from(new Set([...options.filter(o => o != null), ...selectedValues, ...localAddedOptions]));
   const filtered = safeOptions.filter(o => o.toLowerCase().includes(search.toLowerCase()));
   const canCreate = search.trim() !== '' && !safeOptions.some(o => o.toLowerCase() === search.toLowerCase().trim());
 
@@ -370,13 +381,28 @@ const CellDropdown = React.memo(function CellDropdown({
               value={search}
               onChange={e => setSearch(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter' && canCreate) pick(search);
-                if (e.key === 'Escape') setOpen(false);
+                if (e.key === 'Enter') {
+                  e.stopPropagation();
+                  if (canCreate) pick(search);
+                }
+                if (e.key === 'Escape') {
+                  e.stopPropagation();
+                  setOpen(false);
+                }
               }}
             />
           </div>
 
           <div className="max-h-60 overflow-y-auto py-1 thin-scrollbar">
+            {!isMulti && selectedValues.length > 0 && !search && (
+              <div 
+                className="px-3 py-2 text-[12px] cursor-pointer flex items-center gap-2 text-slate-500 hover:bg-red-50 hover:text-red-600 transition-colors border-b border-slate-100 mb-1" 
+                onMouseDown={e => { e.preventDefault(); pick(''); }}
+              >
+                <X className="h-3.5 w-3.5" />
+                <span className="italic font-medium">Clear selection</span>
+              </div>
+            )}
             {filtered.map(opt => {
               const isSelected = selectedValues.includes(opt);
               return (
@@ -651,7 +677,7 @@ function colLabel(col: string): string {
 
 /** Airtable-style expanded record modal — desktop two-panel + mobile wizard */
 const RecordExpandModal = React.memo(function RecordExpandModal({
-  item, tableName, columns, sessions, events, columnMeta, columnTypes, allData, onAddLookup, onClose, onSave
+  item, tableName, columns, sessions, events, columnMeta, columnTypes, allData, onAddLookup, onClose, onSave, currentUser
 }: {
   item: any; tableName: string; columns: string[]; sessions: any[];
   events: any[];
@@ -660,6 +686,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   allData: Record<string, any[]>;
   onAddLookup: (linkedTable: string) => void;
   onClose: () => void; onSave: (draft: any) => void;
+  currentUser?: any;
 }) {
   const normalize = (raw: any) => {
     const d = { ...raw };
@@ -988,7 +1015,9 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     else if (isSe && col === 'Parent Event')
       opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
     else if ((isVSetup || isASetup) && col === 'Status')
-      opts = ['Ready', 'Pending', 'In Progress', 'Done'];
+      opts = ['To Do', 'In Progress', 'Done'];
+    else if ((isVSetup || isASetup) && col === 'Assignee')
+      opts = [...new Set([currentUser?.name, ...(allData['VideoSetup'] || []).map((item: any) => item["Assignee"]), ...(allData['AudioSetup'] || []).map((item: any) => item["Assignee"])].filter(Boolean).map(String))].sort() as string[];
     else if (isML && col === 'Theme')
       opts = [...new Set(sessions.flatMap((s: any) => (s.Theme || '').split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
     else if (isGuide && col === 'City')
@@ -1003,7 +1032,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
 const hasDropdown = opts.length > 0
   || (isEv && (col === 'Occasion' || col === 'City' || col === 'Year'))
   || (isSe && (col === 'City' || col === 'Occasion' || col === 'Time Of Day' || col === 'SessionType' || col === 'Parent Event'))
-  || ((isVSetup || isASetup) && col === 'Status')
+  || ((isVSetup || isASetup) && (col === 'Status' || col === 'Assignee'))
   || (isGuide && (col === 'City' || col === 'Category' || col === 'Event'));
 if (hasDropdown) {
   return (
@@ -1297,14 +1326,14 @@ if (sessionFieldNames.includes(col) && typeof val === 'string') {
           </Card>
 
           {/* Media Section */}
-          {item["Images"] && (
+          {(item["Images"] || item["Attachments"] || item["Attachment"]) && (
              <Card className="bg-slate-900 border-none rounded-[32px] overflow-hidden shadow-xl">
                 <CardHeader className="border-b border-white/5">
                   <CardTitle className="text-xs font-black text-white uppercase tracking-widest">Media Attachments</CardTitle>
                 </CardHeader>
                 <CardContent className="p-6">
                    <div className="max-w-md mx-auto">
-                    <CardImageGallery imageString={item["Images"]} />
+                <CardImageGallery imageString={item["Images"] || item["Attachments"] || item["Attachment"]} />
                    </div>
                 </CardContent>
              </Card>
@@ -1533,7 +1562,7 @@ const handleImageUpdate = async (updatedString: string) => {
   
   const updatedItem = { 
     ...imageManager.item, 
-    ["Images"]: updatedString 
+    [imageManager.column]: updatedString 
   };
   
   let collection = '';
@@ -1544,6 +1573,12 @@ const handleImageUpdate = async (updatedString: string) => {
     case 'Events': collection = 'events'; break;
     case 'MusicLog': collection = 'musiclog'; break;
     case 'Tracks': collection = 'media'; break;
+    case 'VideoSetup': collection = 'videosetup'; break;
+    case 'AudioSetup': collection = 'audiosetup'; break;
+    case 'DyatraChecklist': collection = 'checklist'; break;
+    case 'Guidance & Learning': collection = 'guidance'; break;
+    case 'VideoLog': collection = 'videolog'; break;
+    case 'DataSharing': collection = 'locations'; break;
     default: collection = activeTable.toLowerCase();
   }
 
@@ -1968,7 +2003,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
           <div>
             <div className="flex items-center gap-1.5 text-brand-primary mb-0.5">
               <Monitor className="h-3.5 w-3.5" />
-              <span className="text-[10px] font-black uppercase tracking-widest">LED Images</span>
+              <span className="text-[10px] font-black uppercase tracking-widest">{manager?.column || 'Media'}</span>
             </div>
             <DialogTitle className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-none">Image Manager</DialogTitle>
             <p className="text-[11px] text-slate-400 mt-1">{images.length} image{images.length !== 1 ? 's' : ''}</p>
@@ -2184,7 +2219,7 @@ const getColumnType = (col: string): FieldType => {
     'SessionType', 'Category', 'Time Of Day', 'TimeOfDay', 
     'Typical Timeline', 'Period', 'PlayedAt', 'GuidanceFrom', 'City','People Involved',
     'Indoor/Outdoor LED?', 'CntrPitch', 'SidePitch', 'OtherLed1', 'OtherLed2', 'Vendor',
-    'Dept', 'Status',
+    'Dept', 'Status', 'Assignee',
     'Source', 'Plays' // <--- Added Tracks fields
   ].includes(col)) return 'badge';
 if (['Status', 'status'].includes(col)) return 'status';
@@ -2618,9 +2653,9 @@ const renderRow = (item: any) => {
           );
         }
 
-        // LED: Images — thumbnail gallery with expand button
-        if (activeTable === 'LED' && col === 'Images') {
-          const imageString = item["Images"] || "";
+        // Images/Attachments — thumbnail gallery with expand button
+        if (col === 'Images' || col === 'Attachments' || col === 'Attachment') {
+          const imageString = item[col] || "";
           const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
           const matches: string[] = [];
           let m;
@@ -2635,7 +2670,7 @@ const renderRow = (item: any) => {
                 {matches.length > 3 && <span className="text-[10px] font-black text-slate-400 shrink-0">+{matches.length - 3}</span>}
                 
                 <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setImageManager({ item: { ...item }, column: "Images", isOpen: true }); }}
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setImageManager({ item: { ...item }, column: col, isOpen: true }); }}
                   className={`h-8 shrink-0 rounded border-2 border-dashed border-slate-300 flex items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary transition-colors bg-slate-50 hover:bg-white ${
                     matches.length > 0 ? 'w-8 opacity-0 group-hover/cell:opacity-100 absolute right-2 z-20 shadow-md' : 'px-3'
                   }`}
@@ -2693,16 +2728,24 @@ const renderRow = (item: any) => {
 
 const handleAddBlankRow = async (initialData: Record<string, any> = {}) => {
   let collection = '';
+  const dataToSave = { ...initialData };
   // Determine collection based on activeTable
   switch (activeTable) {
     case 'Events': collection = 'events'; break;
     case 'Session': collection = 'sessions'; break;
     case 'MusicLog': collection = 'musiclog'; break;
-    case 'Tracks': collection = 'media'; break;
+    case 'Tracks': 
+      collection = 'media'; 
+      dataToSave.type = 'track';
+      dataToSave.Type = 'track';
+      break;
     case 'VideoLog': collection = 'videolog'; break;
     case 'LED': collection = 'led_details'; break;
     case 'DyatraChecklist': collection = 'checklist'; break;
     case 'DataSharing': collection = 'locations'; break;
+    case 'Guidance & Learning': collection = 'guidance'; break;
+    case 'VideoSetup': collection = 'videosetup'; break;
+    case 'AudioSetup': collection = 'audiosetup'; break;
     default: return;
   }
 
@@ -2710,7 +2753,7 @@ const handleAddBlankRow = async (initialData: Record<string, any> = {}) => {
     const response = await window.fetch(`/api/${collection}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(initialData)
+      body: JSON.stringify(dataToSave)
     });
 
     if (response.ok) {
@@ -3120,8 +3163,8 @@ const getProcessedData = (): any[] => {
   let finalResult: any[] = [];
 
   // 2. Standard Grouping
-  if (groupByField || (activeTable === 'Events' && !groupByField)) {
-    const activeGroupField = groupByField || 'Year';
+  if (groupByField) {
+    const activeGroupField = groupByField;
     const groups: Record<string, any[]> = {};
     data.forEach(item => {
       const key = String(item[activeGroupField] || 'Unspecified');
@@ -3592,7 +3635,10 @@ const updateDraftOnly = (col: string, val: string) => {
                 opts = [...new Set(media.filter((m: any) => m.type === 'track' || m.Type === 'track' || m["Title"]).map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
               }
               else if ((activeTable === 'VideoSetup' || activeTable === 'AudioSetup') && col === 'Status') {
-                opts = [...new Set([...videoSetup.map((item: any) => item['Status']), ...audioSetup.map((item: any) => item['Status'])].filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
+                opts = ['To Do', 'In Progress', 'Done'];
+              }
+              else if ((activeTable === 'VideoSetup' || activeTable === 'AudioSetup') && col === 'Assignee') {
+                opts = [...new Set(locations.map((item: any) => item["Sevak"]).filter(Boolean).map(String))].sort();
               }
               else if (activeTable === 'DataSharing' && col === 'Dept') {
                 opts = [...new Set(locations.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
@@ -3681,17 +3727,25 @@ const startInlineAdd = () => {
 
 const handleInlineSave = async () => {
   let collection = '';
+  const data = { ...inlineRecord };
   // Mapping table to MongoDB collection
   switch (activeTable) {
     case 'Events': collection = 'events'; break;
     case 'Session': collection = 'sessions'; break;
     case 'MusicLog': collection = 'musiclog'; break;
     case 'VideoLog': collection = 'videolog'; break;
-    case 'Tracks': collection = 'media'; break;
+    case 'Tracks': 
+      collection = 'media'; 
+      data.type = 'track'; 
+      data.Type = 'track'; 
+      break;
     case 'DyatraChecklist': collection = 'checklist'; break;
     case 'Guidance & Learning': collection = 'guidance'; break;
     case 'LED': collection = 'led_details'; break;
     case 'DataSharing': collection = 'locations'; break;
+    case 'VideoSetup': collection = 'videosetup'; break;
+    case 'AudioSetup': collection = 'audiosetup'; break;
+    default: return;
   }
 
   // Optional: Add logic here to rename keys if database fields differ from column names
@@ -3701,7 +3755,7 @@ const handleInlineSave = async () => {
     const response = await window.fetch(`/api/${collection}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(inlineRecord)
+      body: JSON.stringify(data)
     });
 
     if (response.ok) {
@@ -3978,7 +4032,7 @@ if (!health?.mongodb) {
                 groupLabel: 'Video',
                 items: [
                   { icon: Video, label: 'Video Log',   table: 'VideoLog' },
-                  { icon: Video, label: 'Video Setup', table: 'VideoSetup' },
+                  { icon: Film, label: 'Video Setup', table: 'VideoSetup' },
                 ],
               },
             ];
@@ -4547,11 +4601,7 @@ if (!health?.mongodb) {
             { label: 'Video Plays', value: videoLogs.length, sub: 'log entries', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
           ].map(s => (
             <div key={s.label} className={`${s.bg} border ${s.border} rounded-2xl p-4`}>
-              {isLoading ? (
-                <div className="h-8 w-16 bg-slate-200 animate-pulse rounded mb-1" />
-              ) : (
-                <div className={`text-3xl font-black ${s.color} leading-none`}>{s.value}</div>
-              )}
+              <div className={`text-3xl font-black ${s.color} leading-none`}>{s.value}</div>
               <div className="text-[11px] font-black text-slate-700 mt-1 uppercase tracking-wide">{s.label}</div>
 <div className="text-[11px] text-slate-500 mt-0.5">{s.sub}</div> 
             </div>
@@ -4785,7 +4835,7 @@ if (!health?.mongodb) {
       ))}
 
     {/* ADD EVENT CARD */}
-    {!searchQuery && <motion.div
+    {filteredData.length > 0 && !searchQuery && <motion.div
       onClick={openAddModal}
       className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"
     >
@@ -4828,7 +4878,7 @@ if (!health?.mongodb) {
     ))}
 
     {/* ADD TRACK CARD */}
-    {!searchQuery && <motion.div
+    {filteredData.length > 0 && !searchQuery && <motion.div
       onClick={openAddModal}
       className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[150px] sm:min-h-[220px]"
     >
@@ -4875,7 +4925,7 @@ if (!health?.mongodb) {
     ))}
 
     {/* ADD RECORD CARD */}
-    {!searchQuery && <motion.div
+    {filteredData.length > 0 && !searchQuery && <motion.div
       onClick={openAddModal}
       className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[160px] sm:min-h-[240px]"
     >
@@ -4963,7 +5013,7 @@ if (!health?.mongodb) {
     })}
 
     {/* ADD FEEDBACK CARD */}
-    {!searchQuery && <motion.div
+    {filteredData.length > 0 && !searchQuery && <motion.div
       onClick={openAddModal}
       className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[240px] sm:min-h-[380px]"
     >
@@ -4986,7 +5036,31 @@ if (!health?.mongodb) {
                         )}
                         {(() => {
                           const grouped: Record<string, any[]> = {};
-                          [...filteredData]
+                          
+                          const expandedData = filteredData.flatMap((item: any) => {
+                            const parentsList = String(item["Parent Event"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const datesList = String(item["Date"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const timesList = String(item["Time Of Day"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const citiesList = String(item["City"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const venuesList = String(item["Venue"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            
+                            const maxLen = Math.max(parentsList.length, datesList.length, timesList.length, citiesList.length, venuesList.length, 1);
+                            const result = [];
+                            for (let i = 0; i < maxLen; i++) {
+                              result.push({
+                                ...item,
+                                _originalItem: item,
+                                "Parent Event": parentsList[i] || parentsList[0] || "Unlinked Sessions",
+                                "Date": datesList[i] || datesList[0] || "",
+                                "Time Of Day": timesList[i] || timesList[0] || "",
+                                "City": citiesList[i] || citiesList[0] || "",
+                                "Venue": venuesList[i] || venuesList[0] || "",
+                              });
+                            }
+                            return result;
+                          });
+
+                          [...expandedData]
                             .sort((a, b) => {
                               const ta = a["Date"] ? new Date(a["Date"]).getTime() : Infinity;
                               const tb = b["Date"] ? new Date(b["Date"]).getTime() : Infinity;
@@ -4995,16 +5069,9 @@ if (!health?.mongodb) {
                               return ta - tb;
                             })
                             .forEach((item: any) => {
-                              const parentRaw = item["Parent Event"];
-                              const parents = parentRaw 
-                                ? String(parentRaw).split(',').map((p: string) => p.trim()).filter(Boolean) 
-                                : ["Unlinked Sessions"];
-                              if (parents.length === 0) parents.push("Unlinked Sessions");
-
-                              parents.forEach(parent => {
-                                if (!grouped[parent]) grouped[parent] = [];
-                                grouped[parent].push(item);
-                              });
+                              const parent = item["Parent Event"];
+                              if (!grouped[parent]) grouped[parent] = [];
+                              grouped[parent].push(item);
                             });
 
                           return Object.entries(grouped).map(([eventName, items], eventIdx) => (
@@ -5020,7 +5087,8 @@ if (!health?.mongodb) {
                                 </h3>
                                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
                                   {items.map((item: any) => {
-                                    const sessionId = item.id || item._id;
+                                    const realItem = item._originalItem || item;
+                                    const sessionId = realItem.id || realItem._id;
                                     
                                     const sessionImagesFromDb = item["Images"] || "";
                                     const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
@@ -5030,7 +5098,7 @@ if (!health?.mongodb) {
                                     while ((m = re.exec(sessionImagesFromDb)) !== null) images.push(m[1]);
 
                                     return (
-                                      <div key={sessionId} onClick={() => setViewingRecord(item)} className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col sm:min-h-[280px] overflow-hidden group/card">
+                                      <div key={`${sessionId}-${item["Parent Event"]}`} onClick={() => setViewingRecord(realItem)} className="bg-white border border-slate-200 rounded-[16px] sm:rounded-[20px] p-3 sm:p-5 shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col sm:min-h-[280px] overflow-hidden group/card">
                                         <div className="text-[13px] sm:text-base font-black text-slate-900 mb-2 sm:mb-5 leading-tight flex justify-between items-start gap-2">
                                           <span>{item["Session Name"] || "Untitled Session"}</span>
                                           {item["SessionType"] && (
@@ -5089,7 +5157,7 @@ if (!health?.mongodb) {
                                       let matchResult;
                                       while ((matchResult = re.exec(item["Images"] || "")) !== null) entries.push(matchResult[0]);
                                       entries.splice(imgIdx, 1);
-                                      const updated = { ...item, ["Images"]: entries.join(' ') };
+                                          const updated = { ...realItem, ["Images"]: entries.join(' ') };
                                       setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r));
                                       window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) });
                                     }}
@@ -5136,7 +5204,31 @@ if (!health?.mongodb) {
                         {(() => {
                           const grouped: Record<string, any[]> = {};
                           
-                          [...filteredData]
+                          const expandedData = filteredData.flatMap((item: any) => {
+                            const sessionsList = String(item["Session"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const parentsList = String(item["Parent Event (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const datesList = String(item["Date (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const timesList = String(item["TimeOfDay (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const tracksList = String(item["Track"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            
+                            const maxLen = Math.max(sessionsList.length, parentsList.length, datesList.length, timesList.length, tracksList.length, 1);
+                            const result = [];
+                            
+                            for (let i = 0; i < maxLen; i++) {
+                              result.push({
+                                ...item,
+                                _originalItem: item,
+                                "Session": sessionsList[i] || sessionsList[0] || "",
+                                "Parent Event (from Session)": parentsList[i] || parentsList[0] || "Unlinked Logs",
+                                "Date (from Session)": datesList[i] || datesList[0] || "",
+                                "TimeOfDay (from Session)": timesList[i] || timesList[0] || "",
+                                "Track": tracksList[i] || tracksList[0] || "Unknown Track",
+                              });
+                            }
+                            return result;
+                          });
+
+                          [...expandedData]
                             .sort((a, b) => {
                               // 1. Date
                               const ta = a["Date (from Session)"] ? new Date(a["Date (from Session)"]).getTime() : Infinity;
@@ -5169,16 +5261,9 @@ if (!health?.mongodb) {
                               return orderA - orderB;
                             })
                             .forEach((item: any) => {
-                              const parentRaw = item["Parent Event (from Session)"];
-                              const parents = parentRaw 
-                                ? String(parentRaw).split(',').map((p: string) => p.trim()).filter(Boolean) 
-                                : ["Unlinked Logs"];
-                              if (parents.length === 0) parents.push("Unlinked Logs");
-
-                              parents.forEach(parent => {
-                                if (!grouped[parent]) grouped[parent] = [];
-                                grouped[parent].push(item);
-                              });
+                              const parent = item["Parent Event (from Session)"];
+                              if (!grouped[parent]) grouped[parent] = [];
+                              grouped[parent].push(item);
                             });
 
                           return Object.entries(grouped).map(([eventName, items], eventIdx) => (
@@ -5196,8 +5281,8 @@ if (!health?.mongodb) {
                                   {items.map((item: any) => {
                                     return (
                                     <motion.div
-                                      key={item.id || item._id}
-                                      onClick={() => setViewingRecord(item)}
+                                      key={`${item.id || item._id}-${item["Session"]}-${item["Track"]}`}
+                                      onClick={() => setViewingRecord(item._originalItem || item)}
                                       whileHover={{ y: -4 }}
                                       className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
                                     >
@@ -5289,7 +5374,7 @@ if (!health?.mongodb) {
                             </motion.div>
                           ));
                         })()}
-                        {!searchQuery && (
+                        {filteredData.length > 0 && !searchQuery && (
                           <motion.div
                             onClick={openAddModal}
                             className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]"
@@ -5301,101 +5386,182 @@ if (!health?.mongodb) {
                       </div>
                     </div>
                   ) : activeTable === 'VideoLog' ? (
-  /* --- RESPONSIVE VIDEOLOG GALLERY (Airtable Style) --- */
-  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
-    {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
-    {filteredData.map((item: any) => (
-        <motion.div
-          key={item.id || item._id}
-          onClick={() => setViewingRecord(item)}
-          whileHover={{ y: -4 }}
-          className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
-        >
-          {/* HEADER ACCENT */}
-          <div className="bg-gradient-to-br from-brand-primary/10 to-slate-50 px-4 py-4 border-b border-slate-100 flex items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="h-9 w-9 shrink-0 bg-brand-primary rounded-xl flex items-center justify-center shadow-md shadow-brand-primary/20">
-                <Video className="h-4 w-4 text-white" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Video ID</div>
-                <div className="text-xl font-black text-slate-900 leading-none">{item["VideoPlayId"] || "—"}</div>
-              </div>
-            </div>
-            <div className="text-right shrink-0">
-              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest">Date</div>
-              <div className="text-[11px] font-bold text-slate-600 font-mono">{item["Date (from Session)"] || "—"}</div>
-            </div>
-          </div>
+                    /* --- RESPONSIVE VIDEO LOG TIMELINE --- */
+                    <div className="max-w-6xl mx-auto md:ml-4 py-4 md:py-8 relative">
+                      <div className="absolute left-[15px] md:left-[19px] top-0 bottom-0 w-0.5 bg-slate-800/40" />
+                      <div className="space-y-8 md:space-y-12">
+                        {filteredData.length === 0 && (
+                          <div className="pl-12">
+                            <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />
+                          </div>
+                        )}
+                        {(() => {
+                          const grouped: Record<string, any[]> = {};
+                          
+                          const expandedData = filteredData.flatMap((item: any) => {
+                            const sessionsList = String(item["Session"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const parentsList = String(item["Parent Event (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const datesList = String(item["Date (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const timesList = String(item["TimeOfDay (from Session)"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            const videosList = String(item["VideoTitle"] || "").split(',').map(s => s.trim()).filter(Boolean);
+                            
+                            const maxLen = Math.max(sessionsList.length, parentsList.length, datesList.length, timesList.length, videosList.length, 1);
+                            const result = [];
+                            
+                            for (let i = 0; i < maxLen; i++) {
+                              result.push({
+                                ...item,
+                                _originalItem: item,
+                                "Session": sessionsList[i] || sessionsList[0] || "",
+                                "Parent Event (from Session)": parentsList[i] || parentsList[0] || "Unlinked Logs",
+                                "Date (from Session)": datesList[i] || datesList[0] || "",
+                                "TimeOfDay (from Session)": timesList[i] || timesList[0] || "",
+                                "VideoTitle": videosList[i] || videosList[0] || "Untitled Video",
+                              });
+                            }
+                            return result;
+                          });
 
-          {/* BODY */}
-          <div className="p-4 space-y-3 flex-1">
-            {/* VIDEO TITLE — most prominent */}
-            <div>
-              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Video Title</div>
-              <div className="text-[13px] font-black text-brand-primary leading-snug">{item["VideoTitle"] || "Untitled Video"}</div>
-            </div>
+                          [...expandedData]
+                            .sort((a, b) => {
+                              // 1. Date
+                              const ta = a["Date (from Session)"] ? new Date(a["Date (from Session)"]).getTime() : Infinity;
+                              const tb = b["Date (from Session)"] ? new Date(b["Date (from Session)"]).getTime() : Infinity;
+                              if (ta !== tb) return ta - tb;
+                              
+                              // 2. Time of Day
+                              const timeA = a["TimeOfDay (from Session)"] ? String(a["TimeOfDay (from Session)"]).trim() : "";
+                              const timeB = b["TimeOfDay (from Session)"] ? String(b["TimeOfDay (from Session)"]).trim() : "";
+                              const getWeight = (t: string) => {
+                                const lower = t.toLowerCase();
+                                if (lower.includes('morn')) return 1;
+                                if (lower.includes('aft')) return 2;
+                                if (lower.includes('eve')) return 3;
+                                if (lower.includes('night')) return 4;
+                                return 99;
+                              };
+                              const wA = getWeight(timeA);
+                              const wB = getWeight(timeB);
+                              if (wA !== wB) return wA - wB;
 
-            {/* SESSION */}
-            <div className="overflow-hidden">
-              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Session</div>
-              {item["Session"]
-                ? <div className="flex flex-wrap gap-1.5 overflow-hidden">
-                    {String(item["Session"]).split(',').map((tag: string, idx: number) => {
-                      const sName = tag.trim();
-                      const linked = sessions.find((s: any) => s["Session Name"] === sName);
-                      return (
-                        <span
-                          key={idx}
-                          className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-sm border ${
-                            linked ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30 hover:bg-brand-primary/20 cursor-pointer' : 'bg-slate-100 text-slate-700 border-slate-300 cursor-default'
-                          }`}
-                          onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}
-                          style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word'}}
-                        >
-                          {sName}
-                          {linked && <ArrowUpRight className="h-3 w-3 shrink-0 opacity-60" />}
-                        </span>
-                      );
-                    })}
-                  </div>
-                : <span className="text-slate-300 italic text-[10px]">—</span>}
-            </div>
+                              // 3. Session name
+                              const sA = a["Session"] || "";
+                              const sB = b["Session"] || "";
+                              if (sA !== sB) return sA.localeCompare(sB);
+                              
+                              return 0;
+                            })
+                            .forEach((item: any) => {
+                              const parent = item["Parent Event (from Session)"];
+                              if (!grouped[parent]) grouped[parent] = [];
+                              grouped[parent].push(item);
+                            });
 
-            {/* PARENT EVENT */}
-            {item["Parent Event (from Session)"] && (
-              <div className="overflow-hidden">
-                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">Event</div>
-                <div className="flex flex-wrap gap-1.5 overflow-hidden">
-                  {String(item["Parent Event (from Session)"]).split(',').map((eName: string, idx: number) => (
-                    <span key={idx} className={getTagStyle(eName.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{eName.trim()}</span>
-                  ))}
-                </div>
-              </div>
-            )}
+                          return Object.entries(grouped).map(([eventName, items], eventIdx) => (
+                            <motion.div key={eventName} initial={{ opacity: 0, x: -10 }} animate={{ opacity: 1, x: 0 }} className="relative flex items-start gap-4 md:gap-8 group">
+                              <div className="relative z-10 flex items-center justify-center mt-5 md:mt-6">
+                                <div className="h-8 w-8 md:h-10 md:w-10 rounded-full border border-slate-700 bg-brand-bg flex items-center justify-center shrink-0">
+                                  <div className={`h-2 w-2 md:h-2.5 md:w-2.5 rounded-full ${eventIdx === 0 ? 'bg-brand-primary animate-pulse' : 'bg-brand-primary/40'}`} />
+                                </div>
+                              </div>
+                              <div className="flex-1 mt-3 md:mt-4 min-w-0">
+                                <h3 className="text-xl md:text-3xl font-black text-brand-primary uppercase tracking-tight mb-4 md:mb-6">
+                                  {eventName}
+                                </h3>
+                                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6">
+                                  {items.map((item: any) => {
+                                    return (
+                                    <motion.div
+                                      key={`${item.id || item._id}-${item["Session"]}-${item["VideoTitle"]}`}
+                                      onClick={() => setViewingRecord(item._originalItem || item)}
+                                      whileHover={{ y: -4 }}
+                                      className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
+                                    >
+                                      {/* HEADER ACCENT */}
+                                      <div className="px-4 py-4 border-b border-slate-100 bg-slate-50 flex items-start justify-between gap-3 transition-colors">
+                                        <div className="flex items-start gap-3 min-w-0">
+                                          <div className="h-9 w-9 shrink-0 bg-white rounded-xl flex items-center justify-center shadow-sm border border-slate-200">
+                                            <Video className="h-4 w-4 text-brand-primary" />
+                                          </div>
+                                          <div className="min-w-0 pt-0.5">
+                                            <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Video Title</div>
+                                            <div className="text-lg sm:text-xl font-black text-slate-900 leading-tight break-words">{item["VideoTitle"] || "Untitled Video"}</div>
+                                          </div>
+                                        </div>
+                                        <div className="text-right shrink-0">
+                                          <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Date</div>
+                                          <div className="text-[11px] font-bold text-slate-700 font-mono">{item["Date (from Session)"] || "—"}</div>
+                                        </div>
+                                      </div>
 
-            {/* CITY */}
-            <div className="overflow-hidden">
-              <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-1">City</div>
-              {item["City (from Session)"]
-                ? <div className="flex flex-wrap gap-1 overflow-hidden">
-                    {String(item["City (from Session)"]).split(',').map((cName: string, idx: number) => (
-                      <span key={idx} className={getTagStyle(cName.trim())} style={{maxWidth:'100%',whiteSpace:'normal',wordBreak:'break-word',display:'inline-block'}}>{cName.trim()}</span>
-                    ))}
-                  </div>
-                : <span className="text-slate-300 italic text-[10px]">—</span>}
-            </div>
-          </div>
-        </motion.div>
-    ))}
-    {!searchQuery && <motion.div
-      onClick={openAddModal}
-      className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"
-    >
-      <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
-      <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Video Entry</span>
-    </motion.div>}
-                  </div>
+                                      {/* BODY */}
+                                      <div className="p-4 space-y-3 flex-1">
+                                        {/* HIERARCHICAL CONTEXT */}
+                                        <div className="bg-slate-50 border border-slate-100 rounded-xl p-3">
+                                          <div className="relative">
+                                            {/* Continuous vertical line */}
+                                            <div className="absolute top-2 bottom-3 left-[9px] w-[2px] bg-slate-200" />
+
+                                            {/* Session */}
+                                            <div className="relative flex items-start gap-3 mb-3">
+                                              <div className="h-5 w-5 rounded-md bg-violet-100 border border-violet-200 flex items-center justify-center shrink-0 z-10">
+                                                <MessageSquare className="h-3 w-3 text-violet-600" />
+                                              </div>
+                                              <div className="min-w-0 flex-1 pt-0.5">
+                                                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Session</div>
+                                                {item["Session"] ? (
+                                                  <span 
+                                                    className="text-[11px] font-bold text-brand-primary hover:underline cursor-pointer truncate block"
+                                                    onClick={(e) => {
+                                                      e.stopPropagation();
+                                                      const linked = sessions.find((s: any) => s["Session Name"] === item["Session"]);
+                                                      if (linked) setLinkedSession(linked);
+                                                    }}
+                                                  >
+                                                    {item["Session"]}
+                                                  </span>
+                                                ) : (
+                                                  <span className="text-[11px] font-bold text-slate-500 truncate block">—</span>
+                                                )}
+                                              </div>
+                                            </div>
+
+                                            {/* Time Of Day */}
+                                            <div className="relative flex items-start gap-3">
+                                              <div className="h-5 w-5 rounded-md bg-orange-100 border border-orange-200 flex items-center justify-center shrink-0 z-10">
+                                                <Clock className="h-3 w-3 text-orange-600" />
+                                              </div>
+                                              <div className="min-w-0 flex-1 pt-0.5">
+                                                <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest leading-none mb-1">Time Of Day</div>
+                                                <div className="text-[11px] font-bold text-slate-600 truncate">
+                                                  {item["TimeOfDay (from Session)"] || "—"}
+                                                </div>
+                                              </div>
+                                            </div>
+                                          </div>
+                                        </div>
+
+                                      
+                                      </div>
+                                    </motion.div>
+                                  );
+                                  })}
+                                </div>
+                              </div>
+                            </motion.div>
+                          ));
+                        })()}
+                        {filteredData.length > 0 && !searchQuery && (
+                          <motion.div
+                            onClick={openAddModal}
+                            className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]"
+                          >
+                            <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
+                            <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Video Entry</span>
+                          </motion.div>
+                        )}
+                      </div>
+                    </div>
                   ) : (
                     /* --- 2. STANDARD GRID VIEW --- */
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
@@ -5407,13 +5573,16 @@ if (!health?.mongodb) {
                       whileHover={{ y: -4 }}
                       className="bg-white border border-slate-200 rounded-[20px] shadow-sm hover:shadow-lg transition-all cursor-pointer flex flex-col overflow-hidden"
                     >
-                      {/* LED IMAGE — rendered first so image appears at top */}
-                      {activeTable === 'LED' && (
+                      {/* IMAGE/ATTACHMENT — rendered first so image appears at top */}
+                      {(() => {
+                        const colName = ['Images', 'Attachments', 'Attachment'].find(c => item[c] !== undefined && item[c] !== '') || (['LED', 'VideoSetup', 'AudioSetup'].includes(activeTable) ? (activeTable === 'LED' ? 'Images' : 'Attachments') : null);
+                        if (!colName) return null;
+                        return (
                         <div className="h-44 w-full overflow-hidden bg-slate-100 border-b border-slate-100">
                           {(() => {
-                            const match = item["Images"]?.match(/\((https?:\/\/[^)]+)\)/);
+                            const match = item[colName]?.match(/\((https?:\/\/[^)]+)\)/);
                             return match ? (
-                              <CardImageGallery imageString={item["Images"] || ""} />
+                              <CardImageGallery imageString={item[colName] || ""} />
                             ) : (
                               <div className="h-full flex flex-col items-center justify-center gap-2 opacity-30">
                                 <Monitor className="h-10 w-10 text-slate-400" />
@@ -5422,7 +5591,8 @@ if (!health?.mongodb) {
                             );
                           })()}
                         </div>
-                      )}
+                        );
+                      })()}
 
                       {/* ACCENT HEADER — title shown below image for LED */}
                       <div className="bg-gradient-to-br from-brand-primary/10 to-slate-50 px-4 py-4 border-b border-slate-100 flex items-center gap-3">
@@ -5430,7 +5600,7 @@ if (!health?.mongodb) {
                           {activeTable === 'LED' ? <Monitor className="h-4 w-4" /> :
                            activeTable === 'DyatraChecklist' ? <CheckSquare className="h-4 w-4" /> :
                            activeTable === 'Guidance & Learning' ? <FileText className="h-4 w-4" /> :
-                           activeTable === 'VideoSetup' ? <Video className="h-4 w-4" /> :
+                       activeTable === 'VideoSetup' ? <Film className="h-4 w-4" /> :
                            activeTable === 'AudioSetup' ? <Volume2 className="h-4 w-4" /> :
                            <LayoutGrid className="h-4 w-4" />}
                         </div>
@@ -5440,7 +5610,7 @@ if (!health?.mongodb) {
                             {activeTable === 'LED' ? (item["Parent Event (from 🕘 Session)"] || "Untitled LED") :
                              activeTable === 'Guidance & Learning' ? item["Event"] :
                              activeTable === 'DyatraChecklist' ? item["Task"] :
-                             (item.name || item.title || "Untitled Record")}
+                             (item.Name || item.name || item.Title || item.title || "Untitled Record")}
                           </h3>
                         </div>
                       </div>
@@ -5513,13 +5683,33 @@ if (!health?.mongodb) {
                               <span className={getTagStyle(item["ShareFacts?"] || 'No')}>{item["ShareFacts?"] || 'No'}</span>
                             </div>
                           </div>
+                        ) : (activeTable === 'VideoSetup' || activeTable === 'AudioSetup') ? (
+                          <div className="grid grid-cols-2 gap-3 pt-2">
+                            <div className="space-y-1">
+                              <p className="text-[8px] font-black text-slate-400 uppercase">Assignee</p>
+                              <p className="text-[11px] font-bold text-slate-700 truncate">{item["Assignee"] || item.assignee || "Unassigned"}</p>
+                            </div>
+                            <div className="space-y-1">
+                              <p className="text-[8px] font-black text-slate-400 uppercase">Status</p>
+                              {(() => {
+                                const st = item["Status"] || item.status;
+                                return st ? (
+                                  <Badge className={`text-[10px] px-2 py-0 border font-bold ${
+                                    st === 'Done' ? 'bg-green-100 text-green-700 border-green-200' : 
+                                    st === 'In Progress' ? 'bg-blue-100 text-blue-700 border-blue-200' : 
+                                    'bg-slate-100 text-slate-700 border-slate-200'
+                                  }`}>{st}</Badge>
+                                ) : <span className="text-slate-400 italic text-[11px]">—</span>;
+                              })()}
+                            </div>
+                          </div>
                         ) : (
                           <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{item.city || item.artist || item.category || item.DateFrom || "—"}</p>
                         )}
                       </div>
                     </motion.div>
                   ))}
-                  {!searchQuery && <motion.div
+                  {filteredData.length > 0 && !searchQuery && <motion.div
                     onClick={openAddModal}
                     whileHover={{ y: -4 }}
                     className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/40 transition-all bg-white min-h-[160px]"
@@ -5818,9 +6008,9 @@ if (!health?.mongodb) {
               clickedCol = getTableColumns()[tdIdx];
               // MusicLog star column — don't enter edit mode
               if (activeTable === 'MusicLog' && clickedCol === 'Relevance') return;
-              // LED Images column — don't enter inline edit mode (manager handles it)
-              if (activeTable === 'LED' && clickedCol === 'Images') {
-                 setImageManager({ item: { ...row.data }, column: "Images", isOpen: true });
+              // Images/Attachments column — don't enter inline edit mode (manager handles it)
+              if (clickedCol === 'Images' || clickedCol === 'Attachments' || clickedCol === 'Attachment') {
+                 setImageManager({ item: { ...row.data }, column: clickedCol, isOpen: true });
                  return;
               }
             }
@@ -5873,7 +6063,7 @@ if (!health?.mongodb) {
     </tr>
   )}
 
-  {!isInlineAdding && (
+  {filteredData.length > 0 && !isInlineAdding && (
     <tr
   className="hover:bg-slate-50 cursor-pointer group border-b border-slate-200"
   onClick={() => handleAddBlankRow()}
@@ -5898,11 +6088,11 @@ if (!health?.mongodb) {
                     <div className="flex items-center gap-4">
                       <span className="flex items-center gap-1.5"><Grid className="h-3 w-3" /> {filteredData.length} records</span>
                       <div className="w-px h-3 bg-slate-400" />
-                      <span>Sorted by Year (Default)</span>
+                      <span>{sortBy ? `Sorted by ${colLabel(sortBy.field)}` : 'Default Sort'}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="h-2 w-2 rounded-full bg-green-500 shadow-sm animate-pulse" />
-                      <span>Grouped View enabled</span>
+                      <div className={`h-2 w-2 rounded-full ${groupByField ? 'bg-green-500 shadow-sm animate-pulse' : 'bg-slate-300'}`} />
+                      <span>{groupByField ? 'Grouped View enabled' : 'Grouped View disabled'}</span>
                     </div>
                   </div>
                 </div>
@@ -6540,8 +6730,10 @@ if (!health?.mongodb) {
   </div>
 )}
 
-    {/* VIDEO SETUP */}
-    {activeTable === 'VideoSetup' && (
+    {/* VIDEO SETUP & AUDIO SETUP */}
+    {(activeTable === 'VideoSetup' || activeTable === 'AudioSetup') && (() => {
+      const assigneeOpts = [...new Set(locations.map((item: any) => item["Sevak"]).filter(Boolean).map(String))].sort();
+      return (
       <>
         <div className="space-y-2">
           <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Name</label>
@@ -6551,54 +6743,43 @@ if (!health?.mongodb) {
           <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Notes</label>
           <Input value={newRecord.notes || ''} onChange={(e) => setNewRecord({...newRecord, notes: e.target.value})} placeholder="Additional notes" className="bg-brand-bg" />
         </div>
-        <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Assignee</label>
-          <Input value={newRecord.assignee || ''} onChange={(e) => setNewRecord({...newRecord, assignee: e.target.value})} placeholder="Person assigned" className="bg-brand-bg" />
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Assignee</label>
+            <select
+              className="w-full h-9 bg-brand-bg border border-brand-border rounded-md px-3 text-sm text-brand-text focus:ring-2 focus:ring-brand-primary outline-none"
+              value={newRecord.assignee || ''}
+              onChange={(e) => setNewRecord({...newRecord, assignee: e.target.value})}
+            >
+              <option value="">Select Assignee...</option>
+              {assigneeOpts.map(o => <option key={o} value={o}>{o}</option>)}
+            </select>
+          </div>
+          <div className="space-y-2">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Status</label>
+            <select
+              className="w-full h-9 bg-brand-bg border border-brand-border rounded-md px-3 text-sm text-brand-text focus:ring-2 focus:ring-brand-primary outline-none"
+              value={newRecord.status || ''}
+              onChange={(e) => setNewRecord({...newRecord, status: e.target.value})}
+            >
+              <option value="">Select Status...</option>
+              <option value="To Do">To Do</option>
+              <option value="In Progress">In Progress</option>
+              <option value="Done">Done</option>
+            </select>
+          </div>
         </div>
         <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Status</label>
-          <Input value={newRecord.status || ''} onChange={(e) => setNewRecord({...newRecord, status: e.target.value})} placeholder="Ready, Pending, etc." className="bg-brand-bg" />
-        </div>
-        <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Attachments Link</label>
-          <Input value={newRecord.attachments || ''} onChange={(e) => setNewRecord({...newRecord, attachments: e.target.value})} placeholder="https://..." className="bg-brand-bg" />
-        </div>
-        <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Attachment Summary</label>
-          <Input value={newRecord.attachmentSummary || ''} onChange={(e) => setNewRecord({...newRecord, attachmentSummary: e.target.value})} placeholder="Summary of attachments" className="bg-brand-bg" />
-        </div>
-      </>
-    )}
-
-    {/* AUDIO SETUP */}
-    {activeTable === 'AudioSetup' && (
-      <>
-        <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Name</label>
-          <Input value={newRecord.name || ''} onChange={(e) => setNewRecord({...newRecord, name: e.target.value})} placeholder="Equipment/Setup Name" className="bg-brand-bg" />
-        </div>
-        <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Notes</label>
-          <Input value={newRecord.notes || ''} onChange={(e) => setNewRecord({...newRecord, notes: e.target.value})} placeholder="Additional notes" className="bg-brand-bg" />
-        </div>
-        <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Assignee</label>
-          <Input value={newRecord.assignee || ''} onChange={(e) => setNewRecord({...newRecord, assignee: e.target.value})} placeholder="Person assigned" className="bg-brand-bg" />
-        </div>
-        <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Status</label>
-          <Input value={newRecord.status || ''} onChange={(e) => setNewRecord({...newRecord, status: e.target.value})} placeholder="Ready, Pending, etc." className="bg-brand-bg" />
-        </div>
-        <div className="space-y-2">
-          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Attachments Link</label>
-          <Input value={newRecord.attachments || ''} onChange={(e) => setNewRecord({...newRecord, attachments: e.target.value})} placeholder="https://..." className="bg-brand-bg" />
+          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Attachments (Images)</label>
+          <Input value={newRecord.attachments || ''} onChange={(e) => setNewRecord({...newRecord, attachments: e.target.value})} placeholder="Upload images after saving or enter URL" className="bg-brand-bg" />
         </div>
         <div className="space-y-2">
           <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Attachment Summary</label>
           <Input value={newRecord.attachmentSummary || ''} onChange={(e) => setNewRecord({...newRecord, attachmentSummary: e.target.value})} placeholder="Summary of attachments" className="bg-brand-bg" />
         </div>
       </>
-    )}
+      );
+    })()}
 
 {/* CHECKLIST FIELDS */}
 {activeTable === 'DyatraChecklist' && (
@@ -7260,7 +7441,8 @@ if (!health?.mongodb) {
             },
           ];
         } else if (activeTable === 'VideoSetup' || activeTable === 'AudioSetup') {
-          const statusOpts = ['Ready', 'Pending', 'In Progress', 'Done'];
+          const statusOpts = ['To Do', 'In Progress', 'Done'];
+          const assigneeOpts = [...new Set(locations.map((item: any) => item["Sevak"]).filter(Boolean).map(String))].sort();
           const setupLabel = activeTable === 'VideoSetup' ? 'Video' : 'Audio';
           wizardSteps = [
             {
@@ -7268,12 +7450,15 @@ if (!health?.mongodb) {
               content: (
                 <div className="space-y-5">
                   <div><label className={labelCls}>Name</label><input className={inputCls} value={newRecord.name || ''} onChange={e => setNewRecord({...newRecord, name: e.target.value})} placeholder="Equipment / setup name…" /></div>
-                  <div><label className={labelCls}>Assignee</label><input className={inputCls} value={newRecord.assignee || ''} onChange={e => setNewRecord({...newRecord, assignee: e.target.value})} placeholder="Person responsible…" /></div>
+                  <div>
+                    <label className={labelCls}>Assignee</label>
+                    <CellDropdown value={newRecord.assignee || ''} options={assigneeOpts} onCommit={val => setNewRecord({...newRecord, assignee: val})} onCancel={() => {}} placeholder="Select Assignee…" />
+                  </div>
                   <div>
                     <label className={labelCls}>Status</label>
-                    <div className="grid grid-cols-2 gap-2">
+                    <div className="grid grid-cols-3 gap-2">
                       {statusOpts.map(opt => (
-                        <button key={opt} type="button" onClick={() => setNewRecord({...newRecord, status: opt})} className={`h-11 rounded-xl border text-[12px] font-black uppercase tracking-widest transition-all ${newRecord.status === opt ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>{opt}</button>
+                        <button key={opt} type="button" onClick={() => setNewRecord({...newRecord, status: opt})} className={`h-11 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${newRecord.status === opt ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>{opt}</button>
                       ))}
                     </div>
                   </div>
@@ -7285,7 +7470,7 @@ if (!health?.mongodb) {
               content: (
                 <div className="space-y-5">
                   <div><label className={labelCls}>Notes</label><textarea className={`${inputCls} h-28 resize-none py-2.5`} value={newRecord.notes || ''} onChange={e => setNewRecord({...newRecord, notes: e.target.value})} placeholder="Additional notes…" /></div>
-                  <div><label className={labelCls}>Attachments Link</label><input className={inputCls} value={newRecord.attachments || ''} onChange={e => setNewRecord({...newRecord, attachments: e.target.value})} placeholder="https://…" /></div>
+                  <div><label className={labelCls}>Attachments</label><input className={inputCls} value={newRecord.attachments || ''} onChange={e => setNewRecord({...newRecord, attachments: e.target.value})} placeholder="Image URLs (https://...)" /></div>
                   <div><label className={labelCls}>Attachment Summary</label><input className={inputCls} value={newRecord.attachmentSummary || ''} onChange={e => setNewRecord({...newRecord, attachmentSummary: e.target.value})} placeholder="Brief summary…" /></div>
                 </div>
               )
@@ -7408,6 +7593,7 @@ if (!health?.mongodb) {
           }}
           onClose={() => setExpandedRecord(null)}
           onSave={handleExpandedSave}
+          currentUser={user}
         />
       )}
 
