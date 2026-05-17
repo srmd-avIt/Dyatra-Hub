@@ -242,12 +242,13 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
 const CellDropdown = React.memo(function CellDropdown({
   value, options, onCommit, onCancel, onOutsideClick, 
   placeholder = 'Select...', tagClass, isMinimal = false,
-  autoOpen = false, isMulti = false 
+  autoOpen = false, isMulti = false, onAddOption, removableOptions = [], onRemoveOption
 }: {
   value: string | string[]; options: string[]; onCommit: (v: string) => void; 
   onCancel: () => void; onOutsideClick?: () => void;
   placeholder?: string; tagClass?: string; isMinimal?: boolean;
-  autoOpen?: boolean; isMulti?: boolean;
+  autoOpen?: boolean; isMulti?: boolean; onAddOption?: (newOption: string) => void;
+  removableOptions?: string[]; onRemoveOption?: (option: string) => any;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -308,6 +309,10 @@ const CellDropdown = React.memo(function CellDropdown({
       return;
     }
     if (!trimmedVal) return;
+
+    if (!options.some(o => o.toLowerCase() === trimmedVal.toLowerCase()) && onAddOption) {
+      onAddOption(trimmedVal);
+    }
 
     setLocalAddedOptions(prev => prev.includes(trimmedVal) ? prev : [...prev, trimmedVal]);
 
@@ -405,20 +410,46 @@ const CellDropdown = React.memo(function CellDropdown({
             )}
             {filtered.map(opt => {
               const isSelected = selectedValues.includes(opt);
+              const isRemovable = removableOptions.includes(opt);
               return (
                 <div 
                   key={opt} 
-                  className={`px-3 py-2 text-[12px] cursor-pointer flex items-center justify-between hover:bg-slate-50 transition-colors ${isSelected ? 'bg-blue-50/50 font-bold text-blue-700' : 'text-slate-700'}`} 
-                  onMouseDown={e => { e.preventDefault(); pick(opt); }}
+                  className={`px-3 py-2 text-[12px] cursor-pointer flex items-center justify-between hover:bg-slate-50 transition-colors ${isSelected ? 'bg-blue-50/50 font-bold text-blue-700' : 'text-slate-700'}`}
                 >
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-1 min-w-0" onMouseDown={e => { e.preventDefault(); pick(opt); }}>
                     {isMulti && (
-                       <div className={`h-3.5 w-3.5 rounded border flex items-center justify-center transition-colors ${isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
+                       <div className={`h-3.5 w-3.5 rounded border flex items-center justify-center shrink-0 transition-colors ${isSelected ? 'bg-blue-600 border-blue-600' : 'bg-white border-slate-300'}`}>
                          {isSelected && <Check className="h-2.5 w-2.5 text-white" strokeWidth={4} />}
                        </div>
                     )}
                     <span className={getTagStyle(opt)}>{opt}</span>
                   </div>
+                  {isRemovable && onRemoveOption && (
+                    <button
+                      onMouseDown={async e => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        
+                        const result = await onRemoveOption(opt);
+                        if (result === false) return; // Stop if the user cancelled the prompt
+                        
+                        setLocalAddedOptions(prev => prev.filter(o => o !== opt));
+                        
+                        // Automatically deselect if it's currently selected
+                        if (selectedValues.includes(opt)) {
+                          if (isMulti) {
+                            onCommit(selectedValues.filter(v => v !== opt).join(', '));
+                          } else {
+                            onCommit('');
+                          }
+                        }
+                      }}
+                      className="ml-2 text-slate-300 hover:text-red-500 transition-colors shrink-0"
+                      title="Delete custom tag"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  )}
                 </div>
               );
             })}
@@ -677,7 +708,8 @@ function colLabel(col: string): string {
 
 /** Airtable-style expanded record modal — desktop two-panel + mobile wizard */
 const RecordExpandModal = React.memo(function RecordExpandModal({
-  item, tableName, columns, sessions, events, columnMeta, columnTypes, allData, onAddLookup, onClose, onSave, currentUser
+  item, tableName, columns, sessions, events, columnMeta, columnTypes, allData, onAddLookup, onClose, onSave, currentUser,
+  customTags, onAddCustomTag, onRemoveTag
 }: {
   item: any; tableName: string; columns: string[]; sessions: any[];
   events: any[];
@@ -687,6 +719,9 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   onAddLookup: (linkedTable: string) => void;
   onClose: () => void; onSave: (draft: any) => void;
   currentUser?: any;
+  customTags: Record<string, Record<string, string[]>>;
+  onAddCustomTag: (tableName: string, col: string, tag: string) => void;
+  onRemoveTag: (tableName: string, col: string, tag: string) => any;
 }) {
   const normalize = (raw: any) => {
     const d = { ...raw };
@@ -1027,6 +1062,8 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     else if (isGuide && col === 'Event')
       opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
 
+    opts = [...new Set([...opts, ...(customTags[tableName]?.[col] || [])])].sort();
+
   const tagClass = UNIFORM_DROPDOWN_STYLE;
 
 const hasDropdown = opts.length > 0
@@ -1035,12 +1072,17 @@ const hasDropdown = opts.length > 0
   || ((isVSetup || isASetup) && (col === 'Status' || col === 'Assignee'))
   || (isGuide && (col === 'City' || col === 'Category' || col === 'Event'));
 if (hasDropdown) {
+  const isMulti = col === 'Occasion' || col === 'City' || col === 'Tags' || columnTypes[tableName]?.[col] === 'badge_multi';
   return (
     <CellDropdown
       value={draft[col] || ''}
       options={opts}
+      isMulti={isMulti}
       onCommit={val => commit(col, val)}
       onCancel={onClose}
+      onAddOption={val => onAddCustomTag(tableName, col, val)}
+      removableOptions={opts}
+      onRemoveOption={val => onRemoveTag(tableName, col, val)}
       placeholder={`Select ${col}…`}
       tagClass={tagClass}
     />
@@ -1439,6 +1481,7 @@ const [cellPreview, setCellPreview] = useState<{ label: string; value: string; r
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const dragColRef = useRef<string | null>(null);
   const [groupByField, setGroupByField] = useState<string | null>(null);
+  const [customTags, setCustomTags] = useState<Record<string, Record<string, string[]>>>({});
 const [sortBy, setSortBy] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
   // AI Chat State
   const [chatInput, setChatInput] = useState('');
@@ -2137,17 +2180,87 @@ const saveSettings = async (
   hidden: Record<string, string[]>,
   meta?: Record<string, Record<string, { linkedTable?: string; lookupField?: string }>>,
   order?: Record<string, string[]>,
-  frozen?: Record<string, number>
+  frozen?: Record<string, number>,
+  tags?: Record<string, Record<string, string[]>>
 ) => {
   try {
     await window.fetch('/api/settings/columns', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ _v: 2, columns: cols, types, hidden, meta: meta ?? columnMeta, order: order ?? columnOrder, frozen: frozen ?? frozenUpTo })
+      body: JSON.stringify({ _v: 2, columns: cols, types, hidden, meta: meta ?? columnMeta, order: order ?? columnOrder, frozen: frozen ?? frozenUpTo, customTags: tags ?? customTags })
     });
   } catch (error) {
     console.error("Failed to save settings:", error);
   }
+};
+
+const handleAddCustomTag = (tableName: string, col: string, newTag: string) => {
+  const currentTableTags = customTags[tableName] || {};
+  const currentFieldTags = currentTableTags[col] || [];
+  if (!currentFieldTags.includes(newTag)) {
+    const newTags = {
+      ...customTags,
+      [tableName]: {
+        ...currentTableTags,
+        [col]: [...currentFieldTags, newTag]
+      }
+    };
+    setCustomTags(newTags);
+    saveSettings(extraColumns, columnTypes, hiddenColumns, columnMeta, columnOrder, frozenUpTo, newTags);
+  }
+};
+
+const handleRemoveTagGlobally = async (tableName: string, col: string, tagToRemove: string) => {
+  if (!window.confirm(`Are you sure you want to delete "${tagToRemove}" globally? This will remove it from all records.`)) return false;
+
+  // 1. Remove from customTags
+  const currentTableTags = customTags[tableName] || {};
+  const currentFieldTags = currentTableTags[col] || [];
+  if (currentFieldTags.includes(tagToRemove)) {
+    const newTags = { ...customTags, [tableName]: { ...currentTableTags, [col]: currentFieldTags.filter(t => t !== tagToRemove) } };
+    setCustomTags(newTags);
+    saveSettings(extraColumns, columnTypes, hiddenColumns, columnMeta, columnOrder, frozenUpTo, newTags);
+  }
+
+  // 2. Scan and remove from DB records
+  const processTable = async (tName: string, collName: string) => {
+    const tableData = getDataForTable(tName);
+    const isMulti = col === 'Occasion' || col === 'City' || col === 'Tags' || columnTypes[tName]?.[col] === 'badge_multi';
+
+    const recordsToUpdate = tableData.filter((r: any) => {
+      const val = r[col];
+      if (!val) return false;
+      return isMulti ? String(val).split(',').map(s => s.trim()).includes(tagToRemove) : String(val).trim() === tagToRemove;
+    });
+
+    if (recordsToUpdate.length > 0) {
+      await Promise.all(recordsToUpdate.map(async (record: any) => {
+        const newVal = isMulti ? String(record[col]).split(',').map(s => s.trim()).filter(t => t !== tagToRemove).join(', ') : '';
+        const updatedRecord = { ...record, [col]: newVal };
+        const id = record._id || record.id;
+        const body = { ...updatedRecord };
+        delete body._id;
+        return window.fetch(`/api/${collName}/${id}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      }));
+    }
+  };
+
+  const collMap: Record<string, string> = {
+    'Events': 'events', 'Session': 'sessions', 'MusicLog': 'musiclog', 'VideoLog': 'videolog',
+    'Tracks': 'media', 'DyatraChecklist': 'checklist', 'Guidance & Learning': 'guidance',
+    'LED': 'led_details', 'DataSharing': 'locations', 'VideoSetup': 'videosetup', 'AudioSetup': 'audiosetup'
+  };
+  const mainColl = collMap[tableName];
+  if (mainColl) await processTable(tableName, mainColl);
+
+  // Cross-reference tables if it's a shared column
+  if (col === 'City' || col === 'Occasion') {
+    if (tableName === 'Events') await processTable('Session', 'sessions');
+    if (tableName === 'Session') await processTable('Events', 'events');
+  }
+
+  fetchAllData();
+  return true;
 };
 
 useEffect(() => {
@@ -2163,6 +2276,7 @@ useEffect(() => {
           setColumnMeta(data.meta || {});
           setColumnOrder(data.order || {});
           setFrozenUpTo(data.frozen || {});
+          setCustomTags(data.customTags || {});
         } else {
           setExtraColumns(data || {});
         }
@@ -3670,6 +3784,8 @@ const updateDraftOnly = (col: string, val: string) => {
                 opts = sessions.map((s: any) => s["Session Name"]).filter(Boolean).sort();
               }
 
+              opts = [...new Set([...opts, ...(customTags[activeTable]?.[col] || [])])].sort();
+
               if (isMulti || isSingleBadge || (isLinked && col === 'Session')) {
                 return (
                   <CellDropdown
@@ -3681,6 +3797,9 @@ const updateDraftOnly = (col: string, val: string) => {
                       if (isMulti) updateDraftOnly(col, val);
                       else col === 'Session' ? commitSession(val) : commitField(col, val);
                     }}
+                    onAddOption={val => handleAddCustomTag(activeTable, col, val)}
+                    removableOptions={opts}
+                    onRemoveOption={val => handleRemoveTagGlobally(activeTable, col, val)}
                     onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
                     onOutsideClick={() => handleUpdateRecord()}
                     placeholder={`Select ${col}…`}
@@ -6906,11 +7025,11 @@ if (!health?.mongodb) {
                 <div className="space-y-5">
                   <div>
                     <label className={labelCls}>Occasion</label>
-                    <CellDropdown value={newRecord.Occasion || ''} options={occasionOpts} onCommit={val => setNewRecord({...newRecord, Occasion: val})} onCancel={() => {}} placeholder="Select occasion…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+                    <CellDropdown value={newRecord.Occasion || ''} options={[...new Set([...occasionOpts, ...(customTags['Events']?.['Occasion'] || [])])]} onAddOption={val => handleAddCustomTag('Events', 'Occasion', val)} removableOptions={[...new Set([...occasionOpts, ...(customTags['Events']?.['Occasion'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Events', 'Occasion', val)} onCommit={val => setNewRecord({...newRecord, Occasion: val})} onCancel={() => {}} placeholder="Select occasion…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
                   </div>
                   <div>
                     <label className={labelCls}>City</label>
-                    <CellDropdown value={newRecord.City || ''} options={cityOpts} onCommit={val => setNewRecord({...newRecord, City: val})} onCancel={() => {}} placeholder="Select city…" tagClass="bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+                    <CellDropdown value={newRecord.City || ''} options={[...new Set([...cityOpts, ...(customTags['Events']?.['City'] || [])])]} onAddOption={val => handleAddCustomTag('Events', 'City', val)} removableOptions={[...new Set([...cityOpts, ...(customTags['Events']?.['City'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Events', 'City', val)} onCommit={val => setNewRecord({...newRecord, City: val})} onCancel={() => {}} placeholder="Select city…" tagClass="bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
                   </div>
                   <div>
                     <label className={labelCls}>Year</label>
@@ -6956,7 +7075,7 @@ if (!health?.mongodb) {
                   </div>
                   <div>
                     <label className={labelCls}>Parent Event</label>
-                    <CellDropdown value={newRecord.parentEvent || ''} options={eventOpts} onCommit={val => setNewRecord({...newRecord, parentEvent: val})} onCancel={() => {}} placeholder="Select event…" />
+                    <CellDropdown value={newRecord.parentEvent || ''} options={[...new Set([...eventOpts, ...(customTags['Session']?.['Parent Event'] || [])])]} onAddOption={val => handleAddCustomTag('Session', 'Parent Event', val)} removableOptions={[...new Set([...eventOpts, ...(customTags['Session']?.['Parent Event'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Session', 'Parent Event', val)} onCommit={val => setNewRecord({...newRecord, parentEvent: val})} onCancel={() => {}} placeholder="Select event…" />
                   </div>
                 </div>
               )
@@ -6971,7 +7090,7 @@ if (!health?.mongodb) {
                   </div>
                   <div>
                     <label className={labelCls}>Time Of Day</label>
-                    <CellDropdown value={newRecord.timeOfDay || ''} options={timeOpts} onCommit={val => setNewRecord({...newRecord, timeOfDay: val})} onCancel={() => {}} placeholder="Morning / Evening…" tagClass="bg-orange-500 text-white text-[11px] font-semibold px-2 py-0.5 rounded-sm" />
+                    <CellDropdown value={newRecord.timeOfDay || ''} options={[...new Set([...timeOpts, ...(customTags['Session']?.['Time Of Day'] || [])])]} onAddOption={val => handleAddCustomTag('Session', 'Time Of Day', val)} removableOptions={[...new Set([...timeOpts, ...(customTags['Session']?.['Time Of Day'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Session', 'Time Of Day', val)} onCommit={val => setNewRecord({...newRecord, timeOfDay: val})} onCancel={() => {}} placeholder="Morning / Evening…" tagClass="bg-orange-500 text-white text-[11px] font-semibold px-2 py-0.5 rounded-sm" />
                   </div>
                 </div>
               )
@@ -6982,7 +7101,7 @@ if (!health?.mongodb) {
                 <div className="space-y-5">
                   <div>
                     <label className={labelCls}>City</label>
-                    <CellDropdown value={newRecord.city || ''} options={sessionCityOpts} onCommit={val => setNewRecord({...newRecord, city: val})} onCancel={() => {}} placeholder="Select city…" tagClass="bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+                    <CellDropdown value={newRecord.city || ''} options={[...new Set([...sessionCityOpts, ...(customTags['Session']?.['City'] || [])])]} onAddOption={val => handleAddCustomTag('Session', 'City', val)} removableOptions={[...new Set([...sessionCityOpts, ...(customTags['Session']?.['City'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Session', 'City', val)} onCommit={val => setNewRecord({...newRecord, city: val})} onCancel={() => {}} placeholder="Select city…" tagClass="bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
                   </div>
                   <div>
                     <label className={labelCls}>Venue</label>
@@ -6997,11 +7116,11 @@ if (!health?.mongodb) {
                 <div className="space-y-5">
                   <div>
                     <label className={labelCls}>Occasion</label>
-                    <CellDropdown value={newRecord.occasion || ''} options={sessOccasionOpts} onCommit={val => setNewRecord({...newRecord, occasion: val})} onCancel={() => {}} placeholder="Select occasion…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+                    <CellDropdown value={newRecord.occasion || ''} options={[...new Set([...sessOccasionOpts, ...(customTags['Session']?.['Occasion'] || [])])]} onAddOption={val => handleAddCustomTag('Session', 'Occasion', val)} removableOptions={[...new Set([...sessOccasionOpts, ...(customTags['Session']?.['Occasion'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Session', 'Occasion', val)} onCommit={val => setNewRecord({...newRecord, occasion: val})} onCancel={() => {}} placeholder="Select occasion…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
                   </div>
                   <div>
                     <label className={labelCls}>Session Type</label>
-                    <CellDropdown value={newRecord.sessionType || ''} options={sessionTypeOpts} onCommit={val => setNewRecord({...newRecord, sessionType: val})} onCancel={() => {}} placeholder="Select type…" />
+                    <CellDropdown value={newRecord.sessionType || ''} options={[...new Set([...sessionTypeOpts, ...(customTags['Session']?.['SessionType'] || [])])]} onAddOption={val => handleAddCustomTag('Session', 'SessionType', val)} removableOptions={[...new Set([...sessionTypeOpts, ...(customTags['Session']?.['SessionType'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Session', 'SessionType', val)} onCommit={val => setNewRecord({...newRecord, sessionType: val})} onCancel={() => {}} placeholder="Select type…" />
                   </div>
                   <div>
                     <label className={labelCls}>Notes</label>
@@ -7282,11 +7401,11 @@ if (!health?.mongodb) {
                   <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Category</label>
-                      <CellDropdown value={newRecord["Category"] || ''} options={checklistCategoryOpts} onCommit={val => setNewRecord({...newRecord, "Category": val})} onCancel={() => {}} placeholder="Category…" />
+                      <CellDropdown value={newRecord["Category"] || ''} options={[...new Set([...checklistCategoryOpts, ...(customTags['DyatraChecklist']?.['Category'] || [])])]} onAddOption={val => handleAddCustomTag('DyatraChecklist', 'Category', val)} removableOptions={[...new Set([...checklistCategoryOpts, ...(customTags['DyatraChecklist']?.['Category'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('DyatraChecklist', 'Category', val)} onCommit={val => setNewRecord({...newRecord, "Category": val})} onCancel={() => {}} placeholder="Category…" />
                     </div>
                     <div>
                       <label className={labelCls}>Task Group</label>
-                      <CellDropdown value={newRecord["TaskGroup"] || ''} options={taskGroupOpts} onCommit={val => setNewRecord({...newRecord, "TaskGroup": val})} onCancel={() => {}} placeholder="Group…" />
+                      <CellDropdown value={newRecord["TaskGroup"] || ''} options={[...new Set([...taskGroupOpts, ...(customTags['DyatraChecklist']?.['TaskGroup'] || [])])]} onAddOption={val => handleAddCustomTag('DyatraChecklist', 'TaskGroup', val)} removableOptions={[...new Set([...taskGroupOpts, ...(customTags['DyatraChecklist']?.['TaskGroup'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('DyatraChecklist', 'TaskGroup', val)} onCommit={val => setNewRecord({...newRecord, "TaskGroup": val})} onCancel={() => {}} placeholder="Group…" />
                     </div>
                   </div>
                 </div>
@@ -7416,7 +7535,7 @@ if (!health?.mongodb) {
                   <div><label className={labelCls}>Sevak Name</label><input className={inputCls} value={newRecord["Sevak"] || ''} onChange={e => setNewRecord({...newRecord, "Sevak": e.target.value})} placeholder="Full name…" /></div>
                   <div>
                     <label className={labelCls}>Department</label>
-                    <CellDropdown value={newRecord["Dept"] || ''} options={deptOpts} onCommit={val => setNewRecord({...newRecord, "Dept": val})} onCancel={() => {}} placeholder="Select dept…" />
+                    <CellDropdown value={newRecord["Dept"] || ''} options={[...new Set([...deptOpts, ...(customTags['DataSharing']?.['Dept'] || [])])]} onAddOption={val => handleAddCustomTag('DataSharing', 'Dept', val)} removableOptions={[...new Set([...deptOpts, ...(customTags['DataSharing']?.['Dept'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('DataSharing', 'Dept', val)} onCommit={val => setNewRecord({...newRecord, "Dept": val})} onCancel={() => {}} placeholder="Select dept…" />
                   </div>
                   <div><label className={labelCls}>Email ID</label><input className={inputCls} type="email" value={newRecord["EmailId"] || ''} onChange={e => setNewRecord({...newRecord, "EmailId": e.target.value})} placeholder="email@example.com" /></div>
                 </div>
@@ -7451,7 +7570,7 @@ if (!health?.mongodb) {
                   <div><label className={labelCls}>Name</label><input className={inputCls} value={newRecord.name || ''} onChange={e => setNewRecord({...newRecord, name: e.target.value})} placeholder="Equipment / setup name…" /></div>
                   <div>
                     <label className={labelCls}>Assignee</label>
-                    <CellDropdown value={newRecord.assignee || ''} options={assigneeOpts} onCommit={val => setNewRecord({...newRecord, assignee: val})} onCancel={() => {}} placeholder="Select Assignee…" />
+                    <CellDropdown value={newRecord.assignee || ''} options={[...new Set([...assigneeOpts, ...(customTags[activeTable]?.['Assignee'] || [])])]} onAddOption={val => handleAddCustomTag(activeTable, 'Assignee', val)} removableOptions={[...new Set([...assigneeOpts, ...(customTags[activeTable]?.['Assignee'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally(activeTable, 'Assignee', val)} onCommit={val => setNewRecord({...newRecord, assignee: val})} onCancel={() => {}} placeholder="Select Assignee…" />
                   </div>
                   <div>
                     <label className={labelCls}>Status</label>
@@ -7593,6 +7712,9 @@ if (!health?.mongodb) {
           onClose={() => setExpandedRecord(null)}
           onSave={handleExpandedSave}
           currentUser={user}
+          customTags={customTags}
+          onAddCustomTag={handleAddCustomTag}
+          onRemoveTag={handleRemoveTagGlobally}
         />
       )}
 
