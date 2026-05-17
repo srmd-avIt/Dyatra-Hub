@@ -5380,7 +5380,7 @@ if (!health?.mongodb) {
                                       setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r));
                                       window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) });
                                     }}
-                                                className="absolute top-1 right-1 p-1.5 bg-black/60 text-white rounded-lg opacity-0 group-hover/sessionimg:opacity-100 hover:bg-red-600 transition-all shadow-sm"
+                                                className="absolute top-1 right-1 p-1.5 bg-black/60 text-white rounded-lg opacity-100 sm:opacity-0 sm:group-hover/sessionimg:opacity-100 hover:bg-red-600 transition-all shadow-sm"
                                     title="Remove Image"
                                   >
                                                 <Trash2 className="h-3 w-3" />
@@ -7442,7 +7442,7 @@ if (!health?.mongodb) {
                       <input className={inputCls} value={newRecord.album || ''} onChange={e => setNewRecord({...newRecord, album: e.target.value})} placeholder="Album…" />
                     </div>
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
                       <label className={labelCls}>Duration</label>
                       <input className={inputCls} value={newRecord.duration || ''} onChange={e => setNewRecord({...newRecord, duration: e.target.value})} placeholder="3:45" />
@@ -7591,7 +7591,7 @@ if (!health?.mongodb) {
                     <label className={labelCls}>Side LED Name</label>
                     <input className={inputCls} value={newRecord["SideLed"] || ''} onChange={e => setNewRecord({...newRecord, "SideLed": e.target.value})} placeholder="Side LED model…" />
                   </div>
-                  <div className="grid grid-cols-3 gap-3">
+                  <div className="grid grid-cols-2 gap-3">
                     <div><label className={labelCls}>Pitch</label><input className={inputCls} value={newRecord["SidePitch"] || ''} onChange={e => setNewRecord({...newRecord, "SidePitch": e.target.value})} placeholder="mm" /></div>
                     <div><label className={labelCls}>Width</label><input className={inputCls} value={newRecord["SideWdth"] || ''} onChange={e => setNewRecord({...newRecord, "SideWdth": e.target.value})} placeholder="ft" /></div>
                     <div><label className={labelCls}>Height</label><input className={inputCls} value={newRecord["SideHt"] || ''} onChange={e => setNewRecord({...newRecord, "SideHt": e.target.value})} placeholder="ft" /></div>
