@@ -275,7 +275,8 @@ const CellDropdown = React.memo(function CellDropdown({
   }, [value]);
 
   useEffect(() => { if (autoOpen) requestAnimationFrame(() => openDropdown()); }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => { if (open) setTimeout(() => searchRef.current?.focus(), 0); }, [open]);
+  // Only auto-focus search on desktop — on mobile it triggers the keyboard which fires resize and closes the dropdown
+  useEffect(() => { if (open && window.innerWidth >= 768) setTimeout(() => searchRef.current?.focus(), 0); }, [open]);
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
@@ -295,7 +296,14 @@ const CellDropdown = React.memo(function CellDropdown({
 
   useEffect(() => {
     if (!open) return;
-    const close = () => { setOpen(false); setSearch(''); if (onOutsideClick) onOutsideClick(); };
+    // Only close on WIDTH change — mobile keyboard appearance changes height only, not width
+    let prevWidth = window.innerWidth;
+    const close = () => {
+      if (window.innerWidth !== prevWidth) {
+        setOpen(false); setSearch(''); if (onOutsideClick) onOutsideClick();
+      }
+      prevWidth = window.innerWidth;
+    };
     window.addEventListener('resize', close);
     return () => window.removeEventListener('resize', close);
   }, [open, onOutsideClick]);
@@ -341,7 +349,7 @@ const CellDropdown = React.memo(function CellDropdown({
       
       {/* TRIGGER AREA */}
       {isMulti ? (
-        <div className="w-full h-full flex items-center flex-wrap gap-1.5 px-2 py-1 cursor-text" onClick={() => setOpen(true)}>
+        <div className="w-full h-full flex items-center flex-wrap gap-1.5 px-2 py-1 cursor-text" onClick={() => { if (!open) openDropdown(); }}>
           {selectedValues.map((v, i) => (
             <span key={i} className={`${getTagStyle(v)} flex items-center gap-1 shadow-none border-slate-200`}>
               {v}
@@ -352,14 +360,14 @@ const CellDropdown = React.memo(function CellDropdown({
           ))}
           <button 
             className={`flex items-center justify-center h-6 w-6 rounded-md border transition-all ${open ? 'bg-blue-600 border-blue-700 text-white' : 'bg-white border-slate-200 text-slate-400 hover:text-slate-600'}`}
-            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); setOpen(!open); }}
+            onMouseDown={(e) => { e.stopPropagation(); e.preventDefault(); if (open) setOpen(false); else openDropdown(); }}
           >
             <Plus className={`h-3.5 w-3.5 ${open ? 'rotate-45' : ''}`} />
           </button>
           {selectedValues.length === 0 && !open && <span className="text-[11px] text-slate-300 italic ml-1">Select multiple...</span>}
         </div>
       ) : (
-        <div className="w-full h-full flex items-center justify-between px-3 py-1 cursor-pointer" onClick={() => setOpen(!open)}>
+        <div className="w-full h-full flex items-center justify-between px-3 py-1 cursor-pointer" onClick={() => { if (open) setOpen(false); else openDropdown(); }}>
           <div className="flex-1 truncate">
             {selectedValues.length > 0 ? (
               <span className={getTagStyle(selectedValues[0])}>{selectedValues[0]}</span>
@@ -709,7 +717,7 @@ function colLabel(col: string): string {
 /** Airtable-style expanded record modal — desktop two-panel + mobile wizard */
 const RecordExpandModal = React.memo(function RecordExpandModal({
   item, tableName, columns, sessions, events, columnMeta, columnTypes, allData, onAddLookup, onClose, onSave, currentUser,
-  customTags, onAddCustomTag, onRemoveTag
+  customTags, onAddCustomTag, onRemoveTag, onImageManage
 }: {
   item: any; tableName: string; columns: string[]; sessions: any[];
   events: any[];
@@ -722,6 +730,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   customTags: Record<string, Record<string, string[]>>;
   onAddCustomTag: (tableName: string, col: string, tag: string) => void;
   onRemoveTag: (tableName: string, col: string, tag: string) => any;
+  onImageManage?: (col: string, currentItem: any) => void;
 }) {
   const normalize = (raw: any) => {
     const d = { ...raw };
@@ -741,6 +750,21 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   const [step, setStep] = useState(0);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+
+  useEffect(() => {
+    const imageCols = ['Images', 'Attachments', 'Attachment', 'images', 'attachments'];
+    let changed = false;
+    const patch: any = {};
+    for (const c of imageCols) {
+      if (item[c] !== undefined && item[c] !== draftRef.current[c]) {
+        patch[c] = item[c];
+        changed = true;
+      }
+    }
+    if (changed) {
+      setDraft((prev: any) => ({ ...prev, ...patch }));
+    }
+  }, [item]);
 
   const isEv = tableName === 'Events';
   const isSe = tableName === 'Session';
@@ -1088,6 +1112,36 @@ if (hasDropdown) {
     />
   );
 }
+    // Image / attachment columns — render thumbnails + open image manager
+    const imageColNames = new Set(['Images', 'Attachments', 'Attachment', 'images', 'attachments']);
+    if (imageColNames.has(col) && onImageManage) {
+      const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
+      const thumbs: string[] = [];
+      let m2;
+      const rawStr = draft[col] || '';
+      const re2 = new RegExp(urlRegex.source, 'g');
+      while ((m2 = re2.exec(rawStr)) !== null) thumbs.push(m2[1]);
+      return (
+        <div className="space-y-2">
+          {thumbs.length > 0 && (
+            <div className="flex flex-wrap gap-2">
+              {thumbs.map((url, idx) => (
+                <img key={idx} src={url} loading="lazy" className="h-14 w-20 object-cover rounded-xl border border-slate-200" alt="" />
+              ))}
+            </div>
+          )}
+          <button
+            type="button"
+            onClick={() => onImageManage(col, draftRef.current)}
+            className="w-full h-10 flex items-center justify-center gap-2 border-2 border-dashed border-slate-300 rounded-xl text-[12px] font-black uppercase tracking-widest text-slate-500 hover:text-brand-primary hover:border-brand-primary transition-colors bg-white"
+          >
+            <Plus className="h-4 w-4" />
+            {thumbs.length > 0 ? `Manage Images (${thumbs.length})` : 'Add Images'}
+          </button>
+        </div>
+      );
+    }
+
     const longTextCols = new Set(['Notes', 'notes', 'proposalsList', 'Details', 'guidanceLearning', 'ShareData', 'Guidance/Learning', 'Lyrics', 'ProposalsList', 'Attachment Summary', 'attachmentSummary', 'Topic', 'Cue', 'PPG']);
     if (longTextCols.has(col)) {
       return (
@@ -1193,7 +1247,7 @@ if (hasDropdown) {
         </div>
 
         {/* Fields for this step */}
-        <div className="flex-1 overflow-y-auto overflow-x-hidden px-5 pb-2 space-y-5 min-h-0">
+        <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-5 min-h-0">
           {currentStepData.fields.map(col => (
             <div key={col}>
              <label className="text-[11px] font-black text-slate-600 uppercase tracking-[0.15em] block mb-2">
@@ -1616,16 +1670,16 @@ const attachmentFileInputRef = useRef<HTMLInputElement>(null);
 const handleImageUpdate = async (updatedString: string) => {
   if (!imageManager?.item) return;
 
-  // Ensure we use the correct ID field for MongoDB
-  const recordId = imageManager.item._id || imageManager.item.id;
-  
-  const updatedItem = { 
-    ...imageManager.item, 
-    [imageManager.column]: updatedString 
-  };
-  
+  // Capture immediately — avoids any stale-closure risk in async callback
+  const recordId = String(imageManager.item._id || imageManager.item.id || '');
+  const column = imageManager.column;
+
+  if (!recordId || recordId === 'undefined') {
+    alert('Cannot save image: this record has no database ID.');
+    return;
+  }
+
   let collection = '';
-  // Ensure "LED" matches your activeTable state exactly
   switch (activeTable) {
     case 'LED': collection = 'led_details'; break;
     case 'Session': collection = 'sessions'; break;
@@ -1642,22 +1696,55 @@ const handleImageUpdate = async (updatedString: string) => {
   }
 
   try {
+    // Send ONLY the changed column — not the full record.
+    // The server uses $set so other fields stay untouched.
+    // Sending the full record can exceed Vercel's 4.5 MB body limit
+    // when a large base64 image is already in the document.
     const response = await window.fetch(`/api/${collection}/${recordId}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(updatedItem)
+      body: JSON.stringify({ [column]: updatedString })
     });
 
     if (response.ok) {
-      // Only update modal item — no fetchAllData() here to avoid full re-render/blink
-      setImageManager(prev => prev ? { ...prev, item: updatedItem } : null);
+      // Mirror the change in imageManager so the dialog shows the updated images
+      setImageManager(prev =>
+        prev ? { ...prev, item: { ...prev.item, [column]: updatedString } } : null
+      );
+      // Also sync expandedRecord if the image manager was opened from within the expand modal
+      setExpandedRecord((prev: any) =>
+        prev && (String(prev._id || prev.id) === recordId)
+          ? { ...prev, [column]: updatedString }
+          : prev
+      );
+
+      // Also sync editDraft if the image manager was opened during inline edit
+      setEditDraft((prev: any) =>
+        prev && (String(prev._id || prev.id) === recordId)
+          ? { ...prev, [column]: updatedString }
+          : prev
+      );
+      
+      // Sync the main state so the table reflects the new images immediately
+      const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+        'events': setEvents as any, 'sessions': setSessions as any,
+        'musiclog': setMusicLogs, 'videolog': setVideoLogs,
+        'media': setMedia as any, 'checklist': setChecklist as any,
+        'guidance': setGuidance as any, 'led_details': setLedDetails as any,
+        'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+      };
+      const setter = optimisticSetter[collection];
+      if (setter) {
+        setter(prev => prev.map(r => (r._id === recordId || r.id === recordId) ? { ...r, [column]: updatedString } : r));
+      }
     } else {
       const errorData = await response.text();
-      console.error("Server refused update:", errorData);
-      alert("Failed to save image to database.");
+      console.error('Server refused image update:', errorData);
+      alert('Failed to save image: ' + (errorData || 'server error'));
     }
   } catch (error) {
-    console.error("Upload Error:", error);
+    console.error('Image upload error:', error);
+    alert('Network error — image could not be saved. Check your connection.');
   }
 };
 
@@ -2518,19 +2605,19 @@ const getTableColumns = (includeHidden = false) => {
 
   switch (activeTable) {
     case 'Events':
-      baseCols = ['Event Name', 'DateFrom', 'DateTo', 'Occasion', 'City', 'Venue', 'Sessions', 'Year', 'Attachments'];
+      baseCols = ['Event Name', 'DateFrom', 'DateTo', 'Occasion', 'City', 'Venue', 'Sessions', 'Year'];
       break;
     case 'Session':
-      baseCols = ['Session Name', 'Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes', 'Attachments'];
+      baseCols = ['Session Name', 'Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes'];
       break;
     case 'MusicLog':
-      baseCols = ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID', 'Attachments'];
+      baseCols = ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID'];
       break;
     case 'Tracks':
       baseCols = ['Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'];
       break;
     case 'VideoLog':
-      baseCols = ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList', 'Attachments'];
+      baseCols = ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList'];
       break;
     case 'Guidance & Learning':
       baseCols = ['LearningId', 'Event', 'DateFrom (from Event)', 'DateTo (from Event)', 'Year (from Event)', 'City', 'GuidanceFrom', 'Guidance/Learning', 'Category', 'Attachments'];
@@ -2542,7 +2629,7 @@ const getTableColumns = (includeHidden = false) => {
       baseCols = ['Task', 'Details', 'TaskGroup', 'OrderId', 'People Involved', 'Typical Timeline', 'Category', 'Period', 'Attachment'];
       break;
     case 'DataSharing':
-      baseCols = ['Sevak', 'Dept', 'EmailId', 'ShareFacts?', 'ShareData', 'Attachments'];
+      baseCols = ['Sevak', 'Dept', 'EmailId', 'ShareFacts?', 'ShareData'];
       break;
     case 'VideoSetup':
       baseCols = ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'];
@@ -6496,8 +6583,6 @@ if (!health?.mongodb) {
       const cityOpts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
       const yr = new Date().getFullYear();
       const yearOpts = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
-      const selectedSessions: string[] = newRecord.Sessions ? newRecord.Sessions.split(',').map((x: string) => x.trim()).filter(Boolean) : [];
-      const selectCls = "w-full h-9 bg-brand-bg border border-brand-border rounded-md px-3 text-sm text-brand-text focus:ring-2 focus:ring-brand-primary outline-none";
       return (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
@@ -6509,45 +6594,31 @@ if (!health?.mongodb) {
             <Input type="date" value={newRecord.DateTo || ''} onChange={(e) => setNewRecord({...newRecord, DateTo: e.target.value})} className="bg-brand-bg" />
           </div>
           <div className="grid grid-cols-3 gap-4">
-            <select className={selectCls} value={newRecord.Occasion || ''} onChange={(e) => setNewRecord({...newRecord, Occasion: e.target.value})}>
-              <option value="">Occasion...</option>
-              {occasionOpts.map((o, i) => <option key={i} value={o}>{o}</option>)}
-            </select>
-            <select className={selectCls} value={newRecord.City || ''} onChange={(e) => setNewRecord({...newRecord, City: e.target.value})}>
-              <option value="">City...</option>
-              {cityOpts.map((o, i) => <option key={i} value={o}>{o}</option>)}
-            </select>
-            <select className={selectCls} value={newRecord.Year || ''} onChange={(e) => setNewRecord({...newRecord, Year: e.target.value})}>
-              <option value="">Year...</option>
-              {yearOpts.map((y, i) => <option key={i} value={y}>{y}</option>)}
-            </select>
+            <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+              <CellDropdown value={newRecord.Occasion || ''} options={[...new Set([...occasionOpts, ...(customTags['Events']?.['Occasion'] || [])])]} onAddOption={val => handleAddCustomTag('Events', 'Occasion', val)} removableOptions={[...new Set([...occasionOpts, ...(customTags['Events']?.['Occasion'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Events', 'Occasion', val)} onCommit={val => setNewRecord({...newRecord, Occasion: val})} onCancel={() => {}} placeholder="Occasion…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+            </div>
+            <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+              <CellDropdown value={newRecord.City || ''} options={[...new Set([...cityOpts, ...(customTags['Events']?.['City'] || [])])]} onAddOption={val => handleAddCustomTag('Events', 'City', val)} removableOptions={[...new Set([...cityOpts, ...(customTags['Events']?.['City'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Events', 'City', val)} onCommit={val => setNewRecord({...newRecord, City: val})} onCancel={() => {}} placeholder="City…" tagClass="bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+            </div>
+            <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+              <CellDropdown value={newRecord.Year || ''} options={yearOpts} onCommit={val => setNewRecord({...newRecord, Year: val})} onCancel={() => {}} placeholder="Year…" tagClass="bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20" />
+            </div>
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Linked Sessions</label>
-            <select className={selectCls} value="" onChange={(e) => {
-              const picked = e.target.value;
-              if (!picked || selectedSessions.includes(picked)) return;
-              setNewRecord({ ...newRecord, Sessions: [...selectedSessions, picked].join(', ') });
-            }}>
-              <option value="">Add session...</option>
-              {sessions.filter((s: any) => !selectedSessions.includes(s["Session Name"])).map((s: any, i: number) => <option key={i} value={s["Session Name"]}>{s["Session Name"]}</option>)}
-            </select>
-            {selectedSessions.length > 0 && (
-              <div className="flex flex-wrap gap-1.5 mt-1">
-                {selectedSessions.map((name: string, i: number) => (
-                  <span key={i} className="inline-flex items-center gap-1 bg-brand-primary/10 text-brand-primary text-[11px] font-bold px-2 py-1 rounded-sm border border-brand-primary/20">
-                    {name}
-                    <button onClick={() => setNewRecord({ ...newRecord, Sessions: selectedSessions.filter((_: any, fi: number) => fi !== i).join(', ') })} className="hover:text-red-500 font-bold">×</button>
-                  </span>
-                ))}
-              </div>
-            )}
+            <SessionPicker value={newRecord.Sessions || ''} allSessions={sessions} onCommit={val => setNewRecord({...newRecord, Sessions: val})} onCancel={() => {}} />
           </div>
         </div>
       );
     })()}
     {/* SESSION FIELDS */}
-   {activeTable === 'Session' && (
+   {activeTable === 'Session' && (() => {
+  const eventOpts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
+  const timeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
+  const sessOccasionOpts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+  const sessionTypeOpts = [...new Set(sessions.map((s: any) => s.SessionType).filter(Boolean))].sort() as string[];
+  const sessionCityOpts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+  return (
   <>
     <div className="grid grid-cols-2 gap-4">
       <div className="space-y-2">
@@ -6556,7 +6627,9 @@ if (!health?.mongodb) {
       </div>
       <div className="space-y-2">
         <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Parent Event</label>
-        <Input value={newRecord.parentEvent || ''} onChange={(e) => setNewRecord({...newRecord, parentEvent: e.target.value})} placeholder="Main Event Name" className="bg-brand-bg" />
+        <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+          <CellDropdown value={newRecord.parentEvent || ''} options={[...new Set([...eventOpts, ...(customTags['Session']?.['Parent Event'] || [])])]} onAddOption={val => handleAddCustomTag('Session', 'Parent Event', val)} removableOptions={[...new Set([...eventOpts, ...(customTags['Session']?.['Parent Event'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Session', 'Parent Event', val)} onCommit={val => setNewRecord({...newRecord, parentEvent: val})} onCancel={() => {}} placeholder="Select event…" />
+        </div>
       </div>
     </div>
 
@@ -6567,7 +6640,9 @@ if (!health?.mongodb) {
       </div>
       <div className="space-y-2">
         <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">City</label>
-        <Input value={newRecord.city || ''} onChange={(e) => setNewRecord({...newRecord, city: e.target.value})} placeholder="City" className="bg-brand-bg" />
+        <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+          <CellDropdown value={newRecord.city || ''} options={[...new Set([...sessionCityOpts, ...(customTags['Session']?.['City'] || [])])]} onAddOption={val => handleAddCustomTag('Session', 'City', val)} removableOptions={[...new Set([...sessionCityOpts, ...(customTags['Session']?.['City'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Session', 'City', val)} onCommit={val => setNewRecord({...newRecord, city: val})} onCancel={() => {}} placeholder="Select city…" tagClass="bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+        </div>
       </div>
       <div className="space-y-2">
         <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Venue</label>
@@ -6578,15 +6653,21 @@ if (!health?.mongodb) {
     <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
       <div className="space-y-2">
         <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Time Of Day</label>
-        <Input value={newRecord.timeOfDay || ''} onChange={(e) => setNewRecord({...newRecord, timeOfDay: e.target.value})} placeholder="e.g. Morning" className="bg-brand-bg" />
+        <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+          <CellDropdown value={newRecord.timeOfDay || ''} options={[...new Set([...timeOpts, ...(customTags['Session']?.['Time Of Day'] || [])])]} onAddOption={val => handleAddCustomTag('Session', 'Time Of Day', val)} removableOptions={[...new Set([...timeOpts, ...(customTags['Session']?.['Time Of Day'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Session', 'Time Of Day', val)} onCommit={val => setNewRecord({...newRecord, timeOfDay: val})} onCancel={() => {}} placeholder="Morning / Evening…" tagClass="bg-orange-500 text-white text-[11px] font-semibold px-2 py-0.5 rounded-sm" />
+        </div>
       </div>
       <div className="space-y-2">
         <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Occasion</label>
-        <Input value={newRecord.occasion || ''} onChange={(e) => setNewRecord({...newRecord, occasion: e.target.value})} placeholder="Occasion" className="bg-brand-bg" />
+        <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+          <CellDropdown value={newRecord.occasion || ''} options={[...new Set([...sessOccasionOpts, ...(customTags['Session']?.['Occasion'] || [])])]} onAddOption={val => handleAddCustomTag('Session', 'Occasion', val)} removableOptions={[...new Set([...sessOccasionOpts, ...(customTags['Session']?.['Occasion'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Session', 'Occasion', val)} onCommit={val => setNewRecord({...newRecord, occasion: val})} onCancel={() => {}} placeholder="Select occasion…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+        </div>
       </div>
       <div className="space-y-2">
         <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Session Type</label>
-        <Input value={newRecord.sessionType || ''} onChange={(e) => setNewRecord({...newRecord, sessionType: e.target.value})} placeholder="Type" className="bg-brand-bg" />
+        <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+          <CellDropdown value={newRecord.sessionType || ''} options={[...new Set([...sessionTypeOpts, ...(customTags['Session']?.['SessionType'] || [])])]} onAddOption={val => handleAddCustomTag('Session', 'SessionType', val)} removableOptions={[...new Set([...sessionTypeOpts, ...(customTags['Session']?.['SessionType'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Session', 'SessionType', val)} onCommit={val => setNewRecord({...newRecord, sessionType: val})} onCancel={() => {}} placeholder="Select type…" />
+        </div>
       </div>
     </div>
 
@@ -6595,7 +6676,8 @@ if (!health?.mongodb) {
       <Textarea value={newRecord.notes || ''} onChange={(e) => setNewRecord({...newRecord, notes: e.target.value})} placeholder="Additional details..." className="bg-brand-bg min-h-[80px]" />
     </div>
   </>
-)}
+  );
+})()}
 
 {/* MUSIC LOG FIELDS - 17 Columns Compact View */}
 {activeTable === 'MusicLog' && (
@@ -6606,18 +6688,20 @@ if (!health?.mongodb) {
         <Input value={newRecord.playId || ''} onChange={(e) => setNewRecord({...newRecord, playId: e.target.value})} placeholder="PlayID" className="bg-brand-bg h-9 text-xs" />
         <div className="col-span-2 space-y-1">
           <label className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Session</label>
-          <select
-            className="w-full h-9 bg-white border border-slate-200 rounded-md px-2 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-brand-primary outline-none"
-            value={newRecord.session || ''}
-            onChange={(e) => {
-              const s = sessions.find(s => s["Session Name"] === e.target.value);
-              if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"] });
-              else setNewRecord({ ...newRecord, session: e.target.value });
-            }}
-          >
-            <option value="">Select session...</option>
-            {sessions.map((s, i) => <option key={i} value={s["Session Name"]}>{s["Session Name"]}</option>)}
-          </select>
+          <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+            <CellDropdown
+              value={newRecord.session || ''}
+              options={sessions.map((s: any) => s["Session Name"]).filter(Boolean)}
+              onCommit={val => {
+                const s = sessions.find((x: any) => x["Session Name"] === val);
+                if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"] });
+                else setNewRecord({ ...newRecord, session: val });
+              }}
+              onCancel={() => {}}
+              placeholder="Select session…"
+              tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20"
+            />
+          </div>
         </div>
         <Input value={newRecord.parentEvent || ''} onChange={(e) => setNewRecord({...newRecord, parentEvent: e.target.value})} placeholder="Parent Event" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord.date || ''} onChange={(e) => setNewRecord({...newRecord, date: e.target.value})} placeholder="Date" className="bg-brand-bg h-9 text-xs" />
@@ -6661,18 +6745,20 @@ if (!health?.mongodb) {
         <Input value={newRecord.VideoPlayId || ''} onChange={(e) => setNewRecord({...newRecord, VideoPlayId: e.target.value})} placeholder="VideoPlayId" className="bg-brand-bg h-9 text-xs" />
         <div className="col-span-1 space-y-1">
           <label className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Session</label>
-          <select
-            className="w-full h-9 bg-white border border-slate-200 rounded-md px-2 text-xs font-semibold text-slate-800 focus:ring-2 focus:ring-brand-primary outline-none"
-            value={newRecord.session || ''}
-            onChange={(e) => {
-              const s = sessions.find(s => s["Session Name"] === e.target.value);
-              if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], city: s["City"], venue: s["Venue"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"], sessionType: s["SessionType"] });
-              else setNewRecord({ ...newRecord, session: e.target.value });
-            }}
-          >
-            <option value="">Select session...</option>
-            {sessions.map((s, i) => <option key={i} value={s["Session Name"]}>{s["Session Name"]}</option>)}
-          </select>
+          <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+            <CellDropdown
+              value={newRecord.session || ''}
+              options={sessions.map((s: any) => s["Session Name"]).filter(Boolean)}
+              onCommit={val => {
+                const s = sessions.find((x: any) => x["Session Name"] === val);
+                if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], city: s["City"], venue: s["Venue"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"], sessionType: s["SessionType"] });
+                else setNewRecord({ ...newRecord, session: val });
+              }}
+              onCancel={() => {}}
+              placeholder="Select session…"
+              tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20"
+            />
+          </div>
         </div>
         <Input value={newRecord.date || ''} onChange={(e) => setNewRecord({...newRecord, date: e.target.value})} placeholder="Date" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord.city || ''} onChange={(e) => setNewRecord({...newRecord, city: e.target.value})} placeholder="City" className="bg-brand-bg h-9 text-xs" />
@@ -7745,6 +7831,9 @@ if (!health?.mongodb) {
           customTags={customTags}
           onAddCustomTag={handleAddCustomTag}
           onRemoveTag={handleRemoveTagGlobally}
+          onImageManage={(col, currentItem) => {
+            setImageManager({ item: currentItem, column: col, isOpen: true });
+          }}
         />
       )}
 
