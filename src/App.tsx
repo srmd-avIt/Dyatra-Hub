@@ -2387,14 +2387,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   type ImgEntry = { url: string; name: string };
 
   const [images, setImages] = useState<ImgEntry[]>([]);
-  const [renamingIdx, setRenamingIdx] = useState<number | null>(null);
-  const [renameVal, setRenameVal] = useState('');
-  // Ref mirror so async callbacks (FileReader) always see latest images
-  const imagesRef = useRef<ImgEntry[]>([]);
-  imagesRef.current = images;
-  // Ref mirror for onUpdate so async callbacks always call the latest handler
-  const onUpdateRef = useRef(onUpdate);
-  onUpdateRef.current = onUpdate;
+  const [isUploading, setIsUploading] = useState(false);
 
   const parseImages = (raw: string): ImgEntry[] => {
     const result: ImgEntry[] = [];
@@ -2407,37 +2400,118 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   const serialize = (entries: ImgEntry[]): string =>
     entries.map(e => e.name ? `[${e.name}](${e.url})` : `(${e.url})`).join(' ');
 
-  const commit = (next: ImgEntry[]) => {
-    setImages(next);
-    onUpdateRef.current(serialize(next));
+  const [renamingIdx, setRenamingIdx] = useState<number | null>(null);
+  const [renameVal, setRenameVal] = useState('');
+  const onUpdateRef = useRef(onUpdate);
+  onUpdateRef.current = onUpdate;
+
+  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pendingSerializedRef = useRef<string | null>(null);
+
+  // Commit: update local images state immediately (instant UI), then debounce the network save.
+  // Calling onUpdate directly inside setImages caused React to fire multiple concurrent PUTs;
+  // if they arrived out of order the last-to-land request would overwrite later changes.
+  const commit = (updater: (prev: ImgEntry[]) => ImgEntry[]) => {
+    setImages(prev => {
+      const next = updater(prev);
+      pendingSerializedRef.current = serialize(next); // ref mutation is safe inside updater
+      return next;
+    });
+    // Schedule save outside the state updater to keep the updater pure
+    if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
+    saveTimerRef.current = setTimeout(() => {
+      saveTimerRef.current = null;
+      const s = pendingSerializedRef.current;
+      pendingSerializedRef.current = null;
+      if (s !== null) onUpdateRef.current(s);
+    }, 300);
   };
 
-  // Only initialise from manager.item when dialog first opens
+  // Initialise from manager.item when dialog opens; flush any pending save on close.
   useEffect(() => {
-    if (manager?.isOpen && manager?.item) {
-      setImages(parseImages(manager.item[manager.column] || ''));
-      setRenamingIdx(null);
-    }
+    if (!manager?.isOpen || !manager?.item) return;
+
+    // Cancel any stale timer from a previous session
+    if (saveTimerRef.current !== null) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+    pendingSerializedRef.current = null;
+
+    setImages(parseImages(manager.item[manager.column] || ''));
+    setRenamingIdx(null);
+
+    // Capture onUpdate now — it closes over the valid imageManager (_id won't change
+    // during this session), so it's safe to call from the cleanup after manager is nulled.
+    const capturedOnUpdate = onUpdate;
+
+    return () => {
+      // Flush any debounced save before imageManager becomes null on close
+      if (saveTimerRef.current !== null) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
+      if (pendingSerializedRef.current !== null) {
+        const s = pendingSerializedRef.current;
+        pendingSerializedRef.current = null;
+        capturedOnUpdate(s);
+      }
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [manager?.isOpen]);
 
   // All handlers defined before the early return — no stale closures
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
+    const input = e.target;
+    const file = input.files?.[0];
     if (!file) return;
-    if (file.size > 10 * 1024 * 1024) { alert('File too large (max 10 MB)'); return; }
+
+    setIsUploading(true);
+
     const reader = new FileReader();
-    reader.onloadend = () => {
-      const name = file.name.replace(/\.[^.]+$/, '');
-      // Use imagesRef.current so the async callback always sees latest state
-      commit([...imagesRef.current, { url: reader.result as string, name }]);
+    reader.onload = (event) => {
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement('canvas');
+        let { width, height } = img;
+        const max = 1200;
+        if (width > max || height > max) {
+          if (width > height) { height = Math.round(height * (max / width)); width = max; }
+          else { width = Math.round(width * (max / height)); height = max; }
+        }
+        canvas.width = width;
+        canvas.height = height;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(img, 0, 0, width, height);
+          const base64Url = canvas.toDataURL('image/jpeg', 0.7);
+          const name = file.name.replace(/\.[^.]+$/, '');
+
+          window.fetch('/api/upload', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ imageBase64: base64Url, name: `${name}.jpg` })
+          })
+          .then(res => res.json())
+          .then(data => {
+            if (data.url) {
+              commit(prev => [...prev, { url: data.url, name }]);
+            } else {
+              alert("Upload failed: " + (data.error || 'Unknown error'));
+            }
+            setIsUploading(false);
+          })
+          .catch(err => {
+            console.error(err);
+            alert("Upload error");
+            setIsUploading(false);
+          });
+        } else {
+          setIsUploading(false);
+        }
+        input.value = '';
+      };
+      img.src = event.target?.result as string;
     };
     reader.readAsDataURL(file);
-    e.target.value = '';
   };
 
   const handleRemove = (i: number) => {
-    const next = [...imagesRef.current]; next.splice(i, 1); commit(next);
+    commit(prev => prev.filter((_, idx) => idx !== i));
   };
 
   const handleDownload = (entry: ImgEntry, i: number) => {
@@ -2452,16 +2526,24 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
   const moveUp = (i: number) => {
     if (i === 0) return;
-    const next = [...imagesRef.current]; [next[i - 1], next[i]] = [next[i], next[i - 1]]; commit(next);
+    setImages(prev => {
+      const next = [...prev];
+      [next[i - 1], next[i]] = [next[i], next[i - 1]];
+      return next;
+    });
   };
 
   const moveDown = (i: number) => {
-    if (i === imagesRef.current.length - 1) return;
-    const next = [...imagesRef.current]; [next[i], next[i + 1]] = [next[i + 1], next[i]]; commit(next);
+    setImages(prev => {
+      if (i === prev.length - 1) return prev;
+      const next = [...prev];
+      [next[i], next[i + 1]] = [next[i + 1], next[i]];
+      return next;
+    });
   };
 
   const commitRename = (i: number) => {
-    commit(imagesRef.current.map((e, idx) => idx === i ? { ...e, name: renameVal.trim() } : e));
+    setImages(prev => prev.map((e, idx) => idx === i ? { ...e, name: renameVal.trim() } : e));
     setRenamingIdx(null);
   };
 
@@ -2472,10 +2554,12 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
   const doReorder = (from: number | null, to: number | null) => {
     if (from === null || to === null || from === to) return;
-    const next = [...imagesRef.current];
-    const [moved] = next.splice(from, 1);
-    next.splice(to, 0, moved);
-    commit(next);
+    setImages(prev => {
+      const next = [...prev];
+      const [moved] = next.splice(from, 1);
+      next.splice(to, 0, moved);
+      return next;
+    });
   };
 
   // Touch handlers for mobile
@@ -2527,7 +2611,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
         {/* IMAGE GRID */}
         <ScrollArea className="max-h-[65vh] bg-white">
           <div className="p-5 sm:p-6">
-            {images.length === 0 ? (
+            {images.length === 0 && !isUploading ? (
               <div className="py-16 text-center space-y-3">
                 <Monitor className="h-12 w-12 text-slate-100 mx-auto" />
                 <p className="text-[11px] text-slate-300 italic uppercase tracking-widest font-bold">No images attached</p>
@@ -2625,6 +2709,12 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
                   </div>
                 ))}
+                {isUploading && (
+                  <div className="aspect-video rounded-xl overflow-hidden border-2 border-dashed border-brand-primary/40 bg-brand-primary/5 flex flex-col items-center justify-center">
+                    <div className="h-5 w-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin mb-1.5" />
+                    <span className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Processing</span>
+                  </div>
+                )}
               </div>
             )}
           </div>
@@ -5649,7 +5739,7 @@ if (!health?.mongodb) {
   (() => {
     const renderGuidanceCard = (item: any) => {
       const attachmentString = item["Attachments"] || "";
-      const match = attachmentString.match(/\((https?:\/\/[^)]+)\)/);
+      const match = attachmentString.match(/\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/);
       const imageUrl = match ? match[1] : null;
       return (
         <motion.div key={item.id || item._id} onClick={() => setViewingRecord(item)} whileHover={{ y: -2 }} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[240px] sm:min-h-[380px]">
@@ -6126,7 +6216,7 @@ if (!health?.mongodb) {
                         return (
                         <div className="h-44 w-full overflow-hidden bg-slate-100 border-b border-slate-100">
                           {(() => {
-                            const match = item[colName]?.match(/\((https?:\/\/[^)]+)\)/);
+                            const match = item[colName]?.match(/\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/);
                             return match ? (
                               <CardImageGallery imageString={item[colName] || ""} />
                             ) : (

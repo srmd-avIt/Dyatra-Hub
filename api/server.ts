@@ -2,6 +2,9 @@ import express from 'express';
 import { MongoClient, ServerApiVersion, ObjectId } from 'mongodb';
 import cors from 'cors';
 import dotenv from 'dotenv';
+import { google } from 'googleapis';
+import stream from 'stream';
+import crypto from 'crypto';
 
 dotenv.config();
 
@@ -169,6 +172,82 @@ app.get(['/auth/google/callback', '/api/auth/google/callback'], async (req, res)
     `);
   } catch (error: any) {
     res.status(500).send(`Auth Error: ${error.message}`);
+  }
+});
+
+/**
+ * GOOGLE DRIVE UPLOAD ROUTE
+ */
+app.post('/api/upload', async (req, res) => {
+  try {
+    const { imageBase64, name } = req.body;
+    if (!imageBase64) return res.status(400).json({ error: 'No image provided' });
+
+    if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
+      return res.status(500).json({ error: 'Google Drive credentials not configured' });
+    }
+    if (!process.env.GOOGLE_DRIVE_FOLDER_ID) {
+      return res.status(500).json({ error: 'GOOGLE_DRIVE_FOLDER_ID not set — must be a Shared Drive folder ID' });
+    }
+
+    const matches = imageBase64.match(/^data:(.+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) {
+      return res.status(400).json({ error: 'Invalid base64 string' });
+    }
+    const mimeType = matches[1];
+    const buffer = Buffer.from(matches[2], 'base64');
+    const bufferStream = new stream.PassThrough();
+    bufferStream.end(buffer);
+
+    let pk = process.env.GOOGLE_PRIVATE_KEY || '';
+    // Strip surrounding quotes, fix escaped newlines and carriage returns
+    pk = pk.replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').replace(/\r/g, '').trim();
+    // Re-parse and re-export via Node crypto so OpenSSL 3.x gets a clean PKCS#8 PEM.
+    // jwa@2 passes raw PEM strings to createSign().sign() which fails in Node 18+ when
+    // the string has any formatting quirk. A KeyObject export is always clean.
+    try {
+      pk = crypto.createPrivateKey(pk).export({ type: 'pkcs8', format: 'pem' }).toString();
+    } catch (keyErr: any) {
+      console.error('GOOGLE_PRIVATE_KEY parse failed:', keyErr.message);
+      return res.status(500).json({ error: 'GOOGLE_PRIVATE_KEY is malformed — check .env formatting' });
+    }
+
+    const auth = new google.auth.GoogleAuth({
+      credentials: {
+        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+        private_key: pk,
+      },
+      scopes: ['https://www.googleapis.com/auth/drive'],
+    });
+
+    const drive = google.drive({ version: 'v3', auth });
+
+    const file = await drive.files.create({
+      supportsAllDrives: true,
+      requestBody: {
+        name: name || `upload_${Date.now()}`,
+        parents: [process.env.GOOGLE_DRIVE_FOLDER_ID!],
+      },
+      media: { mimeType, body: bufferStream },
+      fields: 'id',
+    });
+
+    if (file.data.id) {
+      await drive.permissions.create({
+        fileId: file.data.id,
+        supportsAllDrives: true,
+        requestBody: { role: 'reader', type: 'anyone' },
+      });
+    }
+
+    res.json({ url: `https://drive.google.com/uc?export=view&id=${file.data.id}` });
+  } catch (error: any) {
+    console.error('Drive upload error:', error);
+    const msg = error.message || String(error);
+    const hint = msg.includes('DECODER') || msg.includes('unsupported')
+      ? ' (Private key format error — check GOOGLE_PRIVATE_KEY in .env)'
+      : '';
+    res.status(500).json({ error: 'Failed to upload to Google Drive: ' + msg + hint });
   }
 });
 
