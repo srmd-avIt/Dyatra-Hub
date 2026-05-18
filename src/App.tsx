@@ -47,6 +47,8 @@ import {
   Zap,
   PanelLeftClose,
   PanelLeftOpen,
+  Bell,
+  AtSign,
   Clock,
   LayoutGrid,
   Grid,
@@ -790,6 +792,34 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     return () => document.removeEventListener('keydown', h);
   }, [onClose]);
 
+  // Populate lookup fields from live session data whenever sessions load or record opens
+  useEffect(() => {
+    if (!sessions.length) return;
+    const sessionName = draftRef.current['Session'] || draftRef.current['🕘 Session'];
+    if (!sessionName) return;
+    const s = sessions.find((x: any) => x["Session Name"] === sessionName);
+    if (!s) return;
+    const patch: Record<string, string> = {};
+    if (isML || isVL) {
+      patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+      patch["Date (from Session)"] = s["Date"] ? String(s["Date"]).split('T')[0] : '';
+      patch["TimeOfDay (from Session)"] = s["Time Of Day"] || '';
+      patch["Occasion (from Session)"] = s["Occasion"] || '';
+    }
+    if (isVL) {
+      patch["City (from Session)"] = s["City"] || '';
+      patch["Venue (from Session)"] = s["Venue"] || '';
+      patch["SessionType (from Session)"] = s["SessionType"] || '';
+    }
+    if (isLED) {
+      patch["Parent Event (from 🕘 Session)"] = s["Parent Event"] || '';
+      patch["Date (from 🕘 Session)"] = s["Date"] ? String(s["Date"]).split('T')[0] : '';
+      patch["City (from 🕘 Session)"] = s["City"] || '';
+      patch["Venue (from 🕘 Session)"] = s["Venue"] || '';
+    }
+    if (Object.keys(patch).length > 0) setDraft((prev: any) => ({ ...prev, ...patch }));
+  }, [sessions]);
+
   // Build wizard steps (mobile): group fields into logical sections
   const wizardSteps: { label: string; fields: string[] }[] = (() => {
     const makeGroups = (groups: { label: string; fields: string[] }[]) => {
@@ -864,6 +894,110 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
         return val.split(',').map((x: string) => x.trim()).includes(s["Session Name"]);
       })
     : [];
+
+  // ── Comments ──────────────────────────────────────────────────────────────
+  const recordId = String(item._id || item.id || '');
+  const colName = (() => {
+    switch (tableName) {
+      case 'Events': return 'events'; case 'Session': return 'sessions';
+      case 'MusicLog': return 'musiclog'; case 'VideoLog': return 'videolog';
+      case 'Tracks': return 'media'; case 'DyatraChecklist': return 'checklist';
+      case 'Guidance & Learning': return 'guidance'; case 'LED': return 'led_details';
+      case 'DataSharing': return 'locations'; case 'VideoSetup': return 'videosetup';
+      case 'AudioSetup': return 'audiosetup'; default: return tableName.toLowerCase();
+    }
+  })();
+  const [comments, setComments] = useState<any[]>([]);
+  const [commentText, setCommentText] = useState('');
+  const [allUsers, setAllUsers] = useState<any[]>([]);
+  const [mentionOpen, setMentionOpen] = useState(false);
+  const [mentionQuery, setMentionQuery] = useState('');
+  const [mentionStart, setMentionStart] = useState(0);
+  const commentInputRef = useRef<HTMLTextAreaElement>(null);
+
+  useEffect(() => {
+    if (!recordId) return;
+    window.fetch(`/api/comments?collection=${colName}&recordId=${recordId}`)
+      .then(r => r.ok ? r.json() : []).then(setComments).catch(() => {});
+    window.fetch('/api/locations')
+      .then(r => r.ok ? r.json() : [])
+      .then((rows: any[]) => setAllUsers(
+        rows.filter((r: any) => r["Sevak"] || r["EmailId"])
+            .map((r: any) => ({ name: r["Sevak"] || '', email: r["EmailId"] || '' }))
+      ))
+      .catch(() => {});
+  }, [recordId]);
+
+  const handleCommentInput = (e: React.ChangeEvent<HTMLTextAreaElement>) => {
+    const val = e.target.value;
+    setCommentText(val);
+    const cursor = e.target.selectionStart ?? val.length;
+    const before = val.slice(0, cursor);
+    const m = before.match(/@(\w*)$/);
+    if (m) { setMentionQuery(m[1]); setMentionStart(cursor - m[0].length); setMentionOpen(true); }
+    else setMentionOpen(false);
+  };
+
+  const selectMention = (user: any) => {
+    const name = (user.name || user.email || '').replace(/\s+/g, '');
+    const before = commentText.slice(0, mentionStart);
+    const after = commentText.slice(mentionStart + 1 + mentionQuery.length);
+    setCommentText(`${before}@${name} ${after}`);
+    setMentionOpen(false);
+    setTimeout(() => commentInputRef.current?.focus(), 0);
+  };
+
+  const [commentPosting, setCommentPosting] = useState(false);
+
+  const postComment = async () => {
+    const text = commentText.trim();
+    if (!text || !recordId || commentPosting) return;
+    setCommentPosting(true);
+    try {
+      const mentions = [...text.matchAll(/@(\w+)/g)].map(m => m[1]);
+      const body = { collection: colName, recordId, text, authorId: currentUser?.email || '', authorName: currentUser?.name || 'Anonymous', mentions, recordTitle, tableName };
+      const res = await window.fetch('/api/comments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+      if (res.ok) {
+        const c = await res.json();
+        setComments((prev: any[]) => [...prev, c]);
+        setCommentText('');
+        setMentionOpen(false);
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        alert(`Failed to post comment (${res.status}): ${(errData as any).error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert(`Network error: ${err}`);
+    } finally {
+      setCommentPosting(false);
+    }
+  };
+
+  const deleteComment = async (commentId: string) => {
+    await window.fetch(`/api/comments/${commentId}`, { method: 'DELETE' });
+    setComments(prev => prev.filter(c => String(c._id) !== commentId));
+  };
+
+  const filteredMentionUsers = allUsers.filter(u =>
+    (u.name || u.email || '').toLowerCase().startsWith(mentionQuery.toLowerCase())
+  ).slice(0, 6);
+
+  const renderCommentText = (text: string) =>
+    text.split(/(@\w+)/g).map((part, i) =>
+      part.startsWith('@')
+        ? <span key={i} className="text-brand-primary font-bold">{part}</span>
+        : <React.Fragment key={i}>{part}</React.Fragment>
+    );
+
+  const formatCommentTime = (raw: any) => {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    const diff = Date.now() - d.getTime();
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
 
   const recordTitle = draft["Event Name"] || draft["Session Name"] || draft["Track"] || draft["Title"] || draft["VideoTitle"] || draft["Task"] || "Record";
 
@@ -1181,13 +1315,92 @@ if (hasDropdown) {
           </div>
         </div>
       )}
-      <div className="flex-1 p-4">
-        <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] mb-3">Activity</div>
-        <div className="text-[11px] text-slate-400 italic mb-4">No comments yet.</div>
-        <div className="border border-slate-200 rounded-xl p-3 bg-white shadow-sm">
-          <textarea className="w-full text-[12px] bg-transparent outline-none resize-none text-slate-700 placeholder:text-slate-400" rows={3} placeholder="Start a conversation…" />
-          <div className="flex justify-end mt-2">
-            <button className="text-[10px] font-black text-brand-primary uppercase tracking-widest bg-brand-primary/10 px-3 py-1.5 rounded-lg hover:bg-brand-primary/20 transition-colors">Post</button>
+      <div className="flex-1 flex flex-col p-4 min-h-0">
+        <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] mb-3">
+          Activity {comments.length > 0 && <span className="text-brand-primary">({comments.length})</span>}
+        </div>
+
+        {/* Comment list */}
+        <div className="flex-1 overflow-y-auto space-y-3 mb-3 min-h-0 pr-0.5">
+          {comments.length === 0 && (
+            <div className="text-[11px] text-slate-400 italic">No comments yet. Start the conversation!</div>
+          )}
+          {comments.map((c: any) => {
+            const cid = String(c._id);
+            const isOwn = (currentUser?.email && c.authorId === currentUser.email) || (currentUser?.name && c.authorName === currentUser.name);
+            return (
+              <div key={cid} className="group flex gap-2">
+                <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[10px] font-black shrink-0 mt-0.5">
+                  {(c.authorName || '?')[0].toUpperCase()}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-baseline gap-2">
+                    <span className="text-[11px] font-black text-slate-800">{c.authorName}</span>
+                    <span className="text-[9px] text-slate-400">{formatCommentTime(c.createdAt)}</span>
+                    {isOwn && (
+                      <button onClick={() => deleteComment(cid)} className="ml-auto opacity-0 group-hover:opacity-100 text-[9px] text-red-400 hover:text-red-600 transition-all shrink-0">
+                        delete
+                      </button>
+                    )}
+                  </div>
+                  <div className="text-[12px] text-slate-700 leading-snug mt-0.5 break-words">
+                    {renderCommentText(c.text)}
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Compose box */}
+        <div className="relative shrink-0">
+          {/* @mention dropdown */}
+          {mentionOpen && (
+            <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-[9999]">
+              {filteredMentionUsers.length === 0 ? (
+                <div className="px-3 py-2.5 text-[11px] text-slate-400 italic">
+                  {allUsers.length === 0 ? 'No team members found' : `No match for "@${mentionQuery}"`}
+                </div>
+              ) : filteredMentionUsers.map((u: any) => (
+                <button
+                  key={u._id || u.email}
+                  onMouseDown={e => { e.preventDefault(); selectMention(u); }}
+                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-brand-primary/5 transition-colors text-left"
+                >
+                  <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-[9px] font-black shrink-0">
+                    {(u.name || u.email || '?')[0].toUpperCase()}
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-[11px] font-bold text-slate-800 truncate">{u.name || u.email}</div>
+                    {u.email && <div className="text-[9px] text-slate-400 truncate">{u.email}</div>}
+                  </div>
+                </button>
+              ))}
+            </div>
+          )}
+
+          <div className="border border-slate-200 rounded-xl bg-white shadow-sm overflow-hidden focus-within:border-brand-primary/40 focus-within:ring-1 focus-within:ring-brand-primary/20 transition-all">
+            <textarea
+              ref={commentInputRef}
+              value={commentText}
+              onChange={handleCommentInput}
+              onKeyDown={e => {
+                if (e.key === 'Escape') { e.preventDefault(); setMentionOpen(false); }
+                if (e.key === 'Enter' && !e.shiftKey && !mentionOpen) { e.preventDefault(); postComment(); }
+              }}
+              rows={2}
+              placeholder="Comment… type @ to tag someone"
+              className="w-full text-[12px] bg-transparent outline-none resize-none text-slate-700 placeholder:text-slate-400 px-3 pt-2.5 pb-1"
+            />
+            <div className="flex justify-end px-3 pb-2">
+              <button
+                onClick={postComment}
+                disabled={!commentText.trim() || commentPosting}
+                className="text-[10px] font-black text-white uppercase tracking-widest bg-brand-primary px-3 py-1.5 rounded-lg hover:bg-brand-primary/90 disabled:opacity-30 transition-colors"
+              >
+                {commentPosting ? '…' : 'Post'}
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -1294,13 +1507,21 @@ if (hasDropdown) {
       >
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-200 bg-slate-50 shrink-0">
-          <div>
+          <div className="min-w-0 flex-1">
             <div className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-0.5">{tableName}</div>
             <h2 className="text-xl font-black text-slate-900 tracking-tight truncate max-w-[480px]">{recordTitle}</h2>
           </div>
-          <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-200 transition-colors ml-4">
-            <X className="h-5 w-5 text-slate-500" />
-          </button>
+          <div className="flex items-center gap-2 ml-4 shrink-0">
+            <button
+              onClick={() => { onSave(draftRef.current); onClose(); }}
+              className="h-9 px-4 flex items-center gap-1.5 bg-brand-primary text-white rounded-xl text-[12px] font-black uppercase tracking-widest shadow-sm hover:bg-brand-primary/90 transition-colors"
+            >
+              Save & Close
+            </button>
+            <button onClick={onClose} className="p-2 rounded-xl hover:bg-slate-200 transition-colors">
+              <X className="h-5 w-5 text-slate-500" />
+            </button>
+          </div>
         </div>
 
         {/* Body: fields + sidebar */}
@@ -1319,6 +1540,124 @@ if (hasDropdown) {
         </div>
       </div>
     </div>
+  );
+});
+
+// ── InboxPanel ────────────────────────────────────────────────────────────────
+const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord }: {
+  email: string;
+  onClose: () => void;
+  onOpenRecord: (tableName: string, collection: string, recordId: string) => void;
+}) {
+  const [items, setItems] = React.useState<any[]>([]);
+  const [loading, setLoading] = React.useState(true);
+
+  React.useEffect(() => {
+    if (!email) return;
+    setLoading(true);
+    window.fetch(`/api/notifications?email=${encodeURIComponent(email)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then(d => { setItems(d); setLoading(false); })
+      .catch(() => setLoading(false));
+  }, [email]);
+
+  const markRead = async (id: string) => {
+    setItems(prev => prev.map(n => String(n._id) === id ? { ...n, read: true } : n));
+    await window.fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
+  };
+
+  const markAllRead = async () => {
+    setItems(prev => prev.map(n => ({ ...n, read: true })));
+    await window.fetch('/api/notifications/read-all', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+  };
+
+  const fmt = (raw: any) => {
+    const d = new Date(raw);
+    if (isNaN(d.getTime())) return '';
+    const diff = Date.now() - d.getTime();
+    if (diff < 60000) return 'just now';
+    if (diff < 3600000) return `${Math.floor(diff / 60000)}m ago`;
+    if (diff < 86400000) return `${Math.floor(diff / 3600000)}h ago`;
+    return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
+  };
+
+  const unread = items.filter(n => !n.read).length;
+
+  return (
+    <>
+      {/* Backdrop */}
+      <div className="fixed inset-0 z-[650] bg-black/20" onClick={onClose} />
+      {/* Panel */}
+      <div className="fixed inset-y-0 right-0 z-[660] w-full sm:w-[400px] bg-white shadow-2xl border-l border-slate-200 flex flex-col">
+        {/* Header */}
+        <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between shrink-0">
+          <div className="flex items-center gap-2">
+            <Bell className="h-4 w-4 text-brand-primary" />
+            <span className="text-[15px] font-black text-slate-900">Inbox</span>
+            {unread > 0 && <span className="h-5 min-w-[20px] px-1.5 bg-brand-primary text-white text-[10px] font-black rounded-full flex items-center justify-center">{unread}</span>}
+          </div>
+          <div className="flex items-center gap-2">
+            {unread > 0 && (
+              <button onClick={markAllRead} className="text-[10px] font-black text-slate-500 hover:text-brand-primary uppercase tracking-widest transition-colors px-2 py-1 rounded-lg hover:bg-brand-primary/5">
+                Mark all read
+              </button>
+            )}
+            <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-slate-100 transition-colors">
+              <X className="h-5 w-5 text-slate-400" />
+            </button>
+          </div>
+        </div>
+
+        {/* List */}
+        <div className="flex-1 overflow-y-auto">
+          {loading && (
+            <div className="flex items-center justify-center h-32 text-[12px] text-slate-400">Loading…</div>
+          )}
+          {!loading && items.length === 0 && (
+            <div className="flex flex-col items-center justify-center h-48 gap-3 text-center px-8">
+              <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
+                <Bell className="h-6 w-6 text-slate-300" />
+              </div>
+              <div className="text-[13px] font-bold text-slate-400">No notifications yet</div>
+              <div className="text-[11px] text-slate-400">You'll see mentions and comments here</div>
+            </div>
+          )}
+          {!loading && items.map((n: any) => {
+            const nid = String(n._id);
+            return (
+              <div
+                key={nid}
+                onClick={() => { markRead(nid); onOpenRecord(n.tableName, n.collection, n.recordId); onClose(); }}
+                className={`px-5 py-4 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors ${!n.read ? 'bg-brand-primary/[0.03]' : ''}`}
+              >
+                <div className="flex gap-3">
+                  {/* Avatar */}
+                  <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[11px] font-black shrink-0 mt-0.5">
+                    {(n.authorName || '?')[0].toUpperCase()}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    {/* Meta line */}
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="text-[12px] font-black text-slate-800">{n.authorName}</span>
+                      <span className="text-[11px] text-slate-400">mentioned you in</span>
+                      <span className="text-[11px] font-bold text-brand-primary">{n.tableName}</span>
+                    </div>
+                    {/* Record title */}
+                    <div className="text-[13px] font-semibold text-slate-800 mt-0.5 truncate">{n.recordTitle}</div>
+                    {/* Comment preview */}
+                    <div className="text-[12px] text-slate-500 mt-1 leading-snug line-clamp-2">{n.text}</div>
+                    {/* Time */}
+                    <div className="text-[10px] text-slate-400 mt-1.5">{fmt(n.createdAt)}</div>
+                  </div>
+                  {/* Unread dot */}
+                  {!n.read && <div className="h-2 w-2 bg-brand-primary rounded-full mt-1.5 shrink-0" />}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </>
   );
 });
 
@@ -1528,6 +1867,7 @@ export default function App() {
   const [editingId, setEditingId] = useState<string | null>(null);
 const [editDraft, setEditDraft] = useState<any>(null);
 const [expandedRecord, setExpandedRecord] = useState<any>(null);
+const [inboxOpen, setInboxOpen] = useState(false);
 const [editingCell, setEditingCell] = useState<string | null>(null);
 // Tracks whether a mousedown happened inside the editing row — suppresses
 // blur-triggered saves when the user is just clicking a different cell in the same row.
@@ -3711,9 +4051,18 @@ const handleUpdateRecord = async (draftOverride?: any) => {
   }
 };
 
+const openNotificationRecord = async (tableName: string, collection: string, recordId: string) => {
+  setActiveTable(tableName);
+  setViewingRecord(null);
+  try {
+    const res = await window.fetch(`/api/${collection}/${recordId}`);
+    if (res.ok) { const record = await res.json(); setExpandedRecord(record); }
+  } catch { /* silent */ }
+};
+
 const handleExpandedSave = async (newDraft: any) => {
   const id = newDraft._id || newDraft.id;
-  if (!id) return;
+  if (!id) { showToast('Cannot save — record has no ID.'); return; }
   let collection = '';
   switch (activeTable) {
     case 'Events': collection = 'events'; break;
@@ -3732,14 +4081,20 @@ const handleExpandedSave = async (newDraft: any) => {
   const updateData = { ...newDraft };
   delete updateData._id;
   try {
-    await window.fetch(`/api/${collection}/${id}`, {
+    const res = await window.fetch(`/api/${collection}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(updateData)
     });
+    if (!res.ok) { showToast('Save failed — please try again.'); return; }
+    // Keep viewingRecord in sync so detail view shows updated data
+    if (viewingRecord && (viewingRecord._id === id || viewingRecord.id === id)) {
+      setViewingRecord({ ...newDraft, _id: id });
+    }
     fetchActiveTable();
   } catch (e) {
     console.error("Expand save error", e);
+    showToast('Save failed — please try again.');
   }
 };
 
@@ -4249,177 +4604,152 @@ if (!health?.mongodb) {
 `
 }} />
 
-<aside 
-  className={`fixed inset-y-0 left-0 z-50 bg-[#0f111a] flex flex-col shrink-0 border-r border-slate-800/60 transition-all duration-300 ease-in-out lg:relative 
-  /* Mobile: Hidden off-screen by default, slide in when open */
-  ${isSidebarOpen ? 'translate-x-0 w-[280px] shadow-2xl' : '-translate-x-full lg:translate-x-0 w-[280px] lg:w-[80px]'} 
-  /* Web: Handle expanded state */
-  ${isSidebarOpen && 'lg:w-[260px]'}`}
+<aside
+  className={`fixed inset-y-0 left-0 z-50 bg-[#0f111a] flex flex-col shrink-0 border-r border-slate-800/60 transition-all duration-300 ease-in-out lg:relative ${
+    isSidebarOpen
+      ? 'translate-x-0 w-[260px] shadow-2xl lg:shadow-none'
+      : '-translate-x-full lg:translate-x-0 lg:w-[72px]'
+  }`}
 >
-  {/* Close button - Only visible on Mobile when sidebar is open */}
-  <div className="lg:hidden absolute right-4 top-5">
-    <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(false)} className="text-slate-400 h-11 w-11">
-      <X className="h-6 w-6" />
+  {/* Mobile close button */}
+  <div className="lg:hidden absolute right-3 top-4 z-10">
+    <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(false)} className="text-slate-400 hover:text-white h-10 w-10">
+      <X className="h-5 w-5" />
     </Button>
   </div>
- {/* SIDEBAR HEADER: Logo + Professional Toggle */}
-<div className={`flex border-b border-slate-800/40 transition-all duration-300 overflow-hidden ${
-  isSidebarOpen 
-    ? 'flex-row items-center justify-between px-6 h-20' 
-    : 'flex-col items-center py-6 gap-6 h-auto'
-}`}>
-  
-   {/* 1. THE TOGGLE BUTTON (Comes first when closed) */}
-  <button
-    onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-    className={`hidden lg:flex h-11 w-11 items-center justify-center rounded-lg transition-all duration-200 group ${
-      isSidebarOpen
-        ? 'text-slate-500 hover:text-white hover:bg-slate-800/60 order-2'
-        : 'text-brand-primary bg-brand-primary/10 border border-brand-primary/20 hover:bg-brand-primary hover:text-white order-1 scale-110 shadow-lg shadow-brand-primary/10'
-    }`}
-    title={isSidebarOpen ? "Collapse Sidebar" : "Expand Sidebar"}
-  >
-    {isSidebarOpen ? <PanelLeftClose className="h-5 w-5" /> : <PanelLeftOpen className="h-5 w-5" />}
-  </button>
-  {/* 2. LOGO SECTION (Comes second when closed) */}
-  <div className={`flex items-center gap-3 transition-all duration-300 ${
-    isSidebarOpen ? 'order-1' : 'order-2'
+
+  {/* HEADER — fixed height so it never shifts layout */}
+  <div className={`h-[64px] shrink-0 flex items-center border-b border-slate-800/40 ${
+    isSidebarOpen ? 'px-4 justify-between' : 'justify-center'
   }`}>
-    <div className="h-9 w-9 bg-brand-primary rounded-xl flex items-center justify-center shadow-lg shadow-brand-primary/20 shrink-0">
-      <Zap className="h-5 w-5 text-white fill-white" />
+    <div className="flex items-center gap-3 min-w-0">
+      <div className="h-9 w-9 bg-brand-primary rounded-xl flex items-center justify-center shadow-lg shadow-brand-primary/20 shrink-0">
+        <Zap className="h-5 w-5 text-white fill-white" />
+      </div>
+      {isSidebarOpen && (
+        <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="min-w-0">
+          <div className="text-[13px] font-black tracking-tight text-white uppercase leading-none">Dyatra Hub</div>
+          <div className="text-[9px] font-bold text-slate-500 tracking-[0.2em] uppercase mt-0.5">Ops Center</div>
+        </motion.div>
+      )}
     </div>
-    
     {isSidebarOpen && (
-      <motion.div 
-        initial={{ opacity: 0, x: -10 }} 
-        animate={{ opacity: 1, x: 0 }} 
-        className="whitespace-nowrap"
+      <button
+        onClick={() => setIsSidebarOpen(false)}
+        className="hidden lg:flex h-8 w-8 shrink-0 items-center justify-center rounded-lg text-slate-500 hover:text-white hover:bg-slate-800/60 transition-all duration-200"
+        title="Collapse"
       >
-        <div className="text-sm font-black tracking-tighter text-white uppercase leading-none">Dyatra Hub</div>
-        <div className="text-[9px] font-bold text-slate-500 tracking-[0.2em] uppercase mt-1">Ops Center</div>
-      </motion.div>
+        <PanelLeftClose className="h-4 w-4" />
+      </button>
     )}
   </div>
-</div>
-  
-  {/* NAVIGATION AREA WITH VISIBLE SCROLLBAR */}
-  <ScrollArea className="flex-1 custom-sidebar-scrollbar overflow-y-auto">
-    <div className="px-3 py-6 space-y-8 overflow-hidden">
-      
-      {/* SECTION 1: MASTER DATA */}
-      <div>
-        {isSidebarOpen && (
-          <motion.span 
-            initial={{ opacity: 0 }} 
-            animate={{ opacity: 1 }} 
-             className="px-4 text-[11px] font-black uppercase tracking-[0.2em] text-slate-500 block mb-4"
-          >
-            Master Data
-          </motion.span>
-        )}
-        
-        <div className="space-y-1">
-          {(() => {
-            const navGroups: { groupLabel?: string; items: { icon: any; label: string; table: string }[] }[] = [
-              {
-                items: [
-                  { icon: LayoutGrid,    label: 'Home',               table: 'Home' },
-                  { icon: Calendar,      label: 'Events',              table: 'Events' },
-                  { icon: MessageSquare, label: 'Sessions',            table: 'Session' },
-                  { icon: FileText,      label: 'Guidance & Learning', table: 'Guidance & Learning' },
-                  { icon: Monitor,       label: 'LED',                 table: 'LED' },
-                  { icon: CheckSquare,   label: "D'yatra Checklist",   table: 'DyatraChecklist' },
-                  { icon: Search,        label: 'Data Sharing',        table: 'DataSharing' },
-                ],
-              },
-              {
-                groupLabel: 'Audio',
-                items: [
-                  { icon: Music,   label: 'Music Log',   table: 'MusicLog' },
-                  { icon: Volume2, label: 'Audio Setup',  table: 'AudioSetup' },
-                  { icon: Play,    label: 'Tracks',       table: 'Tracks' },
-                ],
-              },
-              {
-                groupLabel: 'Video',
-                items: [
-                  { icon: Video, label: 'Video Log',   table: 'VideoLog' },
-                  { icon: Film, label: 'Video Setup', table: 'VideoSetup' },
-                ],
-              },
-            ];
-            return navGroups.map((group, gi) => (
-              <div key={gi} className={gi > 0 ? 'mt-3' : ''}>
-                {group.groupLabel && isSidebarOpen && (
-                  <div className="px-4 mb-1 mt-2">
-                    <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">{group.groupLabel}</span>
-                  </div>
-                )}
-                {group.groupLabel && !isSidebarOpen && (
-                  <div className="flex justify-center mb-1 mt-2">
-                    <div className="w-4 h-px bg-slate-700" />
-                  </div>
-                )}
-                {group.items.map((item) => (
-                  <button
-                    key={item.table}
-                    onClick={() => { setActiveTable(item.table); setViewingRecord(null); if (isMobileView) setIsSidebarOpen(false); }}
-                    title={!isSidebarOpen ? item.label : ''}
-                    className={`w-full flex items-center rounded-xl transition-all duration-200 group
-                    ${isSidebarOpen ? 'px-4 py-3 gap-4' : 'p-3 justify-center'}
-                    ${activeTable === item.table
-                      ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20'
-                      : 'text-slate-400 hover:text-white hover:bg-slate-800/40'}`}
-                  >
-                    <item.icon className={`h-5 w-5 shrink-0 transition-transform ${activeTable === item.table ? '' : 'group-hover:scale-110'}`} />
-                    {isSidebarOpen && (
-                      <motion.span
-                        initial={{ opacity: 0, x: -10 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="text-sm font-bold whitespace-nowrap overflow-hidden text-ellipsis"
-                      >
-                        {item.label}
-                      </motion.span>
-                    )}
-                  </button>
-                ))}
-              </div>
-            ));
-          })()}
-        </div>
-      </div>
 
-      {/* SECTION 2: QUICK ACTIONS */}
-      
+  {/* NAVIGATION */}
+  <ScrollArea className="flex-1 overflow-y-auto">
+    <div className="px-3 py-3">
+
+      {/* Expand button — collapsed desktop only */}
+      {!isSidebarOpen && (
+        <button
+          onClick={() => setIsSidebarOpen(true)}
+          className="hidden lg:flex w-full h-10 mb-3 items-center justify-center rounded-xl text-brand-primary bg-brand-primary/10 border border-brand-primary/20 hover:bg-brand-primary hover:text-white transition-all duration-200"
+          title="Expand Sidebar"
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </button>
+      )}
+
+      {(() => {
+        const navGroups: { groupLabel?: string; items: { icon: any; label: string; table: string }[] }[] = [
+          {
+            items: [
+              { icon: LayoutGrid,    label: 'Home',               table: 'Home' },
+              { icon: Calendar,      label: 'Events',              table: 'Events' },
+              { icon: MessageSquare, label: 'Sessions',            table: 'Session' },
+              { icon: FileText,      label: 'Guidance & Learning', table: 'Guidance & Learning' },
+              { icon: Monitor,       label: 'LED',                 table: 'LED' },
+              { icon: CheckSquare,   label: "D'yatra Checklist",   table: 'DyatraChecklist' },
+              { icon: Search,        label: 'Data Sharing',        table: 'DataSharing' },
+            ],
+          },
+          {
+            groupLabel: 'Audio',
+            items: [
+              { icon: Music,   label: 'Music Log',  table: 'MusicLog' },
+              { icon: Volume2, label: 'Audio Setup', table: 'AudioSetup' },
+              { icon: Play,    label: 'Tracks',      table: 'Tracks' },
+            ],
+          },
+          {
+            groupLabel: 'Video',
+            items: [
+              { icon: Video, label: 'Video Log',   table: 'VideoLog' },
+              { icon: Film,  label: 'Video Setup', table: 'VideoSetup' },
+            ],
+          },
+        ];
+
+        return navGroups.map((group, gi) => (
+          <div key={gi} className={gi > 0 ? 'mt-4' : ''}>
+            {group.groupLabel && (
+              isSidebarOpen ? (
+                <div className="px-2 mb-1.5">
+                  <span className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-600">{group.groupLabel}</span>
+                </div>
+              ) : (
+                <div className="flex justify-center mb-1.5">
+                  <span className="text-[7px] font-black uppercase tracking-widest text-slate-600 bg-slate-800/80 rounded px-1.5 py-0.5 leading-none">{group.groupLabel[0]}</span>
+                </div>
+              )
+            )}
+            <div className="space-y-0.5">
+              {group.items.map((item) => (
+                <button
+                  key={item.table}
+                  onClick={() => { setActiveTable(item.table); setViewingRecord(null); if (isMobileView) setIsSidebarOpen(false); }}
+                  title={item.label}
+                  className={`w-full flex items-center rounded-xl transition-all duration-200 group ${
+                    isSidebarOpen ? 'px-3 py-2.5 gap-3' : 'h-11 justify-center'
+                  } ${
+                    activeTable === item.table
+                      ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20'
+                      : 'text-slate-400 hover:text-white hover:bg-slate-800/50'
+                  }`}
+                >
+                  <item.icon className={`h-[18px] w-[18px] shrink-0 ${activeTable !== item.table ? 'group-hover:scale-110 transition-transform' : ''}`} />
+                  {isSidebarOpen && (
+                    <motion.span
+                      initial={{ opacity: 0, x: -8 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="text-[13px] font-bold whitespace-nowrap overflow-hidden text-ellipsis"
+                    >
+                      {item.label}
+                    </motion.span>
+                  )}
+                </button>
+              ))}
+            </div>
+          </div>
+        ));
+      })()}
     </div>
   </ScrollArea>
 
-  {/* USER PROFILE SECTION */}
-  <div className={`p-5 mt-auto border-t border-slate-800/60 bg-[#0d0f17] flex items-center transition-all duration-300 ${isSidebarOpen ? 'gap-3' : 'justify-center'}`}>
-    <div className="h-10 w-10 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center text-white font-black text-sm shrink-0 shadow-lg">
+  {/* USER PROFILE */}
+  <div className={`shrink-0 border-t border-slate-800/60 bg-[#0d0f17] flex items-center transition-all duration-300 ${
+    isSidebarOpen ? 'px-4 py-3 gap-3' : 'py-3 justify-center'
+  }`}>
+    <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-orange-500 to-red-600 flex items-center justify-center text-white font-black text-sm shrink-0 shadow-lg">
       {user?.name?.[0]?.toUpperCase() || 'G'}
     </div>
-    
     {isSidebarOpen && (
-      <motion.div 
-        initial={{ opacity: 0, x: -10 }} 
-        animate={{ opacity: 1, x: 0 }} 
-        className="flex-1 min-w-0"
-      >
-        <div className="text-sm font-black text-white truncate uppercase">
-          {user?.name || 'it_sevarpit'}
-        </div>
-        <div className="text-[10px] text-brand-primary font-black uppercase tracking-widest mt-1">
-  ADMIN
-</div>
+      <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="flex-1 min-w-0">
+        <div className="text-[13px] font-black text-white truncate uppercase">{user?.name || 'it_sevarpit'}</div>
+        <div className="text-[9px] text-brand-primary font-black uppercase tracking-widest mt-0.5">ADMIN</div>
       </motion.div>
     )}
-
     {isSidebarOpen && (
-      <button 
-        onClick={() => setUser(null)}
-        className="p-2 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-colors"
-      >
+      <button onClick={() => setUser(null)} className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-slate-800 transition-colors shrink-0">
         <LogOut className="h-4 w-4" />
       </button>
     )}
@@ -4651,6 +4981,20 @@ if (!health?.mongodb) {
       </button>
     </div>
   )}
+
+  {/* INBOX BELL */}
+  {user && (() => {
+    const email = user.email || '';
+    return (
+      <button
+        onClick={() => setInboxOpen(v => !v)}
+        className="relative h-10 w-10 flex items-center justify-center rounded-xl text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10 transition-all"
+        title="Inbox"
+      >
+        <Bell className="h-4.5 w-4.5" />
+      </button>
+    );
+  })()}
 
   {/* 4. NEW RECORD BUTTON */}
   {activeTable !== 'Home' && <Button
@@ -7845,6 +8189,14 @@ if (!health?.mongodb) {
           {toast.type === 'error' ? <X className="h-4 w-4 shrink-0" /> : <Check className="h-4 w-4 shrink-0" />}
           {toast.msg}
         </div>
+      )}
+
+      {inboxOpen && user?.email && (
+        <InboxPanel
+          email={user.email}
+          onClose={() => setInboxOpen(false)}
+          onOpenRecord={openNotificationRecord}
+        />
       )}
 
       {linkedSession && (

@@ -187,6 +187,16 @@ collections.forEach(col => {
     } catch (e) { res.status(500).json({ error: 'Fetch failed' }); }
   });
 
+  // GET ONE
+  app.get(`/api/${col}/:id`, async (req, res) => {
+    try {
+      const db = await getDb();
+      const item = await db.collection(col).findOne({ _id: new ObjectId(req.params.id) });
+      if (!item) return res.status(404).json({ error: 'Not found' });
+      res.json(item);
+    } catch (e) { res.status(500).json({ error: 'Fetch failed' }); }
+  });
+
   // CREATE
   app.post(`/api/${col}`, async (req, res) => {
     try {
@@ -241,6 +251,112 @@ app.post('/api/settings/columns', async (req, res) => {
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: 'Settings save failed' }); }
 });
+// USERS (for @mention dropdown)
+app.get('/api/users', async (req, res) => {
+  try {
+    const db = await getDb();
+    const users = await db.collection('users').find({}, { projection: { _id: 1, name: 1, email: 1 } }).toArray();
+    res.json(users);
+  } catch (e) { res.status(500).json({ error: 'Users fetch failed' }); }
+});
+
+// COMMENTS
+app.get('/api/comments', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { collection, recordId } = req.query as { collection: string; recordId: string };
+    if (!collection || !recordId) return res.status(400).json({ error: 'Missing params' });
+    const comments = await db.collection('comments').find({ collection, recordId }).sort({ createdAt: 1 }).toArray();
+    res.json(comments);
+  } catch (e) { res.status(500).json({ error: 'Comments fetch failed' }); }
+});
+
+app.post('/api/comments', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { collection, recordId, text, authorId, authorName, mentions, recordTitle, tableName } = req.body;
+    if (!collection || !recordId || !text) return res.status(400).json({ error: 'Missing required fields' });
+    const comment = { collection, recordId, text, authorId: authorId || 'anonymous', authorName: authorName || 'Anonymous', mentions: mentions || [], createdAt: new Date() };
+    const result = await db.collection('comments').insertOne(comment);
+
+    // Respond immediately so the client isn't blocked by notification processing
+    res.status(201).json({ ...comment, _id: result.insertedId });
+
+    // Create inbox notifications for @mentioned users (fire-and-forget after response)
+    if (Array.isArray(mentions) && mentions.length > 0) {
+      try {
+        const teamMembers = await db.collection('locations').find({}).toArray();
+        const notifs: any[] = [];
+        for (const token of mentions) {
+          const match = teamMembers.find((m: any) => {
+            const slug = (m["Sevak"] || '').replace(/\s+/g, '').toLowerCase();
+            return slug === token.toLowerCase();
+          });
+          if (match?.["EmailId"]) {
+            notifs.push({
+              recipientEmail: match["EmailId"],
+              recipientName: match["Sevak"] || token,
+              type: 'mention',
+              text,
+              authorName: authorName || 'Anonymous',
+              authorId: authorId || '',
+              recordId,
+              recordTitle: recordTitle || 'a record',
+              tableName: tableName || collection,
+              collection,
+              read: false,
+              createdAt: new Date(),
+            });
+          }
+        }
+        if (notifs.length > 0) await db.collection('notifications').insertMany(notifs);
+      } catch (notifErr) {
+        console.error('Notification insert failed (comment was saved):', notifErr);
+      }
+    }
+  } catch (e) {
+    console.error('Comment creation failed:', e);
+    if (!res.headersSent) res.status(500).json({ error: 'Comment creation failed' });
+  }
+});
+
+// NOTIFICATIONS
+app.get('/api/notifications', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { email } = req.query as { email: string };
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    const items = await db.collection('notifications').find({ recipientEmail: email }).sort({ createdAt: -1 }).limit(60).toArray();
+    res.json(items);
+  } catch (e) { res.status(500).json({ error: 'Fetch failed' }); }
+});
+
+app.patch('/api/notifications/read-all', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    await db.collection('notifications').updateMany({ recipientEmail: email }, { $set: { read: true } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Update failed' }); }
+});
+
+app.patch('/api/notifications/:id/read', async (req, res) => {
+  try {
+    const db = await getDb();
+    await db.collection('notifications').updateOne({ _id: new ObjectId(req.params.id) }, { $set: { read: true } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Update failed' }); }
+});
+
+app.delete('/api/comments/:id', async (req, res) => {
+  try {
+    const db = await getDb();
+    await db.collection('comments').deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Delete failed' }); }
+});
+
 if (process.env.NODE_ENV !== 'production') {
   app.listen(PORT, () => {
     console.log(`🚀 Server actually running on http://localhost:${PORT}`);
