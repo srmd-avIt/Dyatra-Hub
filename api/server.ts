@@ -252,7 +252,7 @@ app.post('/api/upload', async (req, res) => {
       });
     }
 
-    res.json({ url: `https://drive.google.com/uc?export=download&id=${file.data.id}` });
+    res.json({ url: `https://drive.google.com/uc?export=view&id=${file.data.id}` });
   } catch (error: any) {
     console.error('Drive upload error:', error);
     const msg = error.message || String(error);

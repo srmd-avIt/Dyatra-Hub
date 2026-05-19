@@ -1,5 +1,5 @@
 ﻿
-import React, { useState, useEffect, useRef,useMemo } from 'react';
+import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { 
   Event, 
@@ -185,7 +185,7 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
       <AnimatePresence mode="wait" initial={false}>
         <motion.img
           key={currentIndex}
-          src={images[currentIndex].replace('export=view', 'export=download')}
+          src={images[currentIndex].replace('export=download', 'export=view')}
           initial={{ opacity: 0, x: dir * 24 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: dir * -24 }}
@@ -2066,13 +2066,20 @@ const handleMouseDown = (e: React.MouseEvent, columnName: string) => {
 
   const isConfigured = health?.mongodb; // Only require MongoDB for general operation
 // Add these to your existing useState hooks
-const [imageManager, setImageManager] = useState<{ 
-  item: any, 
-  column: string, 
-  isOpen: boolean 
+const [imageManager, setImageManager] = useState<{
+  item: any,
+  column: string,
+  isOpen: boolean
 } | null>(null);
 
 const attachmentFileInputRef = useRef<HTMLInputElement>(null);
+
+// Stable refs so AttachmentManagerDialog never re-renders due to prop identity changes.
+// React.memo only works if props are stable; these refs forward to the latest functions.
+const _imgUpdateRef = useRef<((s: string) => Promise<void>) | null>(null);
+const _imgCloseRef  = useRef<(() => void) | null>(null);
+const stableOnImgUpdate = useCallback((s: string) => _imgUpdateRef.current!(s), []);
+const stableOnImgClose  = useCallback(() => _imgCloseRef.current!(), []);
 
 const handleImageUpdate = async (updatedString: string) => {
   if (!imageManager?.item) return;
@@ -2114,18 +2121,14 @@ const handleImageUpdate = async (updatedString: string) => {
     });
 
     if (response.ok) {
-      // Mirror the change in imageManager so the dialog shows the updated images
-      setImageManager(prev =>
-        prev ? { ...prev, item: { ...prev.item, [column]: updatedString } } : null
-      );
-      // Also sync expandedRecord if the image manager was opened from within the expand modal
+      // Sync expandedRecord if the image manager was opened from within the expand modal
       setExpandedRecord((prev: any) =>
         prev && (String(prev._id || prev.id) === recordId)
           ? { ...prev, [column]: updatedString }
           : prev
       );
 
-      // Also sync editDraft if the image manager was opened during inline edit
+      // Sync editDraft if the image manager was opened during inline edit
       setEditDraft((prev: any) =>
         prev && (String(prev._id || prev.id) === recordId)
           ? { ...prev, [column]: updatedString }
@@ -2142,7 +2145,7 @@ const handleImageUpdate = async (updatedString: string) => {
       };
       const setter = optimisticSetter[collection];
       if (setter) {
-        setter(prev => prev.map(r => (r._id === recordId || r.id === recordId) ? { ...r, [column]: updatedString } : r));
+        setter(prev => prev.map(r => (String(r._id) === recordId || String(r.id) === recordId) ? { ...r, [column]: updatedString } : r));
       }
     } else {
       const errorData = await response.text();
@@ -2154,6 +2157,8 @@ const handleImageUpdate = async (updatedString: string) => {
     alert('Network error — image could not be saved. Check your connection.');
   }
 };
+// Keep the stable ref in sync with the latest version of handleImageUpdate
+_imgUpdateRef.current = handleImageUpdate;
 
 
 const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -2494,7 +2499,7 @@ const buildLookupPatch = (
 };
 
 const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ manager, onClose, onUpdate }: any) {
-  type ImgEntry = { url: string; name: string };
+  type ImgEntry = { url: string; name: string; _tempId?: string };
 
   const [images, setImages] = useState<ImgEntry[]>([]);
   const [isUploading, setIsUploading] = useState(false);
@@ -2567,57 +2572,81 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   // All handlers defined before the early return — no stale closures
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const input = e.target;
-    const file = input.files?.[0];
-    if (!file) return;
+    const files = Array.from(input.files || []);
+    input.value = '';
+    if (files.length === 0) return;
 
     setIsUploading(true);
+    let remaining = files.length;
 
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      const img = new Image();
-      img.onload = () => {
-        const canvas = document.createElement('canvas');
-        let { width, height } = img;
-        const max = 1200;
-        if (width > max || height > max) {
-          if (width > height) { height = Math.round(height * (max / width)); width = max; }
-          else { width = Math.round(width * (max / height)); height = max; }
-        }
-        canvas.width = width;
-        canvas.height = height;
-        const ctx = canvas.getContext('2d');
-        if (ctx) {
-          ctx.drawImage(img, 0, 0, width, height);
-          const base64Url = canvas.toDataURL('image/jpeg', 0.7);
-          const name = file.name.replace(/\.[^.]+$/, '');
+    const processOne = (file: File) => {
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const img = new Image();
+        img.onload = () => {
+          const canvas = document.createElement('canvas');
+          let { width, height } = img;
+          const max = 1200;
+          if (width > max || height > max) {
+            if (width > height) { height = Math.round(height * (max / width)); width = max; }
+            else { width = Math.round(width * (max / height)); height = max; }
+          }
+          canvas.width = width;
+          canvas.height = height;
+          const ctx = canvas.getContext('2d');
+          if (ctx) {
+            ctx.drawImage(img, 0, 0, width, height);
+            const base64Url = canvas.toDataURL('image/jpeg', 0.7);
+            const name = file.name.replace(/\.[^.]+$/, '');
+            const tempId = `_t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-          window.fetch('/api/upload', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ imageBase64: base64Url, name: `${name}.jpg` })
-          })
-          .then(res => res.json())
-          .then(data => {
-            if (data.url) {
-              commit(prev => [...prev, { url: data.url, name }]);
-            } else {
-              alert("Upload failed: " + (data.error || 'Unknown error'));
-            }
-            setIsUploading(false);
-          })
-          .catch(err => {
-            console.error(err);
-            alert("Upload error");
-            setIsUploading(false);
-          });
-        } else {
-          setIsUploading(false);
-        }
-        input.value = '';
+            // Step 1: show immediately with real filename; _tempId = syncing marker
+            commit(prev => [...prev, { url: base64Url, name, _tempId: tempId }]);
+            remaining--;
+            if (remaining === 0) setIsUploading(false);
+
+            // Step 2: upload to Drive in background, replace base64 with Drive URL
+            window.fetch('/api/upload', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ imageBase64: base64Url, name: `${name}.jpg` })
+            })
+            .then(res => res.json())
+            .then(data => {
+              if (data.url) {
+                // Preload the Drive URL so the browser caches it before we swap.
+                // This prevents a blank flash when img.src changes from base64 to the Drive URL.
+                const preloader = new window.Image();
+                preloader.onload = () => {
+                  commit(prev => prev.map(e => e._tempId === tempId ? { url: data.url, name } : e));
+                };
+                preloader.onerror = () => {
+                  // Drive URL failed to render — keep base64, clear syncing marker
+                  commit(prev => prev.map(e => e._tempId === tempId ? { url: e.url, name } : e));
+                };
+                preloader.src = data.url;
+              } else {
+                commit(prev => prev.map(e => e._tempId === tempId ? { url: e.url, name } : e));
+                alert("Saved locally — Drive sync failed: " + (data.error || 'Unknown error'));
+              }
+            })
+            .catch(err => {
+              console.error(err);
+              commit(prev => prev.map(e => e._tempId === tempId ? { url: e.url, name } : e));
+              alert("Saved locally — Drive upload error");
+            });
+          } else {
+            remaining--;
+            if (remaining === 0) setIsUploading(false);
+          }
+        };
+        img.src = event.target?.result as string;
       };
-      img.src = event.target?.result as string;
+      reader.readAsDataURL(file);
     };
-    reader.readAsDataURL(file);
+
+    // Process all selected files in parallel
+    files.forEach(processOne);
   };
 
   const handleRemove = (i: number) => {
@@ -2714,7 +2743,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
           </div>
           <label className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider hover:opacity-90 shadow-md shadow-brand-primary/20 transition-all active:scale-95 cursor-pointer select-none">
             <Plus className="h-3.5 w-3.5" /> Add Image
-            <input type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+            <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} />
           </label>
         </div>
 
@@ -2727,7 +2756,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                 <p className="text-[11px] text-slate-300 italic uppercase tracking-widest font-bold">No images attached</p>
                 <label className="mt-1 text-[11px] font-black text-brand-primary uppercase tracking-widest hover:opacity-70 transition-opacity cursor-pointer">
                   + Add First Image
-                  <input type="file" accept="image/*" className="hidden" onChange={handleUpload} />
+                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} />
                 </label>
               </div>
             ) : (
@@ -2751,7 +2780,16 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                   >
                     {/* Thumbnail + hover actions */}
                     <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing">
-                      <img src={entry.url.replace('export=view', 'export=download')} loading="lazy" decoding="async" className="w-full h-full object-cover pointer-events-none" alt={entry.name || `Image ${i + 1}`} />
+                      <img src={entry.url} loading="lazy" decoding="async" className="w-full h-full object-cover pointer-events-none" alt={entry.name || `Image ${i + 1}`} />
+                      {/* Syncing badge — shown while Drive upload is in progress */}
+                      {entry._tempId && (
+                        <div className="absolute inset-0 flex items-end justify-center pb-2 pointer-events-none">
+                          <div className="flex items-center gap-1 bg-black/60 px-2 py-0.5 rounded-full">
+                            <div className="h-2 w-2 rounded-full border border-white border-t-transparent animate-spin" />
+                            <span className="text-[8px] font-black text-white uppercase tracking-widest">Syncing</span>
+                          </div>
+                        </div>
+                      )}
                       {/* Drag handle indicator */}
                       <div className="absolute top-1.5 right-1.5 h-5 w-5 bg-black/40 rounded-md items-center justify-center hidden sm:group-hover/card:flex">
                         <GripVertical className="h-3 w-3 text-white" />
@@ -3653,6 +3691,8 @@ const fetchAllData = async () => {
     setIsLoading(false);
   }
 };
+// Keep stable close ref in sync — calls setImageManager(null) + fetchAllData
+_imgCloseRef.current = () => { setImageManager(null); fetchAllData(); };
 
 // Fetch only the active table's collection (plus sessions for linked-record tables) concurrently
 const fetchActiveTable = async (table = activeTableRef.current) => {
@@ -8398,8 +8438,8 @@ if (!health?.mongodb) {
 
       <AttachmentManagerDialog
     manager={imageManager}
-    onClose={() => { setImageManager(null); fetchAllData(); }}
-    onUpdate={handleImageUpdate}
+    onClose={stableOnImgClose}
+    onUpdate={stableOnImgUpdate}
     activeTable={activeTable}
   />
 
