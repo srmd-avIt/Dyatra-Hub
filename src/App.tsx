@@ -48,7 +48,7 @@ import {
   Zap,
   PanelLeftClose,
   PanelLeftOpen,
-  Bell,
+  Inbox,
   AtSign,
   Clock,
   LayoutGrid,
@@ -1650,7 +1650,7 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
         {/* Header */}
         <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
-            <Bell className="h-4 w-4 text-brand-primary" />
+            <Inbox className="h-4 w-4 text-brand-primary" />
             <span className="text-[15px] font-black text-slate-900">Inbox</span>
             {unread > 0 && <span className="h-5 min-w-[20px] px-1.5 bg-brand-primary text-white text-[10px] font-black rounded-full flex items-center justify-center">{unread}</span>}
           </div>
@@ -1674,7 +1674,7 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
           {!loading && items.length === 0 && (
             <div className="flex flex-col items-center justify-center h-48 gap-3 text-center px-8">
               <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
-                <Bell className="h-6 w-6 text-slate-300" />
+                <Inbox className="h-6 w-6 text-slate-300" />
               </div>
               <div className="text-[13px] font-bold text-slate-400">No notifications yet</div>
               <div className="text-[11px] text-slate-400">You'll see mentions and comments here</div>
@@ -5221,22 +5221,30 @@ if (!health?.mongodb) {
         <Eye className="h-4 w-4" />
         {(hiddenColumns[activeTable]?.length || 0) > 0 && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
       </button>
+
+      {/* Inbox — mobile: lives here, same style as sibling controls */}
+      {user && (
+        <button
+          onClick={() => setInboxOpen(v => !v)}
+          className={`relative p-2 rounded-lg border bg-white transition-colors ${inboxOpen ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500 hover:text-brand-primary hover:border-brand-primary/30'}`}
+          title="Inbox"
+        >
+          <Inbox className="h-4 w-4" />
+        </button>
+      )}
     </div>
   )}
 
-  {/* INBOX BELL */}
-  {user && (() => {
-    const email = user.email || '';
-    return (
-      <button
-        onClick={() => setInboxOpen(v => !v)}
-        className="relative h-10 w-10 flex items-center justify-center rounded-xl text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10 transition-all"
-        title="Inbox"
-      >
-        <Bell className="h-4.5 w-4.5" />
-      </button>
-    );
-  })()}
+  {/* Inbox — desktop only (hidden on mobile, covered by the row above) */}
+  {user && (
+    <button
+      onClick={() => setInboxOpen(v => !v)}
+      className={`hidden sm:flex relative h-10 w-10 items-center justify-center rounded-xl transition-all ${inboxOpen ? 'text-brand-primary bg-brand-primary/10' : 'text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10'}`}
+      title="Inbox"
+    >
+      <Inbox className="h-5 w-5" />
+    </button>
+  )}
 
   {/* 4. NEW RECORD BUTTON */}
   {activeTable !== 'Home' && <Button
