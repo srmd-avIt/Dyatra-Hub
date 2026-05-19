@@ -184,7 +184,7 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
       <AnimatePresence mode="wait" initial={false}>
         <motion.img
           key={currentIndex}
-          src={images[currentIndex]}
+          src={images[currentIndex].replace('export=view', 'export=download')}
           initial={{ opacity: 0, x: dir * 24 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: dir * -24 }}
@@ -1260,7 +1260,7 @@ if (hasDropdown) {
           {thumbs.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {thumbs.map((url, idx) => (
-                <img key={idx} src={url} loading="lazy" className="h-14 w-20 object-cover rounded-xl border border-slate-200" alt="" />
+                <img key={idx} src={url.replace('export=view', 'export=download')} loading="lazy" className="h-14 w-20 object-cover rounded-xl border border-slate-200" alt="" />
               ))}
             </div>
           )}
@@ -1973,6 +1973,13 @@ const handleMouseDown = (e: React.MouseEvent, columnName: string) => {
         const res = await window.fetch('/api/health');
         if (!res.ok) {
           console.warn('Health check returned non-OK status:', res.status);
+          try {
+            const data = await res.json();
+            setHealth({ mongodb: false, mongodbError: data.message || `Server error: ${res.status}` });
+            console.error('Health check error details:', data);
+          } catch {
+            setHealth({ mongodb: false, mongodbError: `Server error: ${res.status}` });
+          }
           return;
         }
         const contentType = res.headers.get('content-type');
@@ -1982,8 +1989,9 @@ const handleMouseDown = (e: React.MouseEvent, columnName: string) => {
         } else {
           console.warn('Health check returned non-JSON content:', await res.text());
         }
-      } catch (e) {
+      } catch (e: any) {
         console.error('Health check failed:', e);
+        setHealth({ mongodb: false, mongodbError: e.message || 'Connection failed' });
       }
     };
     checkHealth();
@@ -2516,7 +2524,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
   const handleDownload = (entry: ImgEntry, i: number) => {
     const a = document.createElement('a');
-    a.href = entry.url;
+    a.href = entry.url.replace('export=view', 'export=download');
     a.download = entry.name || `led_image_${i + 1}`;
     a.style.cssText = 'position:fixed;left:-9999px';
     document.body.appendChild(a);
@@ -2641,7 +2649,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                   >
                     {/* Thumbnail + hover actions */}
                     <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing">
-                      <img src={entry.url} loading="lazy" decoding="async" className="w-full h-full object-cover pointer-events-none" alt={entry.name || `Image ${i + 1}`} />
+                      <img src={entry.url.replace('export=view', 'export=download')} loading="lazy" decoding="async" className="w-full h-full object-cover pointer-events-none" alt={entry.name || `Image ${i + 1}`} />
                       {/* Drag handle indicator */}
                       <div className="absolute top-1.5 right-1.5 h-5 w-5 bg-black/40 rounded-md items-center justify-center hidden sm:group-hover/card:flex">
                         <GripVertical className="h-3 w-3 text-white" />
@@ -3494,13 +3502,20 @@ const fetchAllData = async () => {
       { key: 'media', setter: setMedia },
     ];
 
-    for (const { key, setter } of endpoints) {
-      const response = await window.fetch(`/api/${key}`);
-      if (response.ok) {
-        const data = await response.json();
-        setter(data);
-      }
-    }
+    // Fetch all endpoints concurrently instead of sequentially for much faster initial load
+    await Promise.allSettled(
+      endpoints.map(async ({ key, setter }) => {
+        try {
+          const response = await window.fetch(`/api/${key}`);
+          if (response.ok) {
+            const data = await response.json();
+            setter(data);
+          }
+        } catch (err) {
+          console.error(`Failed to fetch ${key}:`, err);
+        }
+      })
+    );
   } catch (error) {
     console.error("Failed to fetch data from MongoDB:", error);
   } finally {
@@ -3508,7 +3523,7 @@ const fetchAllData = async () => {
   }
 };
 
-// Fetch only the active table's collection (plus sessions for linked-record tables)
+// Fetch only the active table's collection (plus sessions for linked-record tables) concurrently
 const fetchActiveTable = async (table = activeTableRef.current) => {
   type E = { key: string; setter: (d: any[]) => void };
   const map: Record<string, E> = {
@@ -3527,12 +3542,22 @@ const fetchActiveTable = async (table = activeTableRef.current) => {
   const entry = map[table];
   if (!entry) return;
   try {
-    const r = await window.fetch(`/api/${entry.key}`);
-    if (r.ok) entry.setter(await r.json());
+    const promises = [];
+    
+    promises.push(
+      window.fetch(`/api/${entry.key}`)
+        .then(r => r.ok ? r.json() : null)
+        .then(d => { if (d) entry.setter(d); })
+    );
+
     if (['Events', 'MusicLog', 'VideoLog'].includes(table)) {
-      const sr = await window.fetch('/api/sessions');
-      if (sr.ok) setSessions(await sr.json());
+      promises.push(
+        window.fetch('/api/sessions')
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d) setSessions(d); })
+      );
     }
+    await Promise.allSettled(promises);
   } catch (e) {
     console.error('fetchActiveTable error', e);
   }
@@ -3756,48 +3781,9 @@ useEffect(() => {
   }, [colWidths]);
 
 
-useEffect(() => {
-  if (!user) return;
-
-  const setupSubscription = (table: string, setter: (data: any) => void) => {
-    // 1. Define the fetcher
-    const fetchData = async () => {
-      // Don't fetch if the user is busy managing images to prevent flickering
-      if (imageManager?.isOpen) return; 
-
-      try {
-        const response = await window.fetch(`/api/${table}`);
-        const data = await response.json();
-        if (Array.isArray(data)) setter(data);
-      } catch (error) {
-        console.error(`Failed to fetch ${table}:`, error);
-      }
-    };
-    
-    fetchData();
-    // 2. Only set the interval if the modal is CLOSED
-    const interval = setInterval(fetchData, 5000);
-    return () => clearInterval(interval);
-  };
-
-  const eventsSub = setupSubscription('events', setEvents);
-  const guidanceSub = setupSubscription('guidance', setGuidance);
-  const sessionsSub = setupSubscription('sessions', setSessions);
-  const locationsSub = setupSubscription('locations', setLocations);
-  const mediaSub = setupSubscription('media', setMedia);
-  const checklistSub = setupSubscription('checklist', setChecklist);
-  const ledSub = setupSubscription('led_details', setLedDetails);
-  const rentalsSub = setupSubscription('rentals', setRentals);
-  const videoSetupSub = setupSubscription('videosetup', setVideoSetup);
-  const audioSetupSub = setupSubscription('audiosetup', setAudioSetup);
-
-  return () => {
-    eventsSub(); guidanceSub(); sessionsSub(); locationsSub();
-    mediaSub(); checklistSub(); ledSub(); rentalsSub();
-    videoSetupSub(); audioSetupSub();
-  };
-  // ADD imageManager?.isOpen to the dependency array below
-}, [user, selectedEventId, imageManager?.isOpen]);
+// Removed aggressive background polling of all 10 tables every 5 seconds.
+// This exhausted the browser's max concurrent connections limit.
+// The 10-second fetchActiveTable interval handles keeping the visible data fresh.
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -4650,6 +4636,11 @@ if (!health?.mongodb) {
         <p className="text-slate-400 text-sm leading-relaxed mb-10">
           Authenticated as <strong>{user?.name}</strong>, but the operational database is currently unreachable.
         </p>
+        {health?.mongodbError && (
+          <div className="bg-red-900/30 border border-red-500/50 rounded-xl p-4 mb-6">
+            <p className="text-red-400 text-xs font-mono break-words">{health.mongodbError}</p>
+          </div>
+        )}
         <div className="h-1.5 w-full bg-slate-800 rounded-full overflow-hidden">
           <motion.div animate={{ x: ['-100%', '100%'] }} transition={{ repeat: Infinity, duration: 1.5, ease: "linear" }} className="h-full w-1/3 bg-brand-primary" />
         </div>
@@ -5855,7 +5846,7 @@ if (!health?.mongodb) {
                           <div className="mt-4 flex overflow-x-auto gap-2 md:gap-3 scrollbar-hide pb-1">
                             {images.map((imgSrc, imgIdx) => (
                               <div key={imgIdx} className="relative h-20 md:h-24 w-28 md:w-36 shrink-0 rounded-xl overflow-hidden border border-slate-200 group/sessionimg hover:ring-2 hover:ring-brand-primary transition-all" onClick={(e) => e.stopPropagation()}>
-                                <img src={imgSrc} loading="lazy" decoding="async" className="h-full w-full object-cover" alt="Upload" />
+                                <img src={imgSrc.replace('export=view', 'export=download')} loading="lazy" decoding="async" className="h-full w-full object-cover" alt="Upload" />
                                 <button onClick={(e) => { e.stopPropagation(); if (!window.confirm("Remove this image?")) return; const entries: string[] = []; const re2 = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g; let mr; while ((mr = re2.exec(item["Images"] || "")) !== null) entries.push(mr[0]); entries.splice(imgIdx, 1); const updated = { ...realItem, ["Images"]: entries.join(' ') }; setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r)); window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) }); }} className="absolute top-1 right-1 p-1.5 bg-black/60 text-white rounded-lg opacity-0 group-hover/sessionimg:opacity-100 hover:bg-red-600 transition-all shadow-sm" title="Remove Image"><Trash2 className="h-3 w-3" /></button>
                               </div>
                             ))}
@@ -7320,7 +7311,7 @@ if (!health?.mongodb) {
 {activeTable === 'LED' && (
   <div className="space-y-6">
     <div className="p-3 bg-brand-primary/5 border border-brand-primary/10 rounded-lg space-y-3">
-      <p className="text-[9px] font-black uppercase text-brand-primary">Session & Location Context</p>
+      <p className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Session & Location Context</p>
       <div className="grid grid-cols-2 gap-3">
         <Input value={newRecord["LedId"] || ''} onChange={(e) => setNewRecord({...newRecord, "LedId": e.target.value})} placeholder="LedId" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord["🕘 Session"] || ''} onChange={(e) => setNewRecord({...newRecord, "🕘 Session": e.target.value})} placeholder="🕘 Session" className="bg-brand-bg h-9 text-xs" />
@@ -7331,11 +7322,11 @@ if (!health?.mongodb) {
       </div>
     </div>
 
-    <div className="p-3 bg-slate-900/30 border border-slate-800 rounded-lg space-y-3">
-      <p className="text-[9px] font-black uppercase text-slate-400">Core Setup</p>
+    <div className="p-3 border border-slate-200 rounded-lg space-y-3">
+      <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Core Setup</p>
       <div className="grid grid-cols-2 gap-3">
         <Input value={newRecord["Vendor"] || ''} onChange={(e) => setNewRecord({...newRecord, "Vendor": e.target.value})} placeholder="Vendor Name" className="bg-brand-bg h-9 text-xs" />
-        <select className="bg-brand-bg border border-slate-700 rounded h-9 text-xs px-2" value={newRecord["Indoor/Outdoor LED?"] || ''} onChange={(e) => setNewRecord({...newRecord, "Indoor/Outdoor LED?": e.target.value})}>
+        <select className="bg-brand-bg border border-slate-200 rounded-lg h-9 text-xs px-2" value={newRecord["Indoor/Outdoor LED?"] || ''} onChange={(e) => setNewRecord({...newRecord, "Indoor/Outdoor LED?": e.target.value})}>
            <option value="">Indoor/Outdoor?</option>
            <option value="Indoor">Indoor</option>
            <option value="Outdoor">Outdoor</option>
@@ -7347,8 +7338,8 @@ if (!health?.mongodb) {
 
     <div className="grid grid-cols-1 gap-4">
       {/* Centre LED */}
-      <div className="p-3 border border-slate-800 rounded-lg space-y-2">
-        <p className="text-[9px] font-black uppercase text-blue-400">Centre LED</p>
+      <div className="p-3 border border-slate-200 rounded-lg space-y-2">
+        <p className="text-[9px] font-black uppercase tracking-widest text-blue-500">Centre LED</p>
         <Input value={newRecord["CentreLed"] || ''} onChange={(e) => setNewRecord({...newRecord, "CentreLed": e.target.value})} placeholder="CentreLed Name" className="bg-brand-bg h-8 text-xs mb-2" />
         <div className="grid grid-cols-4 gap-2">
           <Input value={newRecord["CntrPitch"] || ''} onChange={(e) => setNewRecord({...newRecord, "CntrPitch": e.target.value})} placeholder="Pitch" className="h-8 text-[10px]" />
@@ -7359,8 +7350,8 @@ if (!health?.mongodb) {
       </div>
 
       {/* Side LED */}
-      <div className="p-3 border border-slate-800 rounded-lg space-y-2">
-        <p className="text-[9px] font-black uppercase text-purple-400">Side LED</p>
+      <div className="p-3 border border-slate-200 rounded-lg space-y-2">
+        <p className="text-[9px] font-black uppercase tracking-widest text-purple-500">Side LED</p>
         <Input value={newRecord["SideLed"] || ''} onChange={(e) => setNewRecord({...newRecord, "SideLed": e.target.value})} placeholder="SideLed Name" className="bg-brand-bg h-8 text-xs mb-2" />
         <div className="grid grid-cols-3 gap-2">
           <Input value={newRecord["SidePitch"] || ''} onChange={(e) => setNewRecord({...newRecord, "SidePitch": e.target.value})} placeholder="Pitch" className="h-8 text-[10px]" />
@@ -7370,8 +7361,8 @@ if (!health?.mongodb) {
       </div>
 
       {/* Other LED 1 & 2 */}
-      <div className="p-3 border border-slate-800 rounded-lg space-y-2">
-        <p className="text-[9px] font-black uppercase text-orange-400">Auxiliary LED (Other 1 & 2)</p>
+      <div className="p-3 border border-slate-200 rounded-lg space-y-2">
+        <p className="text-[9px] font-black uppercase tracking-widest text-orange-500">Auxiliary LED (Other 1 & 2)</p>
         <div className="grid grid-cols-2 gap-2">
            <Input value={newRecord["OtherLed1"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherLed1": e.target.value})} placeholder="OtherLed1 Name" className="h-8 text-[10px]" />
            <Input value={newRecord["OtherLed2"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherLed2": e.target.value})} placeholder="OtherLed2 Name" className="h-8 text-[10px]" />
@@ -7387,8 +7378,8 @@ if (!health?.mongodb) {
       </div>
     </div>
 
-    <div className="p-3 bg-red-900/10 border border-red-900/20 rounded-lg space-y-3">
-      <p className="text-[9px] font-black uppercase text-red-400">Power & Media</p>
+    <div className="p-3 border border-slate-200 rounded-lg space-y-3">
+      <p className="text-[9px] font-black uppercase tracking-widest text-red-500">Power & Media</p>
       <div className="grid grid-cols-2 gap-3">
         <Input value={newRecord["DGUseedKva"] || ''} onChange={(e) => setNewRecord({...newRecord, "DGUseedKva": e.target.value})} placeholder="DG Use (KVA)" className="bg-brand-bg h-9 text-xs" />
         <Input value={newRecord["BackupPower"] || ''} onChange={(e) => setNewRecord({...newRecord, "BackupPower": e.target.value})} placeholder="Backup Power" className="bg-brand-bg h-9 text-xs" />
@@ -7491,7 +7482,7 @@ if (!health?.mongodb) {
     </div>
     <div className="space-y-1">
       <label className="text-[10px] font-bold uppercase text-slate-500">Sharing Facts</label>
-      <select className="w-full bg-brand-bg border border-slate-700 rounded h-10 px-3 text-sm" value={newRecord["ShareFacts?"] || ''} onChange={(e) => setNewRecord({...newRecord, "ShareFacts?": e.target.value})}>
+      <select className="w-full bg-brand-bg border border-slate-200 rounded-md h-10 px-3 text-sm focus:ring-2 focus:ring-brand-primary outline-none" value={newRecord["ShareFacts?"] || ''} onChange={(e) => setNewRecord({...newRecord, "ShareFacts?": e.target.value})}>
         <option value="No">No</option>
         <option value="Yes">Yes</option>
       </select>

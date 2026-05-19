@@ -183,8 +183,8 @@ app.post('/api/upload', async (req, res) => {
     const { imageBase64, name } = req.body;
     if (!imageBase64) return res.status(400).json({ error: 'No image provided' });
 
-    if (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY) {
-      return res.status(500).json({ error: 'Google Drive credentials not configured' });
+    if (!process.env.GOOGLE_REFRESH_TOKEN && (!process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL || !process.env.GOOGLE_PRIVATE_KEY)) {
+      return res.status(500).json({ error: 'Google Drive credentials not configured. Provide GOOGLE_REFRESH_TOKEN or Service Account details.' });
     }
     if (!process.env.GOOGLE_DRIVE_FOLDER_ID) {
       return res.status(500).json({ error: 'GOOGLE_DRIVE_FOLDER_ID not set — must be a Shared Drive folder ID' });
@@ -199,26 +199,38 @@ app.post('/api/upload', async (req, res) => {
     const bufferStream = new stream.PassThrough();
     bufferStream.end(buffer);
 
-    let pk = process.env.GOOGLE_PRIVATE_KEY || '';
-    // Strip surrounding quotes, fix escaped newlines and carriage returns
-    pk = pk.replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').replace(/\r/g, '').trim();
-    // Re-parse and re-export via Node crypto so OpenSSL 3.x gets a clean PKCS#8 PEM.
-    // jwa@2 passes raw PEM strings to createSign().sign() which fails in Node 18+ when
-    // the string has any formatting quirk. A KeyObject export is always clean.
-    try {
-      pk = crypto.createPrivateKey(pk).export({ type: 'pkcs8', format: 'pem' }).toString();
-    } catch (keyErr: any) {
-      console.error('GOOGLE_PRIVATE_KEY parse failed:', keyErr.message);
-      return res.status(500).json({ error: 'GOOGLE_PRIVATE_KEY is malformed — check .env formatting' });
-    }
+    let auth;
+    if (process.env.GOOGLE_REFRESH_TOKEN) {
+      if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        return res.status(500).json({ error: 'GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET are required in .env when using GOOGLE_REFRESH_TOKEN' });
+      }
+      auth = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID,
+        process.env.GOOGLE_CLIENT_SECRET
+      );
+      auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+    } else {
+      let pk = process.env.GOOGLE_PRIVATE_KEY || '';
+      // Strip surrounding quotes, fix escaped newlines and carriage returns
+      pk = pk.replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').replace(/\r/g, '').trim();
+      // Re-parse and re-export via Node crypto so OpenSSL 3.x gets a clean PKCS#8 PEM.
+      // jwa@2 passes raw PEM strings to createSign().sign() which fails in Node 18+ when
+      // the string has any formatting quirk. A KeyObject export is always clean.
+      try {
+        pk = crypto.createPrivateKey(pk).export({ type: 'pkcs8', format: 'pem' }).toString();
+      } catch (keyErr: any) {
+        console.error('GOOGLE_PRIVATE_KEY parse failed:', keyErr.message);
+        return res.status(500).json({ error: 'GOOGLE_PRIVATE_KEY is malformed — check .env formatting' });
+      }
 
-    const auth = new google.auth.GoogleAuth({
-      credentials: {
-        client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-        private_key: pk,
-      },
-      scopes: ['https://www.googleapis.com/auth/drive'],
-    });
+      auth = new google.auth.GoogleAuth({
+        credentials: {
+          client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          private_key: pk,
+        },
+        scopes: ['https://www.googleapis.com/auth/drive'],
+      });
+    }
 
     const drive = google.drive({ version: 'v3', auth });
 
@@ -240,7 +252,7 @@ app.post('/api/upload', async (req, res) => {
       });
     }
 
-    res.json({ url: `https://drive.google.com/uc?export=view&id=${file.data.id}` });
+    res.json({ url: `https://drive.google.com/uc?export=download&id=${file.data.id}` });
   } catch (error: any) {
     console.error('Drive upload error:', error);
     const msg = error.message || String(error);
