@@ -1,5 +1,6 @@
 ﻿
 import React, { useState, useEffect, useRef,useMemo } from 'react';
+import { createPortal } from 'react-dom';
 import { 
   Event, 
   MediaItem, 
@@ -382,8 +383,9 @@ const CellDropdown = React.memo(function CellDropdown({
       )}
 
       {/* DROPDOWN MENU — fixed-position so it escapes overflow:hidden ancestors */}
-      {open && panelPos && (
+      {open && panelPos && typeof document !== 'undefined' ? createPortal(
         <div
+          data-floating-panel
           ref={panelRef}
           className="fixed z-[9999] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden flex flex-col"
           style={{ top: panelPos.top, left: panelPos.left, width: panelPos.width, minWidth: 240 }}
@@ -477,7 +479,7 @@ const CellDropdown = React.memo(function CellDropdown({
             </button>
           </div>
         </div>
-      )}
+      , document.body) : null}
     </div>
   );
 });
@@ -492,11 +494,13 @@ const SessionPicker = React.memo(function SessionPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const latestRef = useRef(localSel);
   const openRef = useRef(false);
   latestRef.current = localSel;
   openRef.current = open;
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   // Sync if parent value changes externally
   useEffect(() => {
@@ -508,7 +512,9 @@ const SessionPicker = React.memo(function SessionPicker({
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
-      if (openRef.current && ref.current && !ref.current.contains(e.target as Node)) {
+      const inside = (ref.current && ref.current.contains(e.target as Node)) ||
+                     (panelRef.current && panelRef.current.contains(e.target as Node));
+      if (openRef.current && !inside) {
         setOpen(false);
         onCommit(latestRef.current.join(', '));
       }
@@ -516,6 +522,19 @@ const SessionPicker = React.memo(function SessionPicker({
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, [onCommit]);
+
+  useEffect(() => {
+    if (!open) return;
+    let prevWidth = window.innerWidth;
+    const close = () => {
+      if (window.innerWidth !== prevWidth) {
+        setOpen(false); onCommit(latestRef.current.join(', '));
+      }
+      prevWidth = window.innerWidth;
+    };
+    window.addEventListener('resize', close);
+    return () => window.removeEventListener('resize', close);
+  }, [open, onCommit]);
 
   const toggle = (name: string) => {
     const next = localSel.includes(name) ? localSel.filter(s => s !== name) : [...localSel, name];
@@ -530,6 +549,17 @@ const SessionPicker = React.memo(function SessionPicker({
     onCommit(next.join(', '));
   };
 
+  const toggleOpen = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!open && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const top = spaceBelow < 300 ? Math.max(8, r.top - 208) : r.bottom + 4;
+      setPanelPos({ top, left: r.left, width: Math.max(288, r.width) });
+    }
+    setOpen(v => !v);
+  };
+
   const filtered = allSessions.filter(s => s["Session Name"]?.toLowerCase().includes(search.toLowerCase()));
 
   return (
@@ -542,15 +572,15 @@ const SessionPicker = React.memo(function SessionPicker({
           </span>
         )) : <span className="text-[12px] text-slate-400">Link sessions…</span>}
         <button
-          onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
+          onMouseDown={toggleOpen}
           className="inline-flex items-center justify-center h-5 w-5 rounded border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 hover:border-slate-400 hover:text-brand-primary transition-colors ml-0.5 shrink-0"
           title="Add linked session"
         >
           <Plus className="h-3 w-3" />
         </button>
       </div>
-      {open && (
-        <div className="absolute z-[300] top-full left-0 mt-1 w-full sm:w-72 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
+      {open && panelPos && typeof document !== 'undefined' ? createPortal(
+        <div data-floating-panel ref={panelRef} className="fixed z-[9999] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden" style={{ top: panelPos.top, left: panelPos.left, width: panelPos.width, minWidth: 288 }}>
           <div className="p-2 border-b border-slate-100">
             <input ref={searchRef} className="w-full text-[12px] px-2.5 py-1.5 rounded-lg border border-slate-200 bg-slate-50 outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100 placeholder:text-slate-400" placeholder="Search sessions…" value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => { if (e.key === 'Escape') { setOpen(false); onCancel(); } }} />
           </div>
@@ -569,7 +599,7 @@ const SessionPicker = React.memo(function SessionPicker({
             {filtered.length === 0 && <div className="px-3 py-4 text-[12px] text-slate-400 text-center">No sessions found</div>}
           </div>
         </div>
-      )}
+      , document.body) : null}
     </div>
   );
 });
@@ -590,11 +620,13 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
   const ref = useRef<HTMLDivElement>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   const searchRef = useRef<HTMLInputElement>(null);
   const latestRef = useRef(localSel);
   const openRef = useRef(false);
   latestRef.current = localSel;
   openRef.current = open;
+  const [panelPos, setPanelPos] = useState<{ top: number; left: number; width: number } | null>(null);
 
   useEffect(() => {
     const next = value ? value.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -605,7 +637,9 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
 
   useEffect(() => {
     const h = (e: MouseEvent) => {
-      if (openRef.current && ref.current && !ref.current.contains(e.target as Node)) {
+      const inside = (ref.current && ref.current.contains(e.target as Node)) ||
+                     (panelRef.current && panelRef.current.contains(e.target as Node));
+      if (openRef.current && !inside) {
         setOpen(false);
         onCommit(latestRef.current.join(', '));
       }
@@ -613,6 +647,19 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, [onCommit]);
+
+  useEffect(() => {
+    if (!open) return;
+    let prevWidth = window.innerWidth;
+    const close = () => {
+      if (window.innerWidth !== prevWidth) {
+        setOpen(false); onCommit(latestRef.current.join(', '));
+      }
+      prevWidth = window.innerWidth;
+    };
+    window.addEventListener('resize', close);
+    return () => window.removeEventListener('resize', close);
+  }, [open, onCommit]);
 
   const toggle = (name: string) => {
     const next = localSel.includes(name) ? localSel.filter(s => s !== name) : [...localSel, name];
@@ -625,6 +672,17 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
     const next = localSel.filter(s => s !== name);
     setLocalSel(next);
     onCommit(next.join(', '));
+  };
+
+  const toggleOpen = (e: React.MouseEvent) => {
+    e.preventDefault();
+    if (!open && ref.current) {
+      const r = ref.current.getBoundingClientRect();
+      const spaceBelow = window.innerHeight - r.bottom;
+      const top = spaceBelow < 300 ? Math.max(8, r.top - 240) : r.bottom + 4;
+      setPanelPos({ top, left: r.left, width: Math.max(288, r.width) });
+    }
+    setOpen(v => !v);
   };
 
   const names = records.map(r => r[nameField]).filter(Boolean);
@@ -641,15 +699,15 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
           </span>
         )) : <span className="text-[12px] text-slate-400">Link {linkedTable} records…</span>}
         <button
-          onMouseDown={e => { e.preventDefault(); setOpen(v => !v); }}
+          onMouseDown={toggleOpen}
           className="inline-flex items-center justify-center h-5 w-5 rounded border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 hover:border-brand-primary hover:text-brand-primary transition-colors ml-0.5 shrink-0"
           title={`Add linked ${linkedTable} record`}
         >
           <Plus className="h-3 w-3" />
         </button>
       </div>
-      {open && (
-        <div className="absolute z-[9999] top-full left-0 mt-1 w-full sm:w-72 bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden">
+      {open && panelPos && typeof document !== 'undefined' ? createPortal(
+        <div data-floating-panel ref={panelRef} className="fixed z-[9999] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden" style={{ top: panelPos.top, left: panelPos.left, width: panelPos.width, minWidth: 288 }}>
           <div className="p-2 border-b border-slate-100">
             <input
               ref={searchRef}
@@ -693,7 +751,7 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
             </div>
           </div>
         </div>
-      )}
+      , document.body) : null}
     </div>
   );
 });
@@ -2125,14 +2183,32 @@ const handleBulkDelete = async () => {
     default: console.error('Unknown table for delete:', activeTable); return;
   }
 
+  // Optimistic UI update
+  const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+    'events': setEvents as any, 'sessions': setSessions as any,
+    'musiclog': setMusicLogs, 'videolog': setVideoLogs,
+    'media': setMedia as any, 'checklist': setChecklist as any,
+    'guidance': setGuidance as any, 'led_details': setLedDetails as any,
+    'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+  };
+  const setter = optimisticSetter[collection];
+  if (setter) setter(prev => prev.filter(r => !selectedIds.includes(r._id || r.id)));
+
+  const originalSelectedIds = [...selectedIds];
+  setSelectedIds([]);
+
   try {
-    for (const id of selectedIds) {
-      await window.fetch(`/api/${collection}/${id}`, { method: 'DELETE' });
-    }
-    setSelectedIds([]);
-    fetchActiveTable();
+    const promises = originalSelectedIds.map(id =>
+      window.fetch(`/api/${collection}/${id}`, { method: 'DELETE' }).then(res => {
+        if (!res.ok) throw new Error(`Failed to delete ${id}`);
+      })
+    );
+    await Promise.all(promises);
+    showToast(`${originalSelectedIds.length} record(s) deleted successfully.`, 'success');
   } catch (e) {
     console.error('Delete failed', e);
+    showToast('Failed to delete some records. Reverting changes.');
+    fetchActiveTable(); // Revert optimistic update
   }
 };
 
@@ -2154,10 +2230,27 @@ const handleDeleteRecord = async (record: any) => {
     case 'AudioSetup': collection = 'audiosetup'; break;
     default: return;
   }
+
+  // Optimistic UI update
+  const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+    'events': setEvents as any, 'sessions': setSessions as any,
+    'musiclog': setMusicLogs, 'videolog': setVideoLogs,
+    'media': setMedia as any, 'checklist': setChecklist as any,
+    'guidance': setGuidance as any, 'led_details': setLedDetails as any,
+    'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+  };
+  const setter = optimisticSetter[collection];
+  if (setter) setter(prev => prev.filter(r => r._id !== id && r.id !== id));
+
   try {
-    await window.fetch(`/api/${collection}/${id}`, { method: 'DELETE' });
-    fetchActiveTable();
-  } catch (e) { console.error('Delete failed', e); }
+    const res = await window.fetch(`/api/${collection}/${id}`, { method: 'DELETE' });
+    if (!res.ok) throw new Error('Server returned an error');
+    showToast('Record deleted successfully.', 'success');
+  } catch (e) { 
+    console.error('Delete failed', e); 
+    showToast('Failed to delete record. Reverting changes.');
+    fetchActiveTable(); // Revert optimistic update
+  }
 };
 
 const handleDeleteColumn = (colToDelete: string) => {
@@ -2893,9 +2986,11 @@ const sortedVisualData: any[] = (() => {
     }
     // Default for Events: chronological
     if (!groupByField && !sortBy && activeTable === 'Events') {
-      const ta = a.DateFrom ? new Date(a.DateFrom).getTime() : Infinity;
-      const tb = b.DateFrom ? new Date(b.DateFrom).getTime() : Infinity;
-      return isNaN(ta) ? 1 : isNaN(tb) ? -1 : ta - tb;
+      const ta = a.DateFrom ? new Date(a.DateFrom).getTime() : Number.MAX_SAFE_INTEGER;
+      const tb = b.DateFrom ? new Date(b.DateFrom).getTime() : Number.MAX_SAFE_INTEGER;
+      const valA = isNaN(ta) ? Number.MAX_SAFE_INTEGER : ta;
+      const valB = isNaN(tb) ? Number.MAX_SAFE_INTEGER : tb;
+      return valA - valB;
     }
     return 0;
   });
@@ -3462,21 +3557,42 @@ const handleAddBlankRow = async (initialData: Record<string, any> = {}) => {
 
     if (response.ok) {
       const newRecordFromServer = await response.json();
-      await fetchActiveTable(); // refresh only active collection
+      
+      // Optimistic UI Update so the row appears instantly
+      const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+        'events': setEvents as any, 'sessions': setSessions as any,
+        'musiclog': setMusicLogs, 'videolog': setVideoLogs,
+        'media': setMedia as any, 'checklist': setChecklist as any,
+        'guidance': setGuidance as any, 'led_details': setLedDetails as any,
+        'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+      };
+      const setter = optimisticSetter[collection];
+      if (setter) setter(prev => [...prev, newRecordFromServer]);
+
+      fetchActiveTable(); // fire-and-forget — don't block edit mode entry
 
       // Enter Edit Mode immediately
       setEditingId(newRecordFromServer._id || newRecordFromServer.id);
       setEditDraft(newRecordFromServer);
+      
+      // Focus the first column so the inline inputs actually render
+      const cols = getTableColumns();
+      if (cols.length > 0) {
+        setEditingCell(cols[0]);
+      }
 
-      // --- SCROLL TO BOTTOM ---
+      // --- SCROLL TO ROW ---
       // We use a small timeout to wait for the table to re-render with the new row
       setTimeout(() => {
-        const scrollContainer = document.querySelector('.overflow-auto');
-        if (scrollContainer) {
-          scrollContainer.scrollTo({
-            top: scrollContainer.scrollHeight,
-            behavior: 'smooth'
-          });
+        const newRowId = newRecordFromServer._id || newRecordFromServer.id;
+        const rowEl = newRowId ? document.getElementById(`record-${newRowId}`) : null;
+        if (rowEl) {
+          rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        } else {
+          const scrollContainer = document.querySelector('.overflow-auto');
+          if (scrollContainer) {
+            scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
+          }
         }
       }, 150);
     }
@@ -3644,6 +3760,21 @@ useEffect(() => {
       break;
   }
 
+  const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+    'events': setEvents as any, 'sessions': setSessions as any,
+    'musiclog': setMusicLogs, 'videolog': setVideoLogs,
+    'media': setMedia as any, 'checklist': setChecklist as any,
+    'guidance': setGuidance as any, 'led_details': setLedDetails as any,
+    'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+  };
+  const setter = optimisticSetter[collection];
+
+  // Truly optimistic: show the record and close the modal immediately before POST
+  const tempId = `temp-${Date.now()}`;
+  if (setter) setter(prev => [...prev, { ...data, _id: tempId }]);
+  setIsAddModalOpen(false);
+  setNewRecord({});
+
   setIsAdding(true);
   try {
     const response = await window.fetch(`/api/${collection}`, {
@@ -3653,14 +3784,18 @@ useEffect(() => {
     });
 
     if (response.ok) {
-      setIsAddModalOpen(false);
-      setNewRecord({});
-      fetchActiveTable(); // refresh only active collection
+      const newRecordFromServer = await response.json();
+      // Replace temp placeholder with the real server record
+      if (setter) setter(prev => prev.map(r => r._id === tempId ? newRecordFromServer : r));
     } else {
-      alert("Failed to save record to database.");
+      // Rollback optimistic record on failure
+      if (setter) setter(prev => prev.filter(r => r._id !== tempId));
+      showToast('Failed to save record to database.');
     }
   } catch (error) {
+    if (setter) setter(prev => prev.filter(r => r._id !== tempId));
     console.error("Add record error:", error);
+    showToast('Failed to save record. Check your connection.');
   } finally {
     setIsAdding(false);
   }
@@ -4502,6 +4637,17 @@ const handleInlineSave = async () => {
     });
 
     if (response.ok) {
+      const newRecordFromServer = await response.json();
+      const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+        'events': setEvents as any, 'sessions': setSessions as any,
+        'musiclog': setMusicLogs, 'videolog': setVideoLogs,
+        'media': setMedia as any, 'checklist': setChecklist as any,
+        'guidance': setGuidance as any, 'led_details': setLedDetails as any,
+        'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+      };
+      const setter = optimisticSetter[collection];
+      if (setter) setter(prev => [...prev, newRecordFromServer]);
+
       setIsInlineAdding(false);
       setInlineRecord({});
       fetchActiveTable();
@@ -6610,6 +6756,7 @@ if (!health?.mongodb) {
  return (
   <React.Fragment key={row.data?._id || row.data?.id || idx}>
   <tr
+    id={`record-${row.data?._id || row.data?.id}`}
     className={`group transition-colors duration-100 border-b border-slate-200 ${
       selectedIds.includes(row.data?._id || row.data?.id)
         ? 'bg-blue-100/60'
@@ -6697,7 +6844,8 @@ if (!health?.mongodb) {
         <tr
           className="hover:bg-slate-50/80 cursor-pointer border-b border-slate-100 group/addrow"
           onClick={() => {
-            const seed = groupByField && groupHeader?.value != null ? { [groupByField]: groupHeader.value } : {};
+            const seedVal = groupHeader?.value === 'Unspecified' ? '' : groupHeader?.value;
+            const seed = groupByField && seedVal != null ? { [groupByField]: seedVal } : {};
             handleAddBlankRow(seed);
           }}
         >
@@ -6989,7 +7137,13 @@ if (!health?.mongodb) {
       )}
 
       {/* Add Record Modal - Desktop only */}
-      {!isMobileView && <Dialog open={isAddModalOpen} onOpenChange={setIsAddModalOpen}>
+      {!isMobileView && <Dialog open={isAddModalOpen} onOpenChange={(open, details) => {
+        if (!open) {
+          const target = (details as any)?.event?.target as Element | null;
+          if (target?.closest?.('[data-floating-panel]')) return;
+        }
+        setIsAddModalOpen(open);
+      }}>
         <DialogContent className="bg-white border-none p-0 overflow-hidden flex flex-col max-h-[90vh] sm:max-w-[600px] rounded-[24px] shadow-2xl">
         <DialogHeader className="p-5 border-b border-slate-800">
   <DialogTitle className="text-xl font-black tracking-tight">
