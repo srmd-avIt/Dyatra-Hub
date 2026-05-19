@@ -1602,10 +1602,11 @@ if (hasDropdown) {
 });
 
 // ── InboxPanel ────────────────────────────────────────────────────────────────
-const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord }: {
+const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord, onUnreadChange }: {
   email: string;
   onClose: () => void;
   onOpenRecord: (tableName: string, collection: string, recordId: string) => void;
+  onUnreadChange?: (count: number) => void;
 }) {
   const [items, setItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
@@ -1641,14 +1642,29 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
 
   const unread = items.filter(n => !n.read).length;
 
+  // Report unread count to parent so the button badge stays in sync
+  React.useEffect(() => { onUnreadChange?.(unread); }, [unread, onUnreadChange]);
+
   return (
     <>
       {/* Backdrop */}
-      <div className="fixed inset-0 z-[650] bg-black/20" onClick={onClose} />
-      {/* Panel */}
-      <div className="fixed inset-y-0 right-0 z-[660] w-full sm:w-[400px] bg-white shadow-2xl border-l border-slate-200 flex flex-col">
+      <div
+        className="fixed inset-0 z-[650]"
+        style={{ backgroundColor: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)' }}
+        onClick={onClose}
+      />
+      {/* Panel — bottom sheet on mobile, right side-panel on desktop */}
+      <div className="fixed z-[660] bg-white shadow-2xl flex flex-col
+        inset-x-0 bottom-0 rounded-t-3xl max-h-[92vh]
+        sm:inset-y-0 sm:right-0 sm:left-auto sm:bottom-auto sm:rounded-none sm:max-h-none sm:w-[400px] sm:border-l sm:border-slate-200"
+        style={{ paddingBottom: 'max(0px, env(safe-area-inset-bottom))' }}
+      >
+        {/* Mobile drag handle */}
+        <div className="sm:hidden flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-slate-300 rounded-full" />
+        </div>
         {/* Header */}
-        <div className="h-16 px-5 border-b border-slate-200 flex items-center justify-between shrink-0">
+        <div className="h-14 sm:h-16 px-5 border-b border-slate-200 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
             <Inbox className="h-4 w-4 text-brand-primary" />
             <span className="text-[15px] font-black text-slate-900">Inbox</span>
@@ -1926,6 +1942,7 @@ export default function App() {
 const [editDraft, setEditDraft] = useState<any>(null);
 const [expandedRecord, setExpandedRecord] = useState<any>(null);
 const [inboxOpen, setInboxOpen] = useState(false);
+const [inboxUnread, setInboxUnread] = useState(0);
 const [editingCell, setEditingCell] = useState<string | null>(null);
 // Tracks whether a mousedown happened inside the editing row — suppresses
 // blur-triggered saves when the user is just clicking a different cell in the same row.
@@ -3750,6 +3767,20 @@ useEffect(() => {
   }
 }, [user, imageManager?.isOpen]); // Add imageManager.isOpen as a dependency
 
+// Poll unread notification count so the inbox badge stays current
+useEffect(() => {
+  if (!user?.email) { setInboxUnread(0); return; }
+  const fetchCount = () => {
+    window.fetch(`/api/notifications?email=${encodeURIComponent(user.email)}`)
+      .then(r => r.ok ? r.json() : [])
+      .then((d: any[]) => setInboxUnread(d.filter(n => !n.read).length))
+      .catch(() => {});
+  };
+  fetchCount();
+  const t = setInterval(fetchCount, 60000);
+  return () => clearInterval(t);
+}, [user?.email]);
+
  const handleAddRecord = async () => {
   let collection = '';
   const data: Record<string, any> = { ...newRecord };
@@ -5262,27 +5293,22 @@ if (!health?.mongodb) {
         {(hiddenColumns[activeTable]?.length || 0) > 0 && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
       </button>
 
-      {/* Inbox — mobile: lives here, same style as sibling controls */}
-      {user && (
-        <button
-          onClick={() => setInboxOpen(v => !v)}
-          className={`relative p-2 rounded-lg border bg-white transition-colors ${inboxOpen ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500 hover:text-brand-primary hover:border-brand-primary/30'}`}
-          title="Inbox"
-        >
-          <Inbox className="h-4 w-4" />
-        </button>
-      )}
     </div>
   )}
 
-  {/* Inbox — desktop only (hidden on mobile, covered by the row above) */}
+  {/* Inbox button — always visible on both mobile and desktop */}
   {user && (
     <button
       onClick={() => setInboxOpen(v => !v)}
-      className={`hidden sm:flex relative h-10 w-10 items-center justify-center rounded-xl transition-all ${inboxOpen ? 'text-brand-primary bg-brand-primary/10' : 'text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10'}`}
+      className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all ${inboxOpen ? 'text-brand-primary bg-brand-primary/10' : 'text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10'}`}
       title="Inbox"
     >
       <Inbox className="h-5 w-5" />
+      {inboxUnread > 0 && !inboxOpen && (
+        <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-0.5 bg-brand-primary text-white text-[9px] font-black rounded-full flex items-center justify-center leading-none">
+          {inboxUnread > 9 ? '9+' : inboxUnread}
+        </span>
+      )}
     </button>
   )}
 
@@ -8495,6 +8521,7 @@ if (!health?.mongodb) {
           email={user.email}
           onClose={() => setInboxOpen(false)}
           onOpenRecord={openNotificationRecord}
+          onUnreadChange={(count) => setInboxUnread(count)}
         />
       )}
 
