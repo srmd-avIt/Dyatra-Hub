@@ -1970,6 +1970,7 @@ const [isSortOpen, setIsSortOpen] = useState(false);
     setTimeout(() => setToast(null), 3500);
   };
   const [isAdding, setIsAdding] = useState(false);
+  const mutationInFlight = useRef(0); // counts pending add/delete so poll is skipped
  const [viewMode, setViewMode] = useState<'visual' | 'grid' | 'card'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -2197,6 +2198,7 @@ const handleBulkDelete = async () => {
   const originalSelectedIds = [...selectedIds];
   setSelectedIds([]);
 
+  mutationInFlight.current += 1;
   try {
     const promises = originalSelectedIds.map(id =>
       window.fetch(`/api/${collection}/${id}`, { method: 'DELETE' }).then(res => {
@@ -2205,10 +2207,13 @@ const handleBulkDelete = async () => {
     );
     await Promise.all(promises);
     showToast(`${originalSelectedIds.length} record(s) deleted successfully.`, 'success');
+    await fetchActiveTable();
   } catch (e) {
     console.error('Delete failed', e);
     showToast('Failed to delete some records. Reverting changes.');
-    fetchActiveTable(); // Revert optimistic update
+    await fetchActiveTable();
+  } finally {
+    mutationInFlight.current -= 1;
   }
 };
 
@@ -2242,14 +2247,18 @@ const handleDeleteRecord = async (record: any) => {
   const setter = optimisticSetter[collection];
   if (setter) setter(prev => prev.filter(r => r._id !== id && r.id !== id));
 
+  mutationInFlight.current += 1;
   try {
     const res = await window.fetch(`/api/${collection}/${id}`, { method: 'DELETE' });
     if (!res.ok) throw new Error('Server returned an error');
     showToast('Record deleted successfully.', 'success');
-  } catch (e) { 
-    console.error('Delete failed', e); 
+    await fetchActiveTable();
+  } catch (e) {
+    console.error('Delete failed', e);
     showToast('Failed to delete record. Reverting changes.');
-    fetchActiveTable(); // Revert optimistic update
+    await fetchActiveTable();
+  } finally {
+    mutationInFlight.current -= 1;
   }
 };
 
@@ -3528,13 +3537,12 @@ const renderRow = (item: any) => {
 const handleAddBlankRow = async (initialData: Record<string, any> = {}) => {
   let collection = '';
   const dataToSave = { ...initialData };
-  // Determine collection based on activeTable
   switch (activeTable) {
     case 'Events': collection = 'events'; break;
     case 'Session': collection = 'sessions'; break;
     case 'MusicLog': collection = 'musiclog'; break;
-    case 'Tracks': 
-      collection = 'media'; 
+    case 'Tracks':
+      collection = 'media';
       dataToSave.type = 'track';
       dataToSave.Type = 'track';
       break;
@@ -3548,7 +3556,28 @@ const handleAddBlankRow = async (initialData: Record<string, any> = {}) => {
     default: return;
   }
 
- try {
+  const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+    'events': setEvents as any, 'sessions': setSessions as any,
+    'musiclog': setMusicLogs, 'videolog': setVideoLogs,
+    'media': setMedia as any, 'checklist': setChecklist as any,
+    'guidance': setGuidance as any, 'led_details': setLedDetails as any,
+    'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+  };
+  const setter = optimisticSetter[collection];
+
+  // Show the row immediately as a placeholder (no edit mode yet — avoids PUT on temp ID)
+  const tempId = `temp-${Date.now()}`;
+  const tempRecord = { ...dataToSave, _id: tempId, _isTemp: true };
+  if (setter) setter(prev => [...prev, tempRecord]);
+
+  // Scroll to the placeholder row
+  setTimeout(() => {
+    const sc = document.querySelector('.overflow-auto');
+    if (sc) sc.scrollTo({ top: sc.scrollHeight, behavior: 'smooth' });
+  }, 60);
+
+  mutationInFlight.current += 1;
+  try {
     const response = await window.fetch(`/api/${collection}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -3557,47 +3586,33 @@ const handleAddBlankRow = async (initialData: Record<string, any> = {}) => {
 
     if (response.ok) {
       const newRecordFromServer = await response.json();
-      
-      // Optimistic UI Update so the row appears instantly
-      const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
-        'events': setEvents as any, 'sessions': setSessions as any,
-        'musiclog': setMusicLogs, 'videolog': setVideoLogs,
-        'media': setMedia as any, 'checklist': setChecklist as any,
-        'guidance': setGuidance as any, 'led_details': setLedDetails as any,
-        'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
-      };
-      const setter = optimisticSetter[collection];
-      if (setter) setter(prev => [...prev, newRecordFromServer]);
-
-      fetchActiveTable(); // fire-and-forget — don't block edit mode entry
-
-      // Enter Edit Mode immediately
-      setEditingId(newRecordFromServer._id || newRecordFromServer.id);
-      setEditDraft(newRecordFromServer);
-      
-      // Focus the first column so the inline inputs actually render
-      const cols = getTableColumns();
-      if (cols.length > 0) {
-        setEditingCell(cols[0]);
+      const realId = newRecordFromServer?._id || newRecordFromServer?.id;
+      // Replace placeholder with the real server record
+      if (setter && realId) {
+        setter(prev => prev.map(r => r._id === tempId ? newRecordFromServer : r));
       }
-
-      // --- SCROLL TO ROW ---
-      // We use a small timeout to wait for the table to re-render with the new row
-      setTimeout(() => {
-        const newRowId = newRecordFromServer._id || newRecordFromServer.id;
-        const rowEl = newRowId ? document.getElementById(`record-${newRowId}`) : null;
-        if (rowEl) {
-          rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
-        } else {
-          const scrollContainer = document.querySelector('.overflow-auto');
-          if (scrollContainer) {
-            scrollContainer.scrollTo({ top: scrollContainer.scrollHeight, behavior: 'smooth' });
-          }
-        }
-      }, 150);
+      // Now enter edit mode on the real record
+      if (realId) {
+        const d = { ...newRecordFromServer };
+        setEditingId(realId);
+        setEditDraft(d);
+        const cols = getTableColumns();
+        if (cols.length > 0) setEditingCell(cols[0]);
+        setTimeout(() => {
+          const rowEl = document.getElementById(`record-${realId}`);
+          if (rowEl) rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+        }, 80);
+      }
+    } else {
+      if (setter) setter(prev => prev.filter(r => r._id !== tempId));
+      showToast('Failed to save record to database.');
     }
   } catch (error) {
-    console.error("Error adding row:", error);
+    console.error('Error adding row:', error);
+    if (setter) setter(prev => prev.filter(r => r._id !== tempId));
+    showToast('Failed to save record. Check your connection.');
+  } finally {
+    mutationInFlight.current -= 1;
   }
 };
 // 1. Create a function to fetch all data from MongoDB
@@ -3685,9 +3700,9 @@ useEffect(() => {
     fetchAllData();
 
     const interval = setInterval(() => {
-      // STOP background refresh if the Image Manager is open
-      if (!imageManager?.isOpen) {
-        fetchActiveTable(); // only active table, not all 12
+      // Skip refresh if Image Manager is open or a mutation is in flight
+      if (!imageManager?.isOpen && mutationInFlight.current === 0) {
+        fetchActiveTable();
       }
     }, 10000);
 
@@ -3769,13 +3784,14 @@ useEffect(() => {
   };
   const setter = optimisticSetter[collection];
 
-  // Truly optimistic: show the record and close the modal immediately before POST
+  // Close modal immediately, add temp record so UI doesn't feel empty
   const tempId = `temp-${Date.now()}`;
   if (setter) setter(prev => [...prev, { ...data, _id: tempId }]);
   setIsAddModalOpen(false);
   setNewRecord({});
 
   setIsAdding(true);
+  mutationInFlight.current += 1;
   try {
     const response = await window.fetch(`/api/${collection}`, {
       method: 'POST',
@@ -3784,11 +3800,9 @@ useEffect(() => {
     });
 
     if (response.ok) {
-      const newRecordFromServer = await response.json();
-      // Replace temp placeholder with the real server record
-      if (setter) setter(prev => prev.map(r => r._id === tempId ? newRecordFromServer : r));
+      // Fetch fresh data from server — replaces temp record with the real one
+      await fetchActiveTable();
     } else {
-      // Rollback optimistic record on failure
       if (setter) setter(prev => prev.filter(r => r._id !== tempId));
       showToast('Failed to save record to database.');
     }
@@ -3798,6 +3812,7 @@ useEffect(() => {
     showToast('Failed to save record. Check your connection.');
   } finally {
     setIsAdding(false);
+    mutationInFlight.current -= 1;
   }
 };
 const [isInlineAdding, setIsInlineAdding] = useState(false);
@@ -6752,12 +6767,13 @@ if (!health?.mongodb) {
       !collapsedGroups.includes(row.parentId) &&
       (!nextItem || nextItem.type === 'header' || nextItem.type === 'edit-row'));
     const groupHeader = isLastInGroup ? _rows.find(r => r.type === 'header' && r.id === row.parentId) : null;
+    const isTemp = !!(row.data?._isTemp);
 
  return (
   <React.Fragment key={row.data?._id || row.data?.id || idx}>
   <tr
     id={`record-${row.data?._id || row.data?.id}`}
-    className={`group transition-colors duration-100 border-b border-slate-200 ${
+    className={`group transition-colors duration-100 border-b border-slate-200 ${isTemp ? 'opacity-50 animate-pulse pointer-events-none' : ''} ${
       selectedIds.includes(row.data?._id || row.data?.id)
         ? 'bg-blue-100/60'
         : !row.groupColor
