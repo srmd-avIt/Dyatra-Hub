@@ -877,10 +877,13 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     if (!s) return;
     const patch: Record<string, string> = {};
     if (isML || isVL) {
+      const sDate = s["Date"] || s["date"] || '';
+      const sTimeOfDay = s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '';
+      const sOccasion = s["Occasion"] || s["occasion"] || '';
       patch["Parent Event (from Session)"] = s["Parent Event"] || '';
-      patch["Date (from Session)"] = s["Date"] ? String(s["Date"]).split('T')[0] : '';
-      patch["TimeOfDay (from Session)"] = s["Time Of Day"] || '';
-      patch["Occasion (from Session)"] = s["Occasion"] || '';
+      patch["Date (from Session)"] = sDate ? String(sDate).split('T')[0] : '';
+      patch["TimeOfDay (from Session)"] = sTimeOfDay;
+      patch["Occasion (from Session)"] = sOccasion;
     }
     if (isVL) {
       patch["City (from Session)"] = s["City"] || '';
@@ -1209,21 +1212,25 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
           options={sessions.map((s: any) => s["Session Name"])}
           onCommit={val => {
             const s = sessions.find((x: any) => x["Session Name"] === val);
+            const norm = (d: any) => d ? String(d).split('T')[0] : '';
             const patch: any = { Session: val };
             if (s) {
+              const sDate = s["Date"] || s["date"] || '';
+              const sTimeOfDay = s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '';
+              const sOccasion = s["Occasion"] || s["occasion"] || '';
               if (isML) {
-                patch["Parent Event (from Session)"] = s["Parent Event"];
-                patch["Date (from Session)"] = s["Date"];
-                patch["TimeOfDay (from Session)"] = s["Time Of Day"];
-                patch["Occasion (from Session)"] = s["Occasion"];
+                patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+                patch["Date (from Session)"]         = norm(sDate);
+                patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+                patch["Occasion (from Session)"]     = sOccasion;
               } else {
-                patch["Parent Event (from Session)"] = s["Parent Event"];
-                patch["Date (from Session)"] = s["Date"];
-                patch["City (from Session)"] = s["City"];
-                patch["Venue (from Session)"] = s["Venue"];
-                patch["TimeOfDay (from Session)"] = s["Time Of Day"];
-                patch["Occasion (from Session)"] = s["Occasion"];
-                patch["SessionType (from Session)"] = s["SessionType"];
+                patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+                patch["Date (from Session)"]         = norm(sDate);
+                patch["City (from Session)"]         = s["City"] || '';
+                patch["Venue (from Session)"]        = s["Venue"] || '';
+                patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+                patch["Occasion (from Session)"]     = sOccasion;
+                patch["SessionType (from Session)"]  = s["SessionType"] || '';
               }
             }
             const nd = { ...draftRef.current, ...patch };
@@ -1394,6 +1401,19 @@ if (hasDropdown) {
     if (longTextCols.has(col)) {
       return (
         <textarea className={`${inputCls} h-28 resize-none py-2.5`}
+          value={draft[col] || ''}
+          onChange={e => { const nd = { ...draftRef.current, [col]: e.target.value }; setDraft(nd); }}
+          onBlur={() => onSave(draftRef.current)}
+          placeholder={`Enter ${col}…`}
+        />
+      );
+    }
+    if (col === 'EmailId') {
+      return (
+        <input
+          type="text"
+          className={inputCls}
+          style={{ color: '#2563eb', WebkitTextFillColor: '#2563eb', textDecoration: 'underline' }}
           value={draft[col] || ''}
           onChange={e => { const nd = { ...draftRef.current, [col]: e.target.value }; setDraft(nd); }}
           onBlur={() => onSave(draftRef.current)}
@@ -3985,18 +4005,6 @@ useEffect(() => {
       break;
   }
 
-  const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
-    'events': setEvents as any, 'sessions': setSessions as any,
-    'musiclog': setMusicLogs, 'videolog': setVideoLogs,
-    'media': setMedia as any, 'checklist': setChecklist as any,
-    'guidance': setGuidance as any, 'led_details': setLedDetails as any,
-    'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
-  };
-  const setter = optimisticSetter[collection];
-
-  // Close modal immediately, add temp record so UI doesn't feel empty
-  const tempId = `temp-${Date.now()}`;
-  if (setter) setter(prev => [...prev, { ...data, _id: tempId }]);
   setIsAddModalOpen(false);
   setNewRecord({});
 
@@ -4010,14 +4018,11 @@ useEffect(() => {
     });
 
     if (response.ok) {
-      // Fetch fresh data from server — replaces temp record with the real one
       await fetchActiveTable();
     } else {
-      if (setter) setter(prev => prev.filter(r => r._id !== tempId));
       showToast('Failed to save record to database.');
     }
   } catch (error) {
-    if (setter) setter(prev => prev.filter(r => r._id !== tempId));
     console.error("Add record error:", error);
     showToast('Failed to save record. Check your connection.');
   } finally {
@@ -4306,20 +4311,24 @@ const renderEditableRow = () => {
   const handleInlineSessionSelect = (sessionName: string) => {
     const s = sessions.find(s => s["Session Name"] === sessionName);
     if (!s) { setInlineRecord({ ...inlineRecord, Session: sessionName }); return; }
+    const norm = (d: any) => d ? String(d).split('T')[0] : '';
+    const sDate = s["Date"] || s["date"] || '';
+    const sTimeOfDay = s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '';
+    const sOccasion = s["Occasion"] || s["occasion"] || '';
     const patch: any = { Session: s["Session Name"] };
     if (activeTable === 'MusicLog') {
-      patch["Parent Event (from Session)"] = s["Parent Event"];
-      patch["Date (from Session)"] = s["Date"];
-      patch["TimeOfDay (from Session)"] = s["Time Of Day"];
-      patch["Occasion (from Session)"] = s["Occasion"];
+      patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+      patch["Date (from Session)"]         = norm(sDate);
+      patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+      patch["Occasion (from Session)"]     = sOccasion;
     } else {
-      patch["Parent Event (from Session)"] = s["Parent Event"];
-      patch["Date (from Session)"] = s["Date"];
-      patch["City (from Session)"] = s["City"];
-      patch["Venue (from Session)"] = s["Venue"];
-      patch["TimeOfDay (from Session)"] = s["Time Of Day"];
-      patch["Occasion (from Session)"] = s["Occasion"];
-      patch["SessionType (from Session)"] = s["SessionType"];
+      patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+      patch["Date (from Session)"]         = norm(sDate);
+      patch["City (from Session)"]         = s["City"] || '';
+      patch["Venue (from Session)"]        = s["Venue"] || '';
+      patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+      patch["Occasion (from Session)"]     = sOccasion;
+      patch["SessionType (from Session)"]  = s["SessionType"] || '';
     }
     setInlineRecord({ ...inlineRecord, ...patch });
   };
@@ -4327,10 +4336,11 @@ const renderEditableRow = () => {
   const isEventsTable = activeTable === 'Events';
   const selectCls = "w-full h-8 bg-white border border-blue-300 rounded px-2 text-[12px] font-bold text-black focus:ring-2 focus:ring-brand-primary outline-none shadow-sm";
   const inputCls = "w-full h-8 bg-white border border-blue-300 rounded px-2 text-[12px] font-bold text-black placeholder:text-slate-400 focus:ring-2 focus:ring-brand-primary outline-none shadow-sm";
-
   return (
     <>
-      {cols.map((col, i) => (
+      {cols.map((col, i) => {
+        const colType = getColumnType(col);
+        return (
         <td
           key={i}
           className={`px-2 py-2 border-r border-b border-slate-400 ${i === 0 ? (isMobileView ? 'bg-blue-100' : 'bg-blue-100 sticky left-[48px] z-10') : 'bg-blue-50/50'}`}
@@ -4404,21 +4414,28 @@ const renderEditableRow = () => {
               );
             }
             return (
-              <input
-                autoFocus={i === 0 && !isSessionLinkedTable && !isEventsTable}
-                className={inputCls}
-                placeholder={`Enter ${col}...`}
-                value={inlineRecord[col] || ''}
-                onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleInlineSave();
-                  if (e.key === 'Escape') setIsInlineAdding(false);
-                }}
-              />
+             <input
+                  autoFocus={i === 0 && !isSessionLinkedTable && !isEventsTable}
+                  className={inputCls}
+                  // APPLY STYLE HERE
+                  style={colType === 'email' ? { 
+                    color: '#2563eb', 
+                    WebkitTextFillColor: '#2563eb', 
+                    textDecoration: 'underline' 
+                  } : {}}
+                  placeholder={`Enter ${col}...`}
+                  value={inlineRecord[col] || ''}
+                  onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleInlineSave();
+                    if (e.key === 'Escape') setIsInlineAdding(false);
+                  }}
+                />
             );
           })()}
         </td>
-      ))}
+        );
+      })}
     </>
   );
 };
@@ -4564,20 +4581,24 @@ const updateDraftOnly = (col: string, val: string) => {
   const commitSession = (sessionName: string) => {
     const s = sessions.find((x: any) => x["Session Name"] === sessionName);
     const patch: any = { Session: sessionName };
+    const norm = (d: any) => d ? String(d).split('T')[0] : '';
     if (s) {
+      const sDate = s["Date"] || s["date"] || '';
+      const sTimeOfDay = s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '';
+      const sOccasion = s["Occasion"] || s["occasion"] || '';
       if (isML) {
-        patch["Parent Event (from Session)"] = s["Parent Event"];
-        patch["Date (from Session)"]         = s["Date"];
-        patch["TimeOfDay (from Session)"]    = s["Time Of Day"];
-        patch["Occasion (from Session)"]     = s["Occasion"];
+        patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+        patch["Date (from Session)"]         = norm(sDate);
+        patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+        patch["Occasion (from Session)"]     = sOccasion;
       } else {
-        patch["Parent Event (from Session)"] = s["Parent Event"];
-        patch["Date (from Session)"]         = s["Date"];
-        patch["City (from Session)"]         = s["City"];
-        patch["Venue (from Session)"]        = s["Venue"];
-        patch["TimeOfDay (from Session)"]    = s["Time Of Day"];
-        patch["Occasion (from Session)"]     = s["Occasion"];
-        patch["SessionType (from Session)"]  = s["SessionType"];
+        patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+        patch["Date (from Session)"]         = norm(sDate);
+        patch["City (from Session)"]         = s["City"] || '';
+        patch["Venue (from Session)"]        = s["Venue"] || '';
+        patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+        patch["Occasion (from Session)"]     = sOccasion;
+        patch["SessionType (from Session)"]  = s["SessionType"] || '';
       }
     }
     const nd = { ...editDraft, ...patch };
@@ -4853,13 +4874,21 @@ const updateDraftOnly = (col: string, val: string) => {
 
               return (
                 <input
-                  autoFocus
-                  className={inputCls()}
-                  value={editDraft[col] || ''}
-                  onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
-                  onBlur={() => handleUpdateRecord()}
-                  onKeyDown={saveKeys}
-                />
+    autoFocus
+    type="text"
+    className={inputCls()}
+    // This style ensures the blue format stays while typing in the cell
+    style={colType === 'email' ? { 
+      color: '#2563eb', 
+      WebkitTextFillColor: '#2563eb', 
+      textDecoration: 'underline',
+      fontWeight: '500' // Matches your table's font weight
+    } : undefined}
+    value={editDraft[col] || ''}
+    onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
+    onBlur={() => handleUpdateRecord()}
+    onKeyDown={saveKeys}
+  />
               );
             })()}
           </td>
@@ -7303,9 +7332,25 @@ if (!health?.mongodb) {
                     </select>
                   </div>
                   {addColumnModal.type === 'lookup' && addColumnModal.linkedTable && (() => {
-                    const linkedFields = Object.keys(
-                      getDataForTable(addColumnModal.linkedTable)[0] || {}
-                    ).filter(f => !['_id','id','created_at','__v'].includes(f));
+                    const baseColsMap: Record<string, string[]> = {
+                      'Events': ['Event Name', 'DateFrom', 'DateTo', 'Occasion', 'City', 'Venue', 'Sessions', 'Year'],
+                      'Session': ['Session Name', 'Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes'],
+                      'MusicLog': ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID'],
+                      'VideoLog': ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList'],
+                      'Tracks': ['PlayID', 'Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'],
+                      'DyatraChecklist': ['Task', 'Details', 'TaskGroup', 'OrderId', 'People Involved', 'Typical Timeline', 'Category', 'Period', 'Attachment'],
+                      'Guidance & Learning': ['LearningId', 'Event', 'DateFrom (from Event)', 'DateTo (from Event)', 'Year (from Event)', 'City', 'GuidanceFrom', 'Guidance/Learning', 'Category', 'Attachments'],
+                      'LED': ['LedId', '🕘 Session', 'Parent Event (from 🕘 Session)', 'Date (from 🕘 Session)', 'City (from 🕘 Session)', 'Venue (from 🕘 Session)', 'Indoor/Outdoor LED?', 'CentreLed', 'CntrPitch', 'CntrWdth', 'CntrHt', 'CntrRiser', 'Stageht', 'SideLed', 'SidePitch', 'SideWdth', 'SideHt', 'OtherLed1', 'OtherPitch', 'OtherWdth', 'OtherHt', 'OtherLed2', 'is Led Required?', 'Other2Wdth', 'Other2Ht', 'DGUseedKva', 'BackupPower', 'Vendor', 'Images'],
+                      'DataSharing': ['Sevak', 'Dept', 'EmailId', 'ShareFacts?', 'ShareData'],
+                      'VideoSetup': ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'],
+                      'AudioSetup': ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'],
+                    };
+                    const predefined = baseColsMap[addColumnModal.linkedTable] || [];
+                    const extras = extraColumns[addColumnModal.linkedTable] || [];
+                    const dataKeys = (getDataForTable(addColumnModal.linkedTable)[0]
+                      ? Object.keys(getDataForTable(addColumnModal.linkedTable)[0]).filter(f => !['_id','id','created_at','__v'].includes(f))
+                      : []);
+                    const linkedFields = [...new Set([...predefined, ...extras, ...dataKeys])];
                     return (
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Field to look up</label>
@@ -7385,9 +7430,25 @@ if (!health?.mongodb) {
                     </select>
                   </div>
                   {editColumnModal.type === 'lookup' && editColumnModal.linkedTable && (() => {
-                    const linkedFields = Object.keys(
-                      getDataForTable(editColumnModal.linkedTable)[0] || {}
-                    ).filter(f => !['_id','id','created_at','__v'].includes(f));
+                    const baseColsMap: Record<string, string[]> = {
+                      'Events': ['Event Name', 'DateFrom', 'DateTo', 'Occasion', 'City', 'Venue', 'Sessions', 'Year'],
+                      'Session': ['Session Name', 'Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes'],
+                      'MusicLog': ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID'],
+                      'VideoLog': ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList'],
+                      'Tracks': ['PlayID', 'Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'],
+                      'DyatraChecklist': ['Task', 'Details', 'TaskGroup', 'OrderId', 'People Involved', 'Typical Timeline', 'Category', 'Period', 'Attachment'],
+                      'Guidance & Learning': ['LearningId', 'Event', 'DateFrom (from Event)', 'DateTo (from Event)', 'Year (from Event)', 'City', 'GuidanceFrom', 'Guidance/Learning', 'Category', 'Attachments'],
+                      'LED': ['LedId', '🕘 Session', 'Parent Event (from 🕘 Session)', 'Date (from 🕘 Session)', 'City (from 🕘 Session)', 'Venue (from 🕘 Session)', 'Indoor/Outdoor LED?', 'CentreLed', 'CntrPitch', 'CntrWdth', 'CntrHt', 'CntrRiser', 'Stageht', 'SideLed', 'SidePitch', 'SideWdth', 'SideHt', 'OtherLed1', 'OtherPitch', 'OtherWdth', 'OtherHt', 'OtherLed2', 'is Led Required?', 'Other2Wdth', 'Other2Ht', 'DGUseedKva', 'BackupPower', 'Vendor', 'Images'],
+                      'DataSharing': ['Sevak', 'Dept', 'EmailId', 'ShareFacts?', 'ShareData'],
+                      'VideoSetup': ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'],
+                      'AudioSetup': ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'],
+                    };
+                    const predefined = baseColsMap[editColumnModal.linkedTable] || [];
+                    const extras = extraColumns[editColumnModal.linkedTable] || [];
+                    const dataKeys = (getDataForTable(editColumnModal.linkedTable)[0]
+                      ? Object.keys(getDataForTable(editColumnModal.linkedTable)[0]).filter(f => !['_id','id','created_at','__v'].includes(f))
+                      : []);
+                    const linkedFields = [...new Set([...predefined, ...extras, ...dataKeys])];
                     return (
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Field to look up</label>
@@ -7555,8 +7616,9 @@ if (!health?.mongodb) {
               options={sessions.map((s: any) => s["Session Name"]).filter(Boolean)}
               onCommit={val => {
                 const s = sessions.find((x: any) => x["Session Name"] === val);
-                if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"] });
-                else setNewRecord({ ...newRecord, session: val });
+                const norm = (d: any) => d ? String(d).split('T')[0] : '';
+                if (s) setNewRecord((prev: any) => ({ ...prev, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), timeOfDay: s["Time Of Day"] || '', occasion: s["Occasion"] || '' }));
+                else setNewRecord((prev: any) => ({ ...prev, session: val }));
               }}
               onCancel={() => {}}
               placeholder="Select session…"
@@ -7564,10 +7626,10 @@ if (!health?.mongodb) {
             />
           </div>
         </div>
-        <Input value={newRecord.parentEvent || ''} onChange={(e) => setNewRecord({...newRecord, parentEvent: e.target.value})} placeholder="Parent Event" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.date || ''} onChange={(e) => setNewRecord({...newRecord, date: e.target.value})} placeholder="Date" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.timeOfDay || ''} onChange={(e) => setNewRecord({...newRecord, timeOfDay: e.target.value})} placeholder="Time of Day" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.occasion || ''} onChange={(e) => setNewRecord({...newRecord, occasion: e.target.value})} placeholder="Occasion" className="bg-brand-bg h-9 text-xs" />
+        <Input value={newRecord.parentEvent || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, parentEvent: e.target.value}))} placeholder="Parent Event" className="bg-brand-bg h-9 text-xs" />
+        <Input value={newRecord.date || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, date: e.target.value}))} placeholder="Date" className="bg-brand-bg h-9 text-xs" />
+        <Input value={newRecord.timeOfDay || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, timeOfDay: e.target.value}))} placeholder="Time of Day" className="bg-brand-bg h-9 text-xs" />
+        <Input value={newRecord.occasion || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, occasion: e.target.value}))} placeholder="Occasion" className="bg-brand-bg h-9 text-xs" />
       </div>
     </div>
 
@@ -8117,8 +8179,9 @@ if (!health?.mongodb) {
                     <label className={labelCls}>Session</label>
                     <CellDropdown value={newRecord.session || ''} options={sessionOpts} onCommit={val => {
                       const s = sessions.find((x: any) => x["Session Name"] === val);
-                      if (s) setNewRecord({...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"]});
-                      else setNewRecord({...newRecord, session: val});
+                      const norm = (d: any) => d ? String(d).split('T')[0] : '';
+                      if (s) setNewRecord((prev: any) => ({ ...prev, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), timeOfDay: s["Time Of Day"] || '', occasion: s["Occasion"] || '' }));
+                      else setNewRecord((prev: any) => ({ ...prev, session: val }));
                     }} onCancel={() => {}} placeholder="Select session…" tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20" />
                   </div>
                   {newRecord.parentEvent && (
