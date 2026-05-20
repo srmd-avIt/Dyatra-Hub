@@ -4152,10 +4152,7 @@ useEffect(() => {
 
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
-      const origin = event.origin;
-      if (!origin.endsWith('.run.app') && !origin.includes('localhost')) {
-        return;
-      }
+      if (event.origin !== window.location.origin) return;
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         const userData = event.data.user;
         setUser(userData);
