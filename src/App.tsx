@@ -126,7 +126,7 @@ const MOBILE_PRIORITY_COLS: Record<string, string[]> = {
   'Events':              ['Event Name', 'DateFrom', 'Occasion'],
   'Session':             ['Session Name', 'Parent Event', 'Date'],
   'MusicLog':            ['PlayID', 'Track', 'Session'],
-  'Tracks':              ['Title', 'Artist', 'Duration'],
+  'Tracks':              ['PlayID', 'Title', 'Artist', 'Duration'],
   'VideoLog':            ['VideoPlayId', 'VideoTitle', 'Session'],
   'Guidance & Learning': ['LearningId', 'Guidance/Learning', 'Category'],
   'LED':                 ['LedId', '🕘 Session', 'Indoor/Outdoor LED?'],
@@ -606,11 +606,12 @@ const SessionPicker = React.memo(function SessionPicker({
 
 // Generic linked-record picker — chip-based multi-select from any table's records
 const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
-  value, records, nameField, linkedTable, onCommit, onCancel, onAddLookup
+  value, records, nameField, displayField, linkedTable, onCommit, onCancel, onAddLookup
 }: {
   value: string;
   records: any[];
   nameField: string;
+  displayField?: string;
   linkedTable: string;
   onCommit: (v: string) => void;
   onCancel: () => void;
@@ -685,19 +686,34 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
     setOpen(v => !v);
   };
 
-  const names = records.map(r => r[nameField]).filter(Boolean);
-  const filtered = names.filter(n => n.toLowerCase().includes(search.toLowerCase()));
+  const uniqueRecords = useMemo(() => {
+    const map = new Map();
+    records.forEach(r => {
+      if (r[nameField] && !map.has(String(r[nameField]))) map.set(String(r[nameField]), r);
+    });
+    return Array.from(map.values());
+  }, [records, nameField]);
+
+  const filteredRecords = uniqueRecords.filter(r => {
+    const searchStr = search.toLowerCase();
+    const nameVal = String(r[nameField] || '').toLowerCase();
+    const displayVal = displayField ? String(r[displayField] || '').toLowerCase() : '';
+    return nameVal.includes(searchStr) || displayVal.includes(searchStr);
+  });
 
   return (
     <div ref={ref} className="relative w-full">
       <div className="w-full min-h-8 flex flex-wrap gap-1 items-center px-1 py-1">
-        {localSel.length > 0 ? localSel.map(name => (
+        {localSel.length > 0 ? localSel.map(name => {
+          const rec = uniqueRecords.find(r => String(r[nameField]) === String(name));
+          const displayLabel = rec && displayField && rec[displayField] ? `${rec[displayField]} (${name})` : name;
+          return (
           <span key={name} className="inline-flex items-center gap-0.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-[11px] font-semibold px-2 py-0.5 rounded-sm leading-tight max-w-full min-w-0">
             <Link2 className="h-2.5 w-2.5 shrink-0 opacity-60" />
-            <span className="truncate max-w-[200px]">{name}</span>
+            <span className="truncate max-w-[200px]">{displayLabel}</span>
             <button onMouseDown={e => remove(name, e)} className="ml-0.5 text-brand-primary/60 hover:text-red-500 leading-none text-[13px] font-bold shrink-0">&times;</button>
           </span>
-        )) : <span className="text-[12px] text-slate-400">Link {linkedTable} records…</span>}
+        )}) : <span className="text-[12px] text-slate-400">Link {linkedTable} records…</span>}
         <button
           onMouseDown={toggleOpen}
           className="inline-flex items-center justify-center h-5 w-5 rounded border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 hover:border-brand-primary hover:text-brand-primary transition-colors ml-0.5 shrink-0"
@@ -719,8 +735,10 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
             />
           </div>
           <div className="max-h-52 overflow-y-auto py-1">
-            {filtered.map(name => {
+            {filteredRecords.map(r => {
+              const name = String(r[nameField]);
               const sel = localSel.includes(name);
+              const displayLabel = displayField && r[displayField] ? `${r[displayField]} (${name})` : name;
               return (
                 <div
                   key={name}
@@ -730,11 +748,11 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
                   <div className={`h-4 w-4 rounded border-2 flex items-center justify-center shrink-0 ${sel ? 'bg-blue-500 border-blue-500' : 'border-slate-200'}`}>
                     {sel && <Check className="h-2.5 w-2.5 text-white" strokeWidth={3} />}
                   </div>
-                  <span className={sel ? 'text-blue-700 font-semibold' : 'text-slate-700'}>{name}</span>
+                  <span className={sel ? 'text-blue-700 font-semibold' : 'text-slate-700'}>{displayLabel}</span>
                 </div>
               );
             })}
-            {filtered.length === 0 && <div className="px-3 py-4 text-[12px] text-slate-400 text-center">No records found</div>}
+            {filteredRecords.length === 0 && <div className="px-3 py-4 text-[12px] text-slate-400 text-center">No records found</div>}
           </div>
           <div className="border-t border-slate-100">
             <div className="px-3 py-1.5 flex items-center justify-between bg-slate-50">
@@ -776,7 +794,7 @@ function colLabel(col: string): string {
 
 /** Airtable-style expanded record modal — desktop two-panel + mobile wizard */
 const RecordExpandModal = React.memo(function RecordExpandModal({
-  item, tableName, columns, sessions, events, columnMeta, columnTypes, allData, onAddLookup, onClose, onSave, currentUser,
+  item, tableName, columns, sessions, events, columnMeta, columnTypes, allData, onAddLookup, onClose, onSave, currentUser, setLinkedRecordPopup,
   customTags, onAddCustomTag, onRemoveTag, onImageManage
 }: {
   item: any; tableName: string; columns: string[]; sessions: any[];
@@ -785,7 +803,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   columnTypes: Record<string, Record<string, string>>;
   allData: Record<string, any[]>;
   onAddLookup: (linkedTable: string) => void;
-  onClose: () => void; onSave: (draft: any) => void;
+  onClose: () => void; onSave: (draft: any) => void; setLinkedRecordPopup: (p: any) => void;
   currentUser?: any;
   customTags: Record<string, Record<string, string[]>>;
   onAddCustomTag: (tableName: string, col: string, tag: string) => void;
@@ -1077,6 +1095,43 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   };
 
  const renderField = (col: string) => {
+  if (tableName === 'Tracks' && col === 'Plays') {
+    return (
+      <LinkedRecordPicker
+        value={draft[col] || ''}
+        records={allData['MusicLog'] || []}
+        nameField="PlayID"
+        displayField="Track"
+        linkedTable="MusicLog"
+        onCommit={val => commit(col, val)}
+        onCancel={onClose}
+        onAddLookup={onAddLookup}
+      />
+    );
+  }
+  if (tableName === 'Tracks' && col === 'PlayID') {
+      const playId = draft[col];
+      if (!playId) return <div className={readonlyCls}>—</div>;
+      const musicLogRecord = (allData['MusicLog'] || []).find((ml: any) => String(ml.PlayID) === String(playId));
+      const displayLabel = musicLogRecord?.Track ? `${musicLogRecord.Track} (${playId})` : playId;
+      return (
+        <div
+          onClick={(e) => {
+            e.stopPropagation();
+            if (musicLogRecord) {
+              const nameField = getModalPrimaryField('MusicLog');
+              const fields = Object.keys(musicLogRecord).filter(k => !['_id', 'id', 'created_at', '__v'].includes(k) && k !== nameField).slice(0, 8);
+              setLinkedRecordPopup({ record: musicLogRecord, tableName: 'MusicLog', nameField, fields });
+            }
+          }}
+          className={`${readonlyCls} not-italic font-semibold !cursor-pointer hover:!bg-slate-100 justify-between`}
+        >
+          <span className="truncate">{displayLabel}</span>
+          {musicLogRecord && <ArrowUpRight className="h-3.5 w-3.5 opacity-60 shrink-0" />}
+        </div>
+      );
+  }
+
   // Check for ANY auto-filled columns (Session or Event)
   const isAutoFilled =
     col.includes('(from Session)') ||
@@ -1122,6 +1177,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
           value={draft[col] || ''}
           records={records}
           nameField={nameField}
+          displayField={linkedTable === 'MusicLog' ? 'Track' : undefined}
           linkedTable={linkedTable}
           onCommit={val => {
             // Auto-fill any lookup columns pointing to the same linkedTable
@@ -1735,7 +1791,7 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
   );
 });
 
-const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], onSessionClick, onEdit, onDelete }: { item: any, columns: string[], onBack: () => void, tableName: string, sessions?: any[], onSessionClick?: (s: any) => void, onEdit?: () => void, onDelete?: () => void }) => {
+const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], musicLogs = [], onSessionClick, onEdit, onDelete, getPrimaryField, setLinkedRecordPopup }: { item: any, columns: string[], onBack: () => void, tableName: string, sessions?: any[], musicLogs?: any[], onSessionClick?: (s: any) => void, onEdit?: () => void, onDelete?: () => void, getPrimaryField: (table: string) => string, setLinkedRecordPopup: (p: any) => void }) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -1799,6 +1855,36 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], onS
                     <div className="text-[15px] font-bold text-slate-900 break-words leading-relaxed">
                       {(() => {
                        const val = item[col];
+
+                       if (tableName === 'Tracks' && (col === 'Plays' || col === 'PlayID')) {
+                         if (!val) return <span className="text-slate-300 italic font-normal">—</span>;
+                         const vals = String(val).split(',').map(s => s.trim()).filter(Boolean);
+                         return (
+                           <div className="flex flex-wrap gap-1.5 mt-1">
+                             {vals.map((playId, idx) => {
+                               const musicLogRecord = musicLogs.find((ml: any) => String(ml.PlayID) === playId);
+                               const displayLabel = musicLogRecord?.Track ? `${musicLogRecord.Track} (${playId})` : playId;
+                               return (
+                                 <span
+                                   key={idx}
+                                   onClick={(e) => {
+                                     e.stopPropagation();
+                                     if (musicLogRecord) {
+                                       const nameField = getPrimaryField('MusicLog');
+                                       const fields = Object.keys(musicLogRecord).filter(k => !['_id', 'id', 'created_at', '__v'].includes(k) && k !== nameField).slice(0, 8);
+                                       setLinkedRecordPopup({ record: musicLogRecord, tableName: 'MusicLog', nameField, fields });
+                                     }
+                                   }}
+                                   className={`inline-flex items-center gap-1 text-[11px] font-semibold px-2 py-0.5 rounded-sm border ${musicLogRecord ? 'bg-brand-primary/10 text-brand-primary border-brand-primary/30 cursor-pointer hover:bg-brand-primary/20' : 'bg-slate-100 text-slate-700 border-slate-200'}`}
+                                 >
+                                   {displayLabel}
+                                   {musicLogRecord && <ArrowUpRight className="h-3 w-3 opacity-60 shrink-0" />}
+                                 </span>
+                               );
+                             })}
+                           </div>
+                         );
+                       }
 
 // Change this line to include "Session" and "🕘 Session"
 const sessionFieldNames = ["Sessions", "Imported table", "Session", "🕘 Session"];
@@ -3174,7 +3260,21 @@ case 'text':
       return (
         <div className="flex flex-wrap gap-1.5 justify-start">
           {names.map((n: string, i: number) => (
-            <span key={i} className="inline-flex items-center gap-0.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-[12px] font-semibold px-2.5 py-0.5 rounded-full cursor-pointer hover:bg-brand-primary/20 transition-colors" style={{ maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'left' }}>
+            <span key={i} className="inline-flex items-center gap-0.5 bg-brand-primary/10 text-brand-primary border border-brand-primary/20 text-[12px] font-semibold px-2.5 py-0.5 rounded-full cursor-pointer hover:bg-brand-primary/20 transition-colors" style={{ maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'left' }}
+              onClick={(e) => {
+                e.stopPropagation();
+                const meta = columnMeta[activeTable]?.[col];
+                if (meta?.linkedTable) {
+                  const linkedTableData = getDataForTable(meta.linkedTable);
+                  const nameField = getPrimaryField(meta.linkedTable);
+                  const linkedRec = linkedTableData.find(r => r[nameField] === n);
+                  if (linkedRec) {
+                    const fields = Object.keys(linkedRec).filter(k => !['_id', 'id', 'created_at', '__v'].includes(k) && k !== nameField).slice(0, 8);
+                    setLinkedRecordPopup({ record: linkedRec, tableName: meta.linkedTable, nameField, fields });
+                  }
+                }
+              }}
+            >
               {n}
               <ArrowUpRight className="h-3 w-3 opacity-60 shrink-0" />
             </span>
@@ -3211,7 +3311,7 @@ const getTableColumns = (includeHidden = false) => {
       baseCols = ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID'];
       break;
     case 'Tracks':
-      baseCols = ['Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'];
+      baseCols = ['PlayID', 'Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'];
       break;
     case 'VideoLog':
       baseCols = ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList'];
@@ -3427,6 +3527,45 @@ const renderRow = (item: any) => {
       const isColFrozen = i <= frozen;
       const isFreezeEdge = i === frozen;
       const style = cellStyle(col, i);
+
+      if (activeTable === 'Tracks' && (col === 'PlayID' || col === 'Plays')) {
+        const rawVal = item[col];
+        if (!rawVal) {
+          return <td key={col} style={style} className={`${cellCls} ${isColFrozen ? (isFreezeEdge ? 'border-r-2 border-r-brand-primary/40' : '') : ''}`}><span className="text-slate-300 italic text-[12px]">—</span></td>;
+        }
+        const vals = String(rawVal).split(',').map(s => s.trim()).filter(Boolean);
+        return (
+          <td key={col} style={style} className={`${cellCls} ${isColFrozen ? (isFreezeEdge ? 'border-r-2 border-r-brand-primary/40' : '') : ''}`}>
+            <div className="flex flex-wrap gap-1.5 justify-start">
+              {vals.map((playId, idx) => {
+                const musicLogRecord = musicLogs.find(ml => String(ml.PlayID) === playId);
+                return (
+                  <span
+                    key={idx}
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      if (musicLogRecord) {
+                        const nameField = getPrimaryField('MusicLog');
+                        const fields = Object.keys(musicLogRecord).filter(k => !['_id', 'id', 'created_at', '__v'].includes(k) && k !== nameField).slice(0, 8);
+                        setLinkedRecordPopup({ record: musicLogRecord, tableName: 'MusicLog', nameField, fields });
+                      }
+                    }}
+                    className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full max-w-full min-w-0 transition-all ${
+                      musicLogRecord
+                        ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20 cursor-pointer hover:bg-brand-primary/20'
+                        : 'bg-slate-100 text-slate-700 border border-slate-200 cursor-default'
+                    }`}
+                  >
+                    <span className="truncate">{musicLogRecord?.Track ? `${musicLogRecord.Track} (${playId})` : playId}</span>
+                    {musicLogRecord && <ArrowUpRight className="shrink-0 h-3 w-3 opacity-60" />}
+                  </span>
+                );
+              })}
+            </div>
+          </td>
+        );
+      }
+
       const val = item[col];
        const type = getColumnType(col);
       const isLongText = type === 'long_text';
@@ -3898,6 +4037,7 @@ const groupColors = [
 ];
 const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
 const [linkedSession, setLinkedSession] = useState<any | null>(null);
+const [linkedRecordPopup, setLinkedRecordPopup] = useState<{ record: any; tableName: string; nameField: string; fields: string[] } | null>(null);
 
 // Update your toggle function as well:
 const toggleGroup = (groupId: string) => {
@@ -4496,6 +4636,57 @@ const updateDraftOnly = (col: string, val: string) => {
             }}
           >
             {(() => {
+              if (activeTable === 'Tracks' && (col === 'PlayID' || col === 'Plays')) {
+                if (isActuallyActive && col === 'Plays') {
+                  return (
+                    <LinkedRecordPicker
+                      value={editDraft[col] || ''}
+                      records={musicLogs}
+                      nameField="PlayID"
+                      displayField="Track"
+                      linkedTable="MusicLog"
+                      onCommit={val => {
+                        commitField(col, val);
+                      }}
+                      onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
+                    />
+                  );
+                }
+
+
+                const rawVal = editDraft[col];
+                if (!rawVal) {
+                  return <span className="text-slate-300 italic text-[12px]">—</span>;
+                }
+                const vals = String(rawVal).split(',').map(s => s.trim()).filter(Boolean);
+                return (
+                  <div className="flex flex-wrap items-center gap-1.5 h-full py-1">
+                    {vals.map((playId, idx) => {
+                      const musicLogRecord = musicLogs.find(ml => String(ml.PlayID) === playId);
+                      return (
+                        <span
+                          key={idx}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            if (musicLogRecord) {
+                              const nameField = getPrimaryField('MusicLog');
+                              const fields = Object.keys(musicLogRecord).filter(k => !['_id', 'id', 'created_at', '__v'].includes(k) && k !== nameField).slice(0, 8);
+                              setLinkedRecordPopup({ record: musicLogRecord, tableName: 'MusicLog', nameField, fields });
+                            }
+                          }}
+                          className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full max-w-full min-w-0 transition-all ${
+                            musicLogRecord ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20 cursor-pointer hover:bg-brand-primary/20' : 'bg-slate-100 text-slate-700 border-slate-200 cursor-default'
+                          }`}
+                        >
+                          <span className="truncate">{musicLogRecord?.Track ? `${musicLogRecord.Track} (${playId})` : playId}</span>
+                          {musicLogRecord && <ArrowUpRight className="shrink-0 h-3 w-3 opacity-60" />}
+                        </span>
+                      );
+                    })}
+                  </div>
+                );
+              }
+
               if (isAutoFilled) {
                 return (
                   <div className="flex items-center justify-center h-full opacity-60 italic select-none">
@@ -4518,6 +4709,7 @@ const updateDraftOnly = (col: string, val: string) => {
                     value={editDraft[col] || ''}
                     records={linkedRecords}
                     nameField={nameField}
+                    displayField={linkedTable === 'MusicLog' ? 'Track' : undefined}
                     linkedTable={linkedTable || col}
                     onCommit={val => {
                       const patch = buildLookupPatch(col, val, editDraft);
@@ -4554,7 +4746,7 @@ const updateDraftOnly = (col: string, val: string) => {
                         {names.map((sName: string, idx: number) => {
                           const linked = sessions.find((s: any) => s["Session Name"] === sName);
                           return (
-                            <span key={idx} className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full max-w-full min-w-0 ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20' : 'bg-slate-100 text-slate-700 border border-slate-200'}`}>
+                            <span key={idx} className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full max-w-full min-w-0 transition-all ${linked ? 'bg-brand-primary/10 text-brand-primary border border-brand-primary/20 cursor-pointer hover:bg-brand-primary/20' : 'bg-slate-100 text-slate-700 border border-slate-200 cursor-default'}`} onClick={(e) => { e.stopPropagation(); if (linked) setLinkedSession(linked); }}>
                               <span className="truncate">{sName}</span>
                               {linked && <ArrowUpRight className="h-3 w-3 opacity-60 shrink-0" />}
                             </span>
@@ -5689,9 +5881,12 @@ if (!health?.mongodb) {
                 tableName={activeTable}
                 onBack={() => setViewingRecord(null)}
                 sessions={sessions}
+                musicLogs={musicLogs}
                 onSessionClick={(s) => setLinkedSession(s)}
                 onEdit={() => setExpandedRecord(viewingRecord)}
                 onDelete={() => { handleDeleteRecord(viewingRecord); setViewingRecord(null); }}
+                getPrimaryField={getPrimaryField}
+                setLinkedRecordPopup={setLinkedRecordPopup}
               />
             ) : (
               <>
@@ -8503,6 +8698,7 @@ if (!health?.mongodb) {
           onImageManage={(col, currentItem) => {
             setImageManager({ item: currentItem, column: col, isOpen: true });
           }}
+          setLinkedRecordPopup={setLinkedRecordPopup}
         />
       )}
 
@@ -8544,21 +8740,61 @@ if (!health?.mongodb) {
               </button>
             </div>
             <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 sm:gap-y-4">
-              {(['Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes'] as const).map(field =>
-                linkedSession[field] ? (
-                  <div key={field}>
-                    <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{field}</div>
-                    <div className="text-[13px] font-semibold text-slate-800">{linkedSession[field]}</div>
+              {(['Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes'] as const).map(field => (
+                <div key={field}>
+                  <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{field}</div>
+                  <div className="text-[13px] font-semibold text-slate-800">
+                    {linkedSession[field] ? linkedSession[field] : <span className="text-slate-300 italic font-normal">—</span>}
                   </div>
-                ) : null
-              )}
+                </div>
+              ))}
             </div>
             <div className="px-4 sm:px-6 pb-4 sm:pb-5 border-t border-slate-100 pt-3 sm:pt-4">
               <button
-                onClick={() => { setActiveTable('Session'); setLinkedSession(null); }}
+                onClick={() => { setActiveTable('Session'); setViewingRecord(linkedSession); setLinkedSession(null); }}
                 className="text-[11px] font-black text-brand-primary uppercase tracking-widest hover:underline flex items-center gap-1"
               >
                 Open in Sessions table <ArrowUpRight className="h-3 w-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {linkedRecordPopup && (
+        <div
+          className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4"
+          onClick={() => setLinkedRecordPopup(null)}
+        >
+          <div
+            className="bg-white rounded-[24px] shadow-2xl w-full max-w-lg overflow-hidden"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="bg-slate-50 border-b border-slate-100 px-4 py-3 sm:px-6 sm:py-4 flex items-center justify-between">
+              <div>
+                <div className="text-[9px] font-black text-slate-400 uppercase tracking-[0.2em] mb-0.5">Linked {linkedRecordPopup.tableName}</div>
+                <div className="text-lg font-black text-slate-900 tracking-tight">{linkedRecordPopup.record[linkedRecordPopup.nameField] || 'Untitled'}</div>
+              </div>
+              <button onClick={() => setLinkedRecordPopup(null)} className="p-2 rounded-xl hover:bg-slate-200 transition-colors">
+                <X className="h-4 w-4 text-slate-500" />
+              </button>
+            </div>
+            <div className="p-4 sm:p-6 grid grid-cols-1 sm:grid-cols-2 gap-x-6 gap-y-3 sm:gap-y-4 max-h-[50vh] overflow-y-auto">
+              {linkedRecordPopup.fields.map(field => (
+                <div key={field}>
+                  <div className="text-[9px] font-black text-slate-400 uppercase tracking-widest mb-0.5">{colLabel(field)}</div>
+                  <div className="text-[13px] font-semibold text-slate-800">
+                    {linkedRecordPopup.record[field] ? (typeof linkedRecordPopup.record[field] === 'object' ? JSON.stringify(linkedRecordPopup.record[field]) : String(linkedRecordPopup.record[field])) : <span className="text-slate-300 italic font-normal">—</span>}
+                  </div>
+                </div>
+              ))}
+            </div>
+            <div className="px-4 sm:px-6 pb-4 sm:pb-5 border-t border-slate-100 pt-3 sm:pt-4">
+              <button
+                onClick={() => { setActiveTable(linkedRecordPopup.tableName); setViewingRecord(linkedRecordPopup.record); setLinkedRecordPopup(null); }}
+                className="text-[11px] font-black text-brand-primary uppercase tracking-widest hover:underline flex items-center gap-1"
+              >
+                Open in {linkedRecordPopup.tableName} table <ArrowUpRight className="h-3 w-3" />
               </button>
             </div>
           </div>
