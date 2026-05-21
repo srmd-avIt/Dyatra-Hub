@@ -1784,16 +1784,15 @@ if (hasDropdown) {
 // ── InboxPanel ────────────────────────────────────────────────────────────────
 const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord, onUnreadChange, isMobileView, currentUser }: {
   email: string;
-  items: any[];
-  loading: boolean;
   onClose: () => void;
   onOpenRecord: (tableName: string, collection: string, recordId: string) => void;
-  onUpdate: (updater: (prev: any[]) => any[]) => void;
+  onUnreadChange?: (count: number) => void;
   isMobileView?: boolean;
   currentUser?: any;
 }) {
   const [items, setItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [showHistory, setShowHistory] = React.useState(false);
   const [replyingTo, setReplyingTo] = React.useState<string | null>(null);
   const [replyText, setReplyText] = React.useState('');
   const [replyPosting, setReplyPosting] = React.useState(false);
@@ -1808,17 +1807,21 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
       .catch(() => setLoading(false));
   }, [email]);
 
+  React.useEffect(() => {
+    onUnreadChange?.(items.filter(n => !n.read && !n.cleared).length);
+  }, [items, onUnreadChange]);
+
   const markRead = async (id: string) => {
-    onUpdate(prev => prev.map(n => String(n._id) === id ? { ...n, read: true } : n));
-    await window.fetch(`/api/notifications/${id}/read`, { 
-      method: 'PATCH', 
-      headers: { 'Content-Type': 'application/json' }, 
-      body: JSON.stringify({}) 
+    setItems(prev => prev.map(n => String(n._id) === id ? { ...n, read: true } : n));
+    await window.fetch(`/api/notifications/${id}/read`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({})
     });
   };
 
   const markAllRead = async () => {
-    onUpdate(prev => prev.map(n => ({ ...n, read: true })));
+    setItems(prev => prev.map(n => ({ ...n, read: true })));
     await window.fetch('/api/notifications/read-all', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
   };
 
@@ -4261,7 +4264,11 @@ useEffect(() => {
   return () => clearInterval(t);
 }, [user?.email]);
 
-const inboxUnread = useMemo(() => notifications.filter(n => !n.read && !n.cleared).length, [notifications]);
+const [inboxUnread, setInboxUnread] = useState(0);
+// Keep badge in sync with background poll when panel is closed
+useEffect(() => {
+  setInboxUnread(notifications.filter((n: any) => !n.read && !n.cleared).length);
+}, [notifications]);
 
  const handleAddRecord = async () => {
   let collection = '';
