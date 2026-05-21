@@ -126,7 +126,7 @@ const MOBILE_PRIORITY_COLS: Record<string, string[]> = {
   'Events':              ['Event Name', 'DateFrom', 'Occasion'],
   'Session':             ['Session Name', 'Parent Event', 'Date'],
   'MusicLog':            ['PlayID', 'Track', 'Session'],
-  'Tracks':              ['PlayID', 'Title', 'Artist', 'Duration'],
+  'Tracks':              ['Title', 'Artist', 'Duration'],
   'VideoLog':            ['VideoPlayId', 'VideoTitle', 'Session'],
   'Guidance & Learning': ['LearningId', 'Guidance/Learning', 'Category'],
   'LED':                 ['LedId', '🕘 Session', 'Indoor/Outdoor LED?'],
@@ -998,11 +998,10 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     if (!recordId) return;
     window.fetch(`/api/comments?collection=${colName}&recordId=${recordId}`)
       .then(r => r.ok ? r.json() : []).then(setComments).catch(() => {});
-    window.fetch('/api/locations')
+    window.fetch('/api/users')
       .then(r => r.ok ? r.json() : [])
       .then((rows: any[]) => setAllUsers(
-        rows.filter((r: any) => r["Sevak"] || r["EmailId"])
-            .map((r: any) => ({ name: r["Sevak"] || '', email: r["EmailId"] || '' }))
+        rows.map((r: any) => ({ name: r.name || '', email: r.email || '' }))
       ))
       .catch(() => {});
   }, [recordId]);
@@ -1078,8 +1077,6 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
-  const recordTitle = draft["Event Name"] || draft["Session Name"] || draft["Track"] || draft["Title"] || draft["VideoTitle"] || draft["Task"] || "Record";
-
   const inputCls = "w-full h-10 bg-white border border-slate-200 rounded-xl px-3.5 text-[13px] font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all";
   const readonlyCls = "w-full h-10 bg-slate-50 border border-slate-100 rounded-xl px-3.5 text-[13px] text-slate-400 flex items-center italic";
 
@@ -1096,6 +1093,8 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
       default: return 'name';
     }
   };
+
+  const recordTitle = draft[getModalPrimaryField(tableName)] || "Record";
 
  const renderField = (col: string) => {
   if (tableName === 'Tracks' && col === 'Plays') {
@@ -1678,32 +1677,47 @@ if (hasDropdown) {
 });
 
 // ── InboxPanel ────────────────────────────────────────────────────────────────
-const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord, onUnreadChange }: {
+const InboxPanel = React.memo(function InboxPanel({ email, items, loading, onClose, onOpenRecord, onUpdate }: {
   email: string;
+  items: any[];
+  loading: boolean;
   onClose: () => void;
   onOpenRecord: (tableName: string, collection: string, recordId: string) => void;
-  onUnreadChange?: (count: number) => void;
+  onUpdate: (updater: (prev: any[]) => any[]) => void;
 }) {
-  const [items, setItems] = React.useState<any[]>([]);
-  const [loading, setLoading] = React.useState(true);
-
-  React.useEffect(() => {
-    if (!email) return;
-    setLoading(true);
-    window.fetch(`/api/notifications?email=${encodeURIComponent(email)}`)
-      .then(r => r.ok ? r.json() : [])
-      .then(d => { setItems(d); setLoading(false); })
-      .catch(() => setLoading(false));
-  }, [email]);
+  const [showHistory, setShowHistory] = React.useState(false);
 
   const markRead = async (id: string) => {
-    setItems(prev => prev.map(n => String(n._id) === id ? { ...n, read: true } : n));
-    await window.fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
+    onUpdate(prev => prev.map(n => String(n._id) === id ? { ...n, read: true } : n));
+    await window.fetch(`/api/notifications/${id}/read`, { 
+      method: 'PATCH', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({}) 
+    });
   };
 
   const markAllRead = async () => {
-    setItems(prev => prev.map(n => ({ ...n, read: true })));
+    onUpdate(prev => prev.map(n => ({ ...n, read: true })));
     await window.fetch('/api/notifications/read-all', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+  };
+
+  const clearNotification = async (id: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    onUpdate(prev => prev.map(n => String(n._id) === id ? { ...n, cleared: true } : n));
+    await window.fetch(`/api/notifications/${id}/clear`, { 
+      method: 'PATCH', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({}) 
+    });
+  };
+
+  const clearAllNotifications = async () => {
+    onUpdate(prev => prev.map(n => ({ ...n, cleared: true })));
+    await window.fetch('/api/notifications/clear-all', { 
+      method: 'PATCH', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({ email }) 
+    });
   };
 
   const fmt = (raw: any) => {
@@ -1716,10 +1730,8 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
-  const unread = items.filter(n => !n.read).length;
-
-  // Report unread count to parent so the button badge stays in sync
-  React.useEffect(() => { onUnreadChange?.(unread); }, [unread, onUnreadChange]);
+  const visibleItems = items.filter(n => showHistory ? n.cleared : !n.cleared);
+  const unread = items.filter(n => !n.read && !n.cleared).length;
 
   return (
     <>
@@ -1743,13 +1755,21 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
         <div className="h-14 sm:h-16 px-5 border-b border-slate-200 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
             <Inbox className="h-4 w-4 text-brand-primary" />
-            <span className="text-[15px] font-black text-slate-900">Inbox</span>
-            {unread > 0 && <span className="h-5 min-w-[20px] px-1.5 bg-brand-primary text-white text-[10px] font-black rounded-full flex items-center justify-center">{unread}</span>}
+            <span className="text-[15px] font-black text-slate-900">{showHistory ? 'History' : 'Inbox'}</span>
+            {unread > 0 && !showHistory && <span className="h-5 min-w-[20px] px-1.5 bg-brand-primary text-white text-[10px] font-black rounded-full flex items-center justify-center">{unread}</span>}
           </div>
           <div className="flex items-center gap-2">
-            {unread > 0 && (
+            <button onClick={() => setShowHistory(!showHistory)} className="text-[10px] font-black text-slate-500 hover:text-brand-primary uppercase tracking-widest transition-colors px-2 py-1 rounded-lg hover:bg-brand-primary/5">
+              {showHistory ? 'Back to Inbox' : 'History'}
+            </button>
+            {!showHistory && unread > 0 && (
               <button onClick={markAllRead} className="text-[10px] font-black text-slate-500 hover:text-brand-primary uppercase tracking-widest transition-colors px-2 py-1 rounded-lg hover:bg-brand-primary/5">
                 Mark all read
+              </button>
+            )}
+            {!showHistory && visibleItems.length > 0 && (
+              <button onClick={clearAllNotifications} className="text-[10px] font-black text-red-500 hover:text-red-700 uppercase tracking-widest transition-colors px-2 py-1 rounded-lg hover:bg-red-50">
+                Clear all
               </button>
             )}
             <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-slate-100 transition-colors">
@@ -1759,26 +1779,26 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto scrollbar-hide">
           {loading && (
             <div className="flex items-center justify-center h-32 text-[12px] text-slate-400">Loading…</div>
           )}
-          {!loading && items.length === 0 && (
+          {!loading && visibleItems.length === 0 && (
             <div className="flex flex-col items-center justify-center h-48 gap-3 text-center px-8">
               <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
                 <Inbox className="h-6 w-6 text-slate-300" />
               </div>
-              <div className="text-[13px] font-bold text-slate-400">No notifications yet</div>
-              <div className="text-[11px] text-slate-400">You'll see mentions and comments here</div>
+              <div className="text-[13px] font-bold text-slate-400">{showHistory ? 'No cleared notifications' : 'No notifications yet'}</div>
+              <div className="text-[11px] text-slate-400">{showHistory ? 'Cleared notifications will appear here' : "You'll see mentions and comments here"}</div>
             </div>
           )}
-          {!loading && items.map((n: any) => {
+          {!loading && visibleItems.map((n: any) => {
             const nid = String(n._id);
             return (
               <div
                 key={nid}
                 onClick={() => { markRead(nid); onOpenRecord(n.tableName, n.collection, n.recordId); onClose(); }}
-                className={`px-5 py-4 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors ${!n.read ? 'bg-brand-primary/[0.03]' : ''}`}
+                className={`group/notif px-5 py-4 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors ${!n.read && !n.cleared ? 'bg-brand-primary/[0.03]' : ''}`}
               >
                 <div className="flex gap-3">
                   {/* Avatar */}
@@ -1799,8 +1819,18 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
                     {/* Time */}
                     <div className="text-[10px] text-slate-400 mt-1.5">{fmt(n.createdAt)}</div>
                   </div>
-                  {/* Unread dot */}
-                  {!n.read && <div className="h-2 w-2 bg-brand-primary rounded-full mt-1.5 shrink-0" />}
+                  <div className="flex flex-col items-end justify-between shrink-0">
+                    {!n.read && !n.cleared ? <div className="h-2 w-2 bg-brand-primary rounded-full mt-1.5 shrink-0" /> : <div className="h-2 w-2 mt-1.5" />}
+                    {!n.cleared && (
+                      <button
+                        onClick={(e) => clearNotification(nid, e)}
+                        className="text-[10px] font-black text-slate-400 hover:text-red-500 uppercase tracking-widest px-2 py-1 rounded transition-colors sm:opacity-0 sm:group-hover/notif:opacity-100"
+                        title="Clear notification"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             );
@@ -2048,7 +2078,8 @@ export default function App() {
 const [editDraft, setEditDraft] = useState<any>(null);
 const [expandedRecord, setExpandedRecord] = useState<any>(null);
 const [inboxOpen, setInboxOpen] = useState(false);
-const [inboxUnread, setInboxUnread] = useState(0);
+const [notifications, setNotifications] = useState<any[]>([]);
+const [notificationsLoading, setNotificationsLoading] = useState(true);
 const [editingCell, setEditingCell] = useState<string | null>(null);
 // Tracks whether a mousedown happened inside the editing row — suppresses
 // blur-triggered saves when the user is just clicking a different cell in the same row.
@@ -2626,6 +2657,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
   const [images, setImages] = useState<ImgEntry[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseImages = (raw: string): ImgEntry[] => {
     const result: ImgEntry[] = [];
@@ -2641,6 +2673,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   const [renamingIdx, setRenamingIdx] = useState<number | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const onUpdateRef = useRef(onUpdate);
+  const managedItemIdRef = useRef<string | null>(null);
   onUpdateRef.current = onUpdate;
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2667,7 +2700,19 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
   // Initialise from manager.item when dialog opens; flush any pending save on close.
   useEffect(() => {
-    if (!manager?.isOpen || !manager?.item) return;
+    if (!manager?.isOpen || !manager?.item) {
+      managedItemIdRef.current = null;
+      return;
+    }
+
+    const recordId = String(manager.item._id || manager.item.id);
+    const currentKey = `${recordId}-${manager.column}`;
+
+    // If we are already managing this specific record/column, DO NOT reset state.
+    // This prevents the "refresh" glitch when an upload finishes and syncs to parent.
+    if (managedItemIdRef.current === currentKey) return;
+
+    managedItemIdRef.current = currentKey;
 
     // Cancel any stale timer from a previous session
     if (saveTimerRef.current !== null) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
@@ -2689,8 +2734,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
         capturedOnUpdate(s);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manager?.isOpen]);
+  }, [manager?.isOpen, manager?.item?._id, manager?.item?.id, manager?.column]);
 
   // All handlers defined before the early return — no stale closures
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2741,21 +2785,33 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                 // This prevents a blank flash when img.src changes from base64 to the Drive URL.
                 const preloader = new window.Image();
                 preloader.onload = () => {
-                  commit(prev => prev.map(e => e._tempId === tempId ? { url: data.url, name } : e));
+                  commit(prev => prev.map(e => {
+                    if (e._tempId === tempId) {
+                      const { _tempId, ...rest } = e;
+                      return { ...rest, url: data.url };
+                    }
+                    return e;
+                  }));
                 };
                 preloader.onerror = () => {
                   // Drive URL failed to render — keep base64, clear syncing marker
-                  commit(prev => prev.map(e => e._tempId === tempId ? { url: e.url, name } : e));
+                  commit(prev => prev.map(e => {
+                    if (e._tempId === tempId) {
+                      const { _tempId, ...rest } = e;
+                      return rest;
+                    }
+                    return e;
+                  }));
                 };
                 preloader.src = data.url;
               } else {
-                commit(prev => prev.map(e => e._tempId === tempId ? { url: e.url, name } : e));
+                commit(prev => prev.map(e => { if (e._tempId === tempId) { const { _tempId, ...rest } = e; return rest; } return e; }));
                 alert("Saved locally — Drive sync failed: " + (data.error || 'Unknown error'));
               }
             })
             .catch(err => {
               console.error(err);
-              commit(prev => prev.map(e => e._tempId === tempId ? { url: e.url, name } : e));
+              commit(prev => prev.map(e => { if (e._tempId === tempId) { const { _tempId, ...rest } = e; return rest; } return e; }));
               alert("Saved locally — Drive upload error");
             });
           } else {
@@ -2805,7 +2861,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   };
 
   const commitRename = (i: number) => {
-    setImages(prev => prev.map((e, idx) => idx === i ? { ...e, name: renameVal.trim() } : e));
+    commit(prev => prev.map((e, idx) => idx === i ? { ...e, name: renameVal.trim() } : e));
     setRenamingIdx(null);
   };
 
@@ -2849,38 +2905,54 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   };
 
   if (!manager?.isOpen) return null;
+  const isSyncing = isUploading || images.some(img => !!img._tempId);
 
   return (
-    <Dialog open={manager.isOpen} onOpenChange={onClose}>
-      <DialogContent className="w-[95vw] sm:max-w-[700px] bg-white border-none rounded-[20px] sm:rounded-[28px] p-0 overflow-hidden shadow-2xl z-[600]">
+    <div
+      className="fixed inset-0 z-[600] flex items-end sm:items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(2px)' }}
+      onClick={isSyncing ? undefined : onClose}
+    >
+      <div
+        className="w-full sm:w-[95vw] sm:max-w-[700px] bg-white rounded-t-3xl sm:rounded-[28px] flex flex-col shadow-2xl max-h-[92vh] sm:max-h-[85vh] overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Mobile drag handle */}
+        <div className="sm:hidden flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-slate-300 rounded-full" />
+        </div>
 
         {/* HEADER */}
-        <div className="flex items-center justify-between px-5 sm:px-7 py-4 sm:py-5 bg-slate-50 border-b border-slate-100">
+        <div className="flex items-center justify-between px-5 sm:px-7 py-3 sm:py-5 bg-slate-50 border-b border-slate-100 shrink-0">
           <div>
             <div className="flex items-center gap-1.5 text-brand-primary mb-0.5">
               <Monitor className="h-3.5 w-3.5" />
               <span className="text-[10px] font-black uppercase tracking-widest">{manager?.column || 'Media'}</span>
             </div>
-            <DialogTitle className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-none">Image Manager</DialogTitle>
+            <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-none">Image Manager</h2>
             <p className="text-[11px] text-slate-400 mt-1">{images.length} image{images.length !== 1 ? 's' : ''}</p>
           </div>
-          <label className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider hover:opacity-90 shadow-md shadow-brand-primary/20 transition-all active:scale-95 cursor-pointer select-none">
-            <Plus className="h-3.5 w-3.5" /> Add Image
-            <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} />
-          </label>
+          <div className="flex items-center gap-3">
+            <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider hover:opacity-90 shadow-md shadow-brand-primary/20 transition-all active:scale-95 cursor-pointer select-none">
+              <Plus className="h-3.5 w-3.5" /> Add Image
+            </button>
+            <input ref={fileInputRef} type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml" multiple className="hidden" onChange={handleUpload} />
+            <button onClick={isSyncing ? undefined : onClose} disabled={isSyncing} className={`p-1.5 rounded-xl transition-colors sm:hidden shrink-0 ${isSyncing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-200'}`}>
+              <X className="h-5 w-5 text-slate-500" />
+            </button>
+          </div>
         </div>
 
         {/* IMAGE GRID */}
-        <ScrollArea className="max-h-[65vh] bg-white">
+        <div className="flex-1 overflow-y-auto bg-white min-h-0">
           <div className="p-5 sm:p-6">
             {images.length === 0 && !isUploading ? (
               <div className="py-16 text-center space-y-3">
                 <Monitor className="h-12 w-12 text-slate-100 mx-auto" />
                 <p className="text-[11px] text-slate-300 italic uppercase tracking-widest font-bold">No images attached</p>
-                <label className="mt-1 text-[11px] font-black text-brand-primary uppercase tracking-widest hover:opacity-70 transition-opacity cursor-pointer">
+                <button onClick={() => fileInputRef.current?.click()} className="mt-1 text-[11px] font-black text-brand-primary uppercase tracking-widest hover:opacity-70 transition-opacity cursor-pointer">
                   + Add First Image
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} />
-                </label>
+                </button>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
@@ -2888,16 +2960,16 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                   <div
                     key={i}
                     data-card-idx={i}
-                    draggable
-                    onDragStart={() => { draggingIdxRef.current = i; setDraggingIdx(i); }}
+                    draggable={renamingIdx !== i}
+                    onDragStart={(e) => { if (renamingIdx === i) { e.preventDefault(); return; } draggingIdxRef.current = i; setDraggingIdx(i); }}
                     onDragOver={e => { e.preventDefault(); if (dragOverIdx !== i) setDragOverIdx(i); }}
                     onDragLeave={() => setDragOverIdx(null)}
                     onDrop={e => { e.preventDefault(); doReorder(draggingIdxRef.current, i); draggingIdxRef.current = null; setDraggingIdx(null); setDragOverIdx(null); }}
                     onDragEnd={() => { draggingIdxRef.current = null; setDraggingIdx(null); setDragOverIdx(null); }}
-                    onTouchStart={() => handleTouchStart(i)}
-                    onTouchMove={handleTouchMove}
+                    onTouchStart={(e) => { if (renamingIdx === i) return; handleTouchStart(i); }}
+                    onTouchMove={(e) => { if (renamingIdx === i) return; handleTouchMove(e); }}
                     onTouchEnd={handleTouchEnd}
-                    className={`group/card flex flex-col gap-2 transition-all duration-150 touch-none select-none ${
+                    className={`group/card flex flex-col gap-2 transition-all duration-150 ${renamingIdx !== i ? 'touch-none select-none' : ''} ${
                       draggingIdx === i ? 'opacity-40 scale-95' : ''
                     } ${dragOverIdx === i && draggingIdx !== i ? 'ring-2 ring-brand-primary ring-offset-2 rounded-xl scale-[1.03]' : ''}`}
                   >
@@ -2945,18 +3017,25 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
                     {/* Inline rename */}
                     {renamingIdx === i ? (
-                      <input
-                        autoFocus
-                        value={renameVal}
-                        onChange={e => setRenameVal(e.target.value)}
-                        onBlur={() => commitRename(i)}
-                        onKeyDown={e => { if (e.key === 'Enter') commitRename(i); if (e.key === 'Escape') setRenamingIdx(null); }}
-                        className="w-full text-[11px] font-bold text-slate-800 bg-white border border-brand-primary rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-brand-primary/20"
-                      />
+                      <div className="flex items-center gap-1 w-full mt-1">
+                        <input
+                          autoFocus
+                          value={renameVal}
+                          onChange={e => setRenameVal(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') commitRename(i); if (e.key === 'Escape') setRenamingIdx(null); }}
+                          className="flex-1 min-w-0 text-[11px] font-bold text-slate-800 bg-white border border-brand-primary rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-brand-primary/20"
+                        />
+                        <button onClick={() => commitRename(i)} className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors shrink-0">
+                          <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                        </button>
+                        <button onClick={() => setRenamingIdx(null)} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors shrink-0">
+                          <X className="h-3.5 w-3.5" strokeWidth={3} />
+                        </button>
+                      </div>
                     ) : (
                       <button
                         onClick={() => { setRenamingIdx(i); setRenameVal(entry.name || `Image ${i + 1}`); }}
-                        className="text-left w-full text-[10px] font-bold text-slate-500 uppercase tracking-wider hover:text-brand-primary transition-colors truncate flex items-center gap-1 group/name"
+                        className="text-left w-full text-[10px] font-bold text-slate-500 uppercase tracking-wider hover:text-brand-primary transition-colors truncate flex items-center gap-1 group/name mt-1"
                         title="Click to rename"
                       >
                         <Pencil className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover/name:opacity-100 transition-opacity" />
@@ -2989,17 +3068,21 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
               </div>
             )}
           </div>
-        </ScrollArea>
-
-        {/* FOOTER */}
-        <div className="px-5 sm:px-7 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-4">
-          <span className="text-[10px] text-slate-400 font-medium hidden sm:block">Hover image for actions · Click name to rename · ‹ › to reorder</span>
-          <span className="text-[10px] text-slate-400 font-medium sm:hidden">Tap name to rename</span>
-          <button onClick={onClose} className="shrink-0 text-[11px] font-black text-slate-600 hover:text-slate-900 uppercase tracking-widest transition-colors">Done</button>
         </div>
 
-      </DialogContent>
-    </Dialog>
+        {/* FOOTER */}
+        <div
+          className="px-5 sm:px-7 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-4 shrink-0"
+          style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
+        >
+          <span className="text-[10px] text-slate-400 font-medium hidden sm:block">Hover image for actions · Click name to rename · ‹ › to reorder</span>
+          <span className="text-[10px] text-slate-400 font-medium sm:hidden">Tap name to rename</span>
+          <button onClick={isSyncing ? undefined : onClose} disabled={isSyncing} className={`shrink-0 text-[11px] font-black uppercase tracking-widest transition-colors ${isSyncing ? 'text-brand-primary opacity-70 cursor-wait' : 'text-slate-600 hover:text-slate-900'}`}>
+            {isSyncing ? 'Syncing...' : 'Done'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 });
 const saveSettings = async (
@@ -3331,7 +3414,7 @@ const getTableColumns = (includeHidden = false) => {
       baseCols = ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID'];
       break;
     case 'Tracks':
-      baseCols = ['PlayID', 'Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'];
+      baseCols = ['Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'];
       break;
     case 'VideoLog':
       baseCols = ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList'];
@@ -3926,19 +4009,37 @@ useEffect(() => {
   }
 }, [user, imageManager?.isOpen]); // Add imageManager.isOpen as a dependency
 
-// Poll unread notification count so the inbox badge stays current
+// Dynamically fetch and poll notifications to keep the inbox badge and panel current
 useEffect(() => {
-  if (!user?.email) { setInboxUnread(0); return; }
-  const fetchCount = () => {
-    window.fetch(`/api/notifications?email=${encodeURIComponent(user.email)}`)
+  if (!user?.email) { 
+    setNotifications([]);
+    setNotificationsLoading(false);
+    return; 
+  }
+  const fetchNotifs = () => {
+    window.fetch(`/api/notifications?email=${encodeURIComponent(user.email)}&_t=${Date.now()}`)
       .then(r => r.ok ? r.json() : [])
-      .then((d: any[]) => setInboxUnread(d.filter(n => !n.read).length))
-      .catch(() => {});
+      .then(d => { 
+        setNotifications(prev => {
+          // Preserve locally cleared/read state to prevent stale background fetches from un-clearing items
+          const prevMap = new Map(prev.map(n => [String(n._id), n]));
+          return d.map((n: any) => {
+            const existing = prevMap.get(String(n._id));
+            if (existing?.cleared) n.cleared = true;
+            if (existing?.read) n.read = true;
+            return n;
+          });
+        });
+        setNotificationsLoading(false); 
+      })
+      .catch(() => setNotificationsLoading(false));
   };
-  fetchCount();
-  const t = setInterval(fetchCount, 60000);
+  fetchNotifs();
+  const t = setInterval(fetchNotifs, 15000); // 15s dynamic polling
   return () => clearInterval(t);
 }, [user?.email]);
+
+const inboxUnread = useMemo(() => notifications.filter(n => !n.read && !n.cleared).length, [notifications]);
 
  const handleAddRecord = async () => {
   let collection = '';
@@ -6308,7 +6409,7 @@ if (!health?.mongodb) {
                             ))}
                             <div onClick={(e) => { e.stopPropagation(); const fi = e.currentTarget.querySelector('input[type="file"]') as HTMLInputElement; if (fi) fi.click(); }} className="h-20 md:h-24 w-20 md:w-24 shrink-0 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary/50 transition-colors cursor-pointer bg-slate-50 hover:bg-white">
                               <Plus className="h-4 w-4 pointer-events-none" /><span className="text-[7px] md:text-[8px] font-black uppercase pointer-events-none">Add Media</span>
-                              <input type="file" accept="image/*" className="hidden" onClick={(e) => e.stopPropagation()} onChange={(e) => handleDirectImageUpload(e, item, 'sessions', setSessions as any)} />
+                              <input type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml" className="hidden" onClick={(e) => e.stopPropagation()} onChange={(e) => handleDirectImageUpload(e, item, 'sessions', setSessions as any)} />
                             </div>
                           </div>
                         </div>
@@ -8775,9 +8876,11 @@ if (!health?.mongodb) {
       {inboxOpen && user?.email && (
         <InboxPanel
           email={user.email}
+          items={notifications}
+          loading={notificationsLoading}
           onClose={() => setInboxOpen(false)}
           onOpenRecord={openNotificationRecord}
-          onUnreadChange={(count) => setInboxUnread(count)}
+          onUpdate={setNotifications}
         />
       )}
 

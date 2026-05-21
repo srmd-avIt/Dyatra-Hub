@@ -376,17 +376,19 @@ app.post('/api/comments', async (req, res) => {
     // Create inbox notifications for @mentioned users (fire-and-forget after response)
     if (Array.isArray(mentions) && mentions.length > 0) {
       try {
-        const teamMembers = await db.collection('locations').find({}).toArray();
+        const allUsers = await db.collection('users').find({}).toArray();
         const notifs: any[] = [];
         for (const token of mentions) {
-          const match = teamMembers.find((m: any) => {
-            const slug = (m["Sevak"] || '').replace(/\s+/g, '').toLowerCase();
-            return slug === token.toLowerCase();
+          const match = allUsers.find((u: any) => {
+            const nameSlug = (u.name || '').replace(/\s+/g, '').toLowerCase();
+            const emailSlug = (u.email || '').split('@')[0].toLowerCase();
+            const tokenLower = token.toLowerCase();
+            return nameSlug === tokenLower || emailSlug === tokenLower;
           });
-          if (match?.["EmailId"]) {
+          if (match?.email) {
             notifs.push({
-              recipientEmail: match["EmailId"],
-              recipientName: match["Sevak"] || token,
+              recipientEmail: match.email,
+              recipientName: match.name || token,
               type: 'mention',
               text,
               authorName: authorName || 'Anonymous',
@@ -414,6 +416,9 @@ app.post('/api/comments', async (req, res) => {
 // NOTIFICATIONS
 app.get('/api/notifications', async (req, res) => {
   try {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     const db = await getDb();
     const { email } = req.query as { email: string };
     if (!email) return res.status(400).json({ error: 'Missing email' });
@@ -438,6 +443,42 @@ app.patch('/api/notifications/:id/read', async (req, res) => {
     await db.collection('notifications').updateOne({ _id: new ObjectId(req.params.id) }, { $set: { read: true } });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: 'Update failed' }); }
+});
+
+app.patch('/api/notifications/clear-all', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    await db.collection('notifications').updateMany({ recipientEmail: email, cleared: { $ne: true } }, { $set: { cleared: true } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Update failed' }); }
+});
+
+app.patch('/api/notifications/:id/clear', async (req, res) => {
+  try {
+    const db = await getDb();
+    await db.collection('notifications').updateOne({ _id: new ObjectId(req.params.id) }, { $set: { cleared: true } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Update failed' }); }
+});
+
+app.delete('/api/notifications/clear-all', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    await db.collection('notifications').deleteMany({ recipientEmail: email });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Delete failed' }); }
+});
+
+app.delete('/api/notifications/:id', async (req, res) => {
+  try {
+    const db = await getDb();
+    await db.collection('notifications').deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Delete failed' }); }
 });
 
 app.delete('/api/comments/:id', async (req, res) => {
