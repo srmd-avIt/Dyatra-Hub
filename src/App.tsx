@@ -102,22 +102,37 @@ const TAG_COLORS = [
   "bg-stone-500/20 text-stone-800 border-stone-500/30 dark:text-stone-200",
 ];
 // Helper to consistently assign a color to a string
+const STATUS_STYLE: Record<string, string> = {
+  'Ready':       'bg-green-100 text-green-700 border-green-200',
+  'Done':        'bg-green-100 text-green-700 border-green-200',
+  'Complete':    'bg-green-100 text-green-700 border-green-200',
+  'Completed':   'bg-green-100 text-green-700 border-green-200',
+  'Pending':     'bg-yellow-100 text-yellow-700 border-yellow-200',
+  'In Progress': 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  'In Review':   'bg-yellow-100 text-yellow-700 border-yellow-200',
+  'To Do':       'bg-slate-100 text-slate-600 border-slate-200',
+  'Not Started': 'bg-slate-100 text-slate-600 border-slate-200',
+  'Blocked':     'bg-red-100 text-red-700 border-red-200',
+  'Cancelled':   'bg-red-100 text-red-700 border-red-200',
+};
+
 const getTagStyle = (val: any) => {
   if (val === null || val === undefined || val === '') {
     return "px-2.5 py-0.5 rounded-md border font-bold text-[12px] bg-slate-900 text-slate-500 border-slate-800 shadow-sm";
   }
 
   const str = String(val);
+  const base = 'px-2.5 py-1 rounded-md border font-bold text-[12px] tracking-tight whitespace-nowrap inline-block shadow-sm';
+
+  if (STATUS_STYLE[str]) return `${base} ${STATUS_STYLE[str]}`;
+
   let hash = 0;
-  // Enhanced hashing to spread indices more effectively
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    hash = hash & hash; // Convert to 32bit integer
+    hash = hash & hash;
   }
-
   const index = Math.abs(hash) % TAG_COLORS.length;
-
-  return ['px-2.5', 'py-1', 'rounded-md', 'border', 'font-bold', 'text-[12px]', 'tracking-tight', 'whitespace-nowrap', 'inline-block', 'shadow-sm', TAG_COLORS[index]].join(' ');
+  return [base, TAG_COLORS[index]].join(' ');
 };
 
 const UNIFORM_DROPDOWN_STYLE = "bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-semibold text-[13px] px-3 py-1.5 rounded-md shadow-sm tracking-tighter whitespace-nowrap inline-block";
@@ -128,7 +143,7 @@ const MOBILE_PRIORITY_COLS: Record<string, string[]> = {
   'Events':              ['Event Name', 'DateFrom', 'Occasion'],
   'Session':             ['Session Name', 'Parent Event', 'Date'],
   'MusicLog':            ['PlayID', 'Track', 'Session'],
-  'Tracks':              ['PlayID', 'Title', 'Artist', 'Duration'],
+  'Tracks':              ['Title', 'Artist', 'Duration'],
   'VideoLog':            ['VideoPlayId', 'VideoTitle', 'Session'],
   'Guidance & Learning': ['LearningId', 'Guidance/Learning', 'Category'],
   'LED':                 ['LedId', '🕘 Session', 'Indoor/Outdoor LED?'],
@@ -879,10 +894,13 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     if (!s) return;
     const patch: Record<string, string> = {};
     if (isML || isVL) {
+      const sDate = s["Date"] || s["date"] || '';
+      const sTimeOfDay = s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '';
+      const sOccasion = s["Occasion"] || s["occasion"] || '';
       patch["Parent Event (from Session)"] = s["Parent Event"] || '';
-      patch["Date (from Session)"] = s["Date"] ? String(s["Date"]).split('T')[0] : '';
-      patch["TimeOfDay (from Session)"] = s["Time Of Day"] || '';
-      patch["Occasion (from Session)"] = s["Occasion"] || '';
+      patch["Date (from Session)"] = sDate ? String(sDate).split('T')[0] : '';
+      patch["TimeOfDay (from Session)"] = sTimeOfDay;
+      patch["Occasion (from Session)"] = sOccasion;
     }
     if (isVL) {
       patch["City (from Session)"] = s["City"] || '';
@@ -997,11 +1015,10 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     if (!recordId) return;
     window.fetch(`/api/comments?collection=${colName}&recordId=${recordId}`)
       .then(r => r.ok ? r.json() : []).then(setComments).catch(() => {});
-    window.fetch('/api/locations')
+    window.fetch('/api/users')
       .then(r => r.ok ? r.json() : [])
       .then((rows: any[]) => setAllUsers(
-        rows.filter((r: any) => r["Sevak"] || r["EmailId"])
-            .map((r: any) => ({ name: r["Sevak"] || '', email: r["EmailId"] || '' }))
+        rows.map((r: any) => ({ name: r.name || '', email: r.email || '' }))
       ))
       .catch(() => {});
   }, [recordId]);
@@ -1078,8 +1095,6 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
-  const recordTitle = draft["Event Name"] || draft["Session Name"] || draft["Track"] || draft["Title"] || draft["VideoTitle"] || draft["Task"] || "Record";
-
   const inputCls = "w-full h-10 bg-white border border-slate-200 rounded-xl px-3.5 text-[13px] font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all";
   const readonlyCls = "w-full h-10 bg-slate-50 border border-slate-100 rounded-xl px-3.5 text-[13px] text-slate-400 flex items-center italic";
 
@@ -1096,6 +1111,8 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
       default: return 'name';
     }
   };
+
+  const recordTitle = draft[getModalPrimaryField(tableName)] || "Record";
 
  const renderField = (col: string) => {
   if (tableName === 'Tracks' && col === 'Plays') {
@@ -1212,21 +1229,25 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
           options={sessions.map((s: any) => s["Session Name"])}
           onCommit={val => {
             const s = sessions.find((x: any) => x["Session Name"] === val);
+            const norm = (d: any) => d ? String(d).split('T')[0] : '';
             const patch: any = { Session: val };
             if (s) {
+              const sDate = s["Date"] || s["date"] || '';
+              const sTimeOfDay = s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '';
+              const sOccasion = s["Occasion"] || s["occasion"] || '';
               if (isML) {
-                patch["Parent Event (from Session)"] = s["Parent Event"];
-                patch["Date (from Session)"] = s["Date"];
-                patch["TimeOfDay (from Session)"] = s["Time Of Day"];
-                patch["Occasion (from Session)"] = s["Occasion"];
+                patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+                patch["Date (from Session)"]         = norm(sDate);
+                patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+                patch["Occasion (from Session)"]     = sOccasion;
               } else {
-                patch["Parent Event (from Session)"] = s["Parent Event"];
-                patch["Date (from Session)"] = s["Date"];
-                patch["City (from Session)"] = s["City"];
-                patch["Venue (from Session)"] = s["Venue"];
-                patch["TimeOfDay (from Session)"] = s["Time Of Day"];
-                patch["Occasion (from Session)"] = s["Occasion"];
-                patch["SessionType (from Session)"] = s["SessionType"];
+                patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+                patch["Date (from Session)"]         = norm(sDate);
+                patch["City (from Session)"]         = s["City"] || '';
+                patch["Venue (from Session)"]        = s["Venue"] || '';
+                patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+                patch["Occasion (from Session)"]     = sOccasion;
+                patch["SessionType (from Session)"]  = s["SessionType"] || '';
               }
             }
             const nd = { ...draftRef.current, ...patch };
@@ -1397,6 +1418,19 @@ if (hasDropdown) {
     if (longTextCols.has(col)) {
       return (
         <textarea className={`${inputCls} h-28 resize-none py-2.5`}
+          value={draft[col] || ''}
+          onChange={e => { const nd = { ...draftRef.current, [col]: e.target.value }; setDraft(nd); }}
+          onBlur={() => onSave(draftRef.current)}
+          placeholder={`Enter ${col}…`}
+        />
+      );
+    }
+    if (col === 'EmailId') {
+      return (
+        <input
+          type="text"
+          className={inputCls}
+          style={{ color: '#2563eb', WebkitTextFillColor: '#2563eb', textDecoration: 'underline' }}
           value={draft[col] || ''}
           onChange={e => { const nd = { ...draftRef.current, [col]: e.target.value }; setDraft(nd); }}
           onBlur={() => onSave(draftRef.current)}
@@ -1750,9 +1784,11 @@ if (hasDropdown) {
 // ── InboxPanel ────────────────────────────────────────────────────────────────
 const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord, onUnreadChange, isMobileView, currentUser }: {
   email: string;
+  items: any[];
+  loading: boolean;
   onClose: () => void;
   onOpenRecord: (tableName: string, collection: string, recordId: string) => void;
-  onUnreadChange?: (count: number) => void;
+  onUpdate: (updater: (prev: any[]) => any[]) => void;
   isMobileView?: boolean;
   currentUser?: any;
 }) {
@@ -1773,12 +1809,16 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
   }, [email]);
 
   const markRead = async (id: string) => {
-    setItems(prev => prev.map(n => String(n._id) === id ? { ...n, read: true } : n));
-    await window.fetch(`/api/notifications/${id}/read`, { method: 'PATCH' });
+    onUpdate(prev => prev.map(n => String(n._id) === id ? { ...n, read: true } : n));
+    await window.fetch(`/api/notifications/${id}/read`, { 
+      method: 'PATCH', 
+      headers: { 'Content-Type': 'application/json' }, 
+      body: JSON.stringify({}) 
+    });
   };
 
   const markAllRead = async () => {
-    setItems(prev => prev.map(n => ({ ...n, read: true })));
+    onUpdate(prev => prev.map(n => ({ ...n, read: true })));
     await window.fetch('/api/notifications/read-all', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
   };
 
@@ -1839,10 +1879,8 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
     return d.toLocaleDateString(undefined, { month: 'short', day: 'numeric' });
   };
 
-  const unread = items.filter(n => !n.read).length;
-
-  // Report unread count to parent so the button badge stays in sync
-  React.useEffect(() => { onUnreadChange?.(unread); }, [unread, onUnreadChange]);
+  const visibleItems = items.filter(n => showHistory ? n.cleared : !n.cleared);
+  const unread = items.filter(n => !n.read && !n.cleared).length;
 
   return (
     <>
@@ -1875,11 +1913,14 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
         <div className="h-14 sm:h-16 px-5 border-b border-slate-200 flex items-center justify-between shrink-0">
           <div className="flex items-center gap-2">
             <Inbox className="h-4 w-4 text-brand-primary" />
-            <span className="text-[15px] font-black text-slate-900">Inbox</span>
-            {unread > 0 && <span className="h-5 min-w-[20px] px-1.5 bg-brand-primary text-white text-[10px] font-black rounded-full flex items-center justify-center">{unread}</span>}
+            <span className="text-[15px] font-black text-slate-900">{showHistory ? 'History' : 'Inbox'}</span>
+            {unread > 0 && !showHistory && <span className="h-5 min-w-[20px] px-1.5 bg-brand-primary text-white text-[10px] font-black rounded-full flex items-center justify-center">{unread}</span>}
           </div>
           <div className="flex items-center gap-1">
-            {unread > 0 && (
+            <button onClick={() => setShowHistory(!showHistory)} className="text-[10px] font-black text-slate-500 hover:text-brand-primary uppercase tracking-widest transition-colors px-2 py-1 rounded-lg hover:bg-brand-primary/5">
+              {showHistory ? 'Back to Inbox' : 'History'}
+            </button>
+            {!showHistory && unread > 0 && (
               <button onClick={markAllRead} className="text-[10px] font-black text-slate-500 hover:text-brand-primary uppercase tracking-widest transition-colors px-2 py-1 rounded-lg hover:bg-brand-primary/5">
                 Mark all read
               </button>
@@ -1896,20 +1937,20 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto">
+        <div className="flex-1 overflow-y-auto scrollbar-hide">
           {loading && (
             <div className="flex items-center justify-center h-32 text-[12px] text-slate-400">Loading…</div>
           )}
-          {!loading && items.length === 0 && (
+          {!loading && visibleItems.length === 0 && (
             <div className="flex flex-col items-center justify-center h-48 gap-3 text-center px-8">
               <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
                 <Inbox className="h-6 w-6 text-slate-300" />
               </div>
-              <div className="text-[13px] font-bold text-slate-400">No notifications yet</div>
-              <div className="text-[11px] text-slate-400">You'll see mentions and comments here</div>
+              <div className="text-[13px] font-bold text-slate-400">{showHistory ? 'No cleared notifications' : 'No notifications yet'}</div>
+              <div className="text-[11px] text-slate-400">{showHistory ? 'Cleared notifications will appear here' : "You'll see mentions and comments here"}</div>
             </div>
           )}
-          {!loading && items.map((n: any) => {
+          {!loading && visibleItems.map((n: any) => {
             const nid = String(n._id);
             const isExpanded = replyingTo === nid;
             return (
@@ -2173,6 +2214,7 @@ const FIELD_TYPES = [
   { id: 'number',      label: 'Number',      icon: Hash,        desc: 'Monospace numeric value' },
   { id: 'id',          label: 'ID / Code',   icon: Hash,        desc: 'Monospace ID in brand color' },
   { id: 'date',        label: 'Date',        icon: Calendar,    desc: 'Date, shown monospace' },
+  { id: 'time',        label: 'Time',        icon: Clock,       desc: 'Time value (HH:MM)' },
   { id: 'year',        label: 'Year',        icon: Calendar,    desc: 'Year pill badge' },
   { id: 'checkbox',    label: 'Checkbox',    icon: CheckSquare, desc: 'True / false toggle' },
   { id: 'yes_no',      label: 'Yes / No',    icon: CheckSquare, desc: 'Yes or No colored badge' },
@@ -2240,7 +2282,8 @@ export default function App() {
 const [editDraft, setEditDraft] = useState<any>(null);
 const [expandedRecord, setExpandedRecord] = useState<any>(null);
 const [inboxOpen, setInboxOpen] = useState(false);
-const [inboxUnread, setInboxUnread] = useState(0);
+const [notifications, setNotifications] = useState<any[]>([]);
+const [notificationsLoading, setNotificationsLoading] = useState(true);
 const [editingCell, setEditingCell] = useState<string | null>(null);
 // Tracks whether a mousedown happened inside the editing row — suppresses
 // blur-triggered saves when the user is just clicking a different cell in the same row.
@@ -2818,6 +2861,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
   const [images, setImages] = useState<ImgEntry[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseImages = (raw: string): ImgEntry[] => {
     const result: ImgEntry[] = [];
@@ -2833,6 +2877,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   const [renamingIdx, setRenamingIdx] = useState<number | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const onUpdateRef = useRef(onUpdate);
+  const managedItemIdRef = useRef<string | null>(null);
   onUpdateRef.current = onUpdate;
 
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -2859,7 +2904,19 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
   // Initialise from manager.item when dialog opens; flush any pending save on close.
   useEffect(() => {
-    if (!manager?.isOpen || !manager?.item) return;
+    if (!manager?.isOpen || !manager?.item) {
+      managedItemIdRef.current = null;
+      return;
+    }
+
+    const recordId = String(manager.item._id || manager.item.id);
+    const currentKey = `${recordId}-${manager.column}`;
+
+    // If we are already managing this specific record/column, DO NOT reset state.
+    // This prevents the "refresh" glitch when an upload finishes and syncs to parent.
+    if (managedItemIdRef.current === currentKey) return;
+
+    managedItemIdRef.current = currentKey;
 
     // Cancel any stale timer from a previous session
     if (saveTimerRef.current !== null) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
@@ -2881,8 +2938,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
         capturedOnUpdate(s);
       }
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [manager?.isOpen]);
+  }, [manager?.isOpen, manager?.item?._id, manager?.item?.id, manager?.column]);
 
   // All handlers defined before the early return — no stale closures
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2933,21 +2989,33 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                 // This prevents a blank flash when img.src changes from base64 to the Drive URL.
                 const preloader = new window.Image();
                 preloader.onload = () => {
-                  commit(prev => prev.map(e => e._tempId === tempId ? { url: data.url, name } : e));
+                  commit(prev => prev.map(e => {
+                    if (e._tempId === tempId) {
+                      const { _tempId, ...rest } = e;
+                      return { ...rest, url: data.url };
+                    }
+                    return e;
+                  }));
                 };
                 preloader.onerror = () => {
                   // Drive URL failed to render — keep base64, clear syncing marker
-                  commit(prev => prev.map(e => e._tempId === tempId ? { url: e.url, name } : e));
+                  commit(prev => prev.map(e => {
+                    if (e._tempId === tempId) {
+                      const { _tempId, ...rest } = e;
+                      return rest;
+                    }
+                    return e;
+                  }));
                 };
                 preloader.src = data.url;
               } else {
-                commit(prev => prev.map(e => e._tempId === tempId ? { url: e.url, name } : e));
+                commit(prev => prev.map(e => { if (e._tempId === tempId) { const { _tempId, ...rest } = e; return rest; } return e; }));
                 alert("Saved locally — Drive sync failed: " + (data.error || 'Unknown error'));
               }
             })
             .catch(err => {
               console.error(err);
-              commit(prev => prev.map(e => e._tempId === tempId ? { url: e.url, name } : e));
+              commit(prev => prev.map(e => { if (e._tempId === tempId) { const { _tempId, ...rest } = e; return rest; } return e; }));
               alert("Saved locally — Drive upload error");
             });
           } else {
@@ -2997,7 +3065,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   };
 
   const commitRename = (i: number) => {
-    setImages(prev => prev.map((e, idx) => idx === i ? { ...e, name: renameVal.trim() } : e));
+    commit(prev => prev.map((e, idx) => idx === i ? { ...e, name: renameVal.trim() } : e));
     setRenamingIdx(null);
   };
 
@@ -3041,38 +3109,54 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   };
 
   if (!manager?.isOpen) return null;
+  const isSyncing = isUploading || images.some(img => !!img._tempId);
 
   return (
-    <Dialog open={manager.isOpen} onOpenChange={onClose}>
-      <DialogContent className="w-[95vw] sm:max-w-[700px] bg-white border-none rounded-[20px] sm:rounded-[28px] p-0 overflow-hidden shadow-2xl z-[600]">
+    <div
+      className="fixed inset-0 z-[600] flex items-end sm:items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(2px)' }}
+      onClick={isSyncing ? undefined : onClose}
+    >
+      <div
+        className="w-full sm:w-[95vw] sm:max-w-[700px] bg-white rounded-t-3xl sm:rounded-[28px] flex flex-col shadow-2xl max-h-[92vh] sm:max-h-[85vh] overflow-hidden"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Mobile drag handle */}
+        <div className="sm:hidden flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-slate-300 rounded-full" />
+        </div>
 
         {/* HEADER */}
-        <div className="flex items-center justify-between px-5 sm:px-7 py-4 sm:py-5 bg-slate-50 border-b border-slate-100">
+        <div className="flex items-center justify-between px-5 sm:px-7 py-3 sm:py-5 bg-slate-50 border-b border-slate-100 shrink-0">
           <div>
             <div className="flex items-center gap-1.5 text-brand-primary mb-0.5">
               <Monitor className="h-3.5 w-3.5" />
               <span className="text-[10px] font-black uppercase tracking-widest">{manager?.column || 'Media'}</span>
             </div>
-            <DialogTitle className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-none">Image Manager</DialogTitle>
+            <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-none">Image Manager</h2>
             <p className="text-[11px] text-slate-400 mt-1">{images.length} image{images.length !== 1 ? 's' : ''}</p>
           </div>
-          <label className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider hover:opacity-90 shadow-md shadow-brand-primary/20 transition-all active:scale-95 cursor-pointer select-none">
-            <Plus className="h-3.5 w-3.5" /> Add Image
-            <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} />
-          </label>
+          <div className="flex items-center gap-3">
+            <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider hover:opacity-90 shadow-md shadow-brand-primary/20 transition-all active:scale-95 cursor-pointer select-none">
+              <Plus className="h-3.5 w-3.5" /> Add Image
+            </button>
+            <input ref={fileInputRef} type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml" multiple className="hidden" onChange={handleUpload} />
+            <button onClick={isSyncing ? undefined : onClose} disabled={isSyncing} className={`p-1.5 rounded-xl transition-colors sm:hidden shrink-0 ${isSyncing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-200'}`}>
+              <X className="h-5 w-5 text-slate-500" />
+            </button>
+          </div>
         </div>
 
         {/* IMAGE GRID */}
-        <ScrollArea className="max-h-[65vh] bg-white">
+        <div className="flex-1 overflow-y-auto bg-white min-h-0">
           <div className="p-5 sm:p-6">
             {images.length === 0 && !isUploading ? (
               <div className="py-16 text-center space-y-3">
                 <Monitor className="h-12 w-12 text-slate-100 mx-auto" />
                 <p className="text-[11px] text-slate-300 italic uppercase tracking-widest font-bold">No images attached</p>
-                <label className="mt-1 text-[11px] font-black text-brand-primary uppercase tracking-widest hover:opacity-70 transition-opacity cursor-pointer">
+                <button onClick={() => fileInputRef.current?.click()} className="mt-1 text-[11px] font-black text-brand-primary uppercase tracking-widest hover:opacity-70 transition-opacity cursor-pointer">
                   + Add First Image
-                  <input type="file" accept="image/*" multiple className="hidden" onChange={handleUpload} />
-                </label>
+                </button>
               </div>
             ) : (
               <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
@@ -3080,16 +3164,16 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                   <div
                     key={i}
                     data-card-idx={i}
-                    draggable
-                    onDragStart={() => { draggingIdxRef.current = i; setDraggingIdx(i); }}
+                    draggable={renamingIdx !== i}
+                    onDragStart={(e) => { if (renamingIdx === i) { e.preventDefault(); return; } draggingIdxRef.current = i; setDraggingIdx(i); }}
                     onDragOver={e => { e.preventDefault(); if (dragOverIdx !== i) setDragOverIdx(i); }}
                     onDragLeave={() => setDragOverIdx(null)}
                     onDrop={e => { e.preventDefault(); doReorder(draggingIdxRef.current, i); draggingIdxRef.current = null; setDraggingIdx(null); setDragOverIdx(null); }}
                     onDragEnd={() => { draggingIdxRef.current = null; setDraggingIdx(null); setDragOverIdx(null); }}
-                    onTouchStart={() => handleTouchStart(i)}
-                    onTouchMove={handleTouchMove}
+                    onTouchStart={(e) => { if (renamingIdx === i) return; handleTouchStart(i); }}
+                    onTouchMove={(e) => { if (renamingIdx === i) return; handleTouchMove(e); }}
                     onTouchEnd={handleTouchEnd}
-                    className={`group/card flex flex-col gap-2 transition-all duration-150 touch-none select-none ${
+                    className={`group/card flex flex-col gap-2 transition-all duration-150 ${renamingIdx !== i ? 'touch-none select-none' : ''} ${
                       draggingIdx === i ? 'opacity-40 scale-95' : ''
                     } ${dragOverIdx === i && draggingIdx !== i ? 'ring-2 ring-brand-primary ring-offset-2 rounded-xl scale-[1.03]' : ''}`}
                   >
@@ -3137,18 +3221,25 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
                     {/* Inline rename */}
                     {renamingIdx === i ? (
-                      <input
-                        autoFocus
-                        value={renameVal}
-                        onChange={e => setRenameVal(e.target.value)}
-                        onBlur={() => commitRename(i)}
-                        onKeyDown={e => { if (e.key === 'Enter') commitRename(i); if (e.key === 'Escape') setRenamingIdx(null); }}
-                        className="w-full text-[11px] font-bold text-slate-800 bg-white border border-brand-primary rounded-lg px-2 py-1 outline-none focus:ring-2 focus:ring-brand-primary/20"
-                      />
+                      <div className="flex items-center gap-1 w-full mt-1">
+                        <input
+                          autoFocus
+                          value={renameVal}
+                          onChange={e => setRenameVal(e.target.value)}
+                          onKeyDown={e => { if (e.key === 'Enter') commitRename(i); if (e.key === 'Escape') setRenamingIdx(null); }}
+                          className="flex-1 min-w-0 text-[11px] font-bold text-slate-800 bg-white border border-brand-primary rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-brand-primary/20"
+                        />
+                        <button onClick={() => commitRename(i)} className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors shrink-0">
+                          <Check className="h-3.5 w-3.5" strokeWidth={3} />
+                        </button>
+                        <button onClick={() => setRenamingIdx(null)} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors shrink-0">
+                          <X className="h-3.5 w-3.5" strokeWidth={3} />
+                        </button>
+                      </div>
                     ) : (
                       <button
                         onClick={() => { setRenamingIdx(i); setRenameVal(entry.name || `Image ${i + 1}`); }}
-                        className="text-left w-full text-[10px] font-bold text-slate-500 uppercase tracking-wider hover:text-brand-primary transition-colors truncate flex items-center gap-1 group/name"
+                        className="text-left w-full text-[10px] font-bold text-slate-500 uppercase tracking-wider hover:text-brand-primary transition-colors truncate flex items-center gap-1 group/name mt-1"
                         title="Click to rename"
                       >
                         <Pencil className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover/name:opacity-100 transition-opacity" />
@@ -3181,17 +3272,21 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
               </div>
             )}
           </div>
-        </ScrollArea>
-
-        {/* FOOTER */}
-        <div className="px-5 sm:px-7 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-4">
-          <span className="text-[10px] text-slate-400 font-medium hidden sm:block">Hover image for actions · Click name to rename · ‹ › to reorder</span>
-          <span className="text-[10px] text-slate-400 font-medium sm:hidden">Tap name to rename</span>
-          <button onClick={onClose} className="shrink-0 text-[11px] font-black text-slate-600 hover:text-slate-900 uppercase tracking-widest transition-colors">Done</button>
         </div>
 
-      </DialogContent>
-    </Dialog>
+        {/* FOOTER */}
+        <div
+          className="px-5 sm:px-7 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-4 shrink-0"
+          style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
+        >
+          <span className="text-[10px] text-slate-400 font-medium hidden sm:block">Hover image for actions · Click name to rename · ‹ › to reorder</span>
+          <span className="text-[10px] text-slate-400 font-medium sm:hidden">Tap name to rename</span>
+          <button onClick={isSyncing ? undefined : onClose} disabled={isSyncing} className={`shrink-0 text-[11px] font-black uppercase tracking-widest transition-colors ${isSyncing ? 'text-brand-primary opacity-70 cursor-wait' : 'text-slate-600 hover:text-slate-900'}`}>
+            {isSyncing ? 'Syncing...' : 'Done'}
+          </button>
+        </div>
+      </div>
+    </div>
   );
 });
 const saveSettings = async (
@@ -3407,6 +3502,9 @@ const renderCell = (col: string, item: any): React.ReactNode => {
     
     case 'date':
       return <span className="font-mono text-slate-700 text-[13px]">{val || empty}</span>;
+
+    case 'time':
+      return <span className="font-mono text-slate-700 text-[13px]">{val || empty}</span>;
     
     case 'number':
       return <span className="font-mono text-slate-700 text-[13px] block text-center">{val || empty}</span>;
@@ -3441,17 +3539,32 @@ case 'text':
     <Check className="h-4 w-4 text-green-600 mx-auto" strokeWidth={4} />
   ) : null;
 
-    case 'status':
-      return val
-        ? <Badge className={`${val === 'Ready' ? 'bg-green-100 text-green-700 border-green-200' : val === 'Pending' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' : 'bg-red-100 text-red-700 border-red-200'} text-[11px] px-2`}>{val}</Badge>
-        : empty;
+    case 'status': {
+      const statusCls = (() => {
+        switch (val) {
+          case 'Ready':
+          case 'Done':
+          case 'Complete':
+          case 'Completed':    return 'bg-green-100 text-green-700 border-green-200';
+          case 'Pending':
+          case 'In Progress':
+          case 'In Review':    return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+          case 'To Do':
+          case 'Not Started':  return 'bg-slate-100 text-slate-600 border-slate-200';
+          case 'Blocked':
+          case 'Cancelled':    return 'bg-red-100 text-red-700 border-red-200';
+          default:             return 'bg-blue-50 text-blue-600 border-blue-100';
+        }
+      })();
+      return val ? <Badge className={`${statusCls} text-[11px] px-2`}>{val}</Badge> : empty;
+    }
         
     case 'email':
       return val ? <span className="text-brand-primary underline text-[13px]">{val}</span> : empty;
     
     case 'url':
       return val
-        ? <a href={val} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px]">Link</a>
+        ? <a href={val} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px]">{val}</a>
         : empty;
     
    case 'long_text':
@@ -3523,7 +3636,7 @@ const getTableColumns = (includeHidden = false) => {
       baseCols = ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID'];
       break;
     case 'Tracks':
-      baseCols = ['PlayID', 'Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'];
+      baseCols = ['Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'];
       break;
     case 'VideoLog':
       baseCols = ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList'];
@@ -4118,19 +4231,37 @@ useEffect(() => {
   }
 }, [user, imageManager?.isOpen]); // Add imageManager.isOpen as a dependency
 
-// Poll unread notification count so the inbox badge stays current
+// Dynamically fetch and poll notifications to keep the inbox badge and panel current
 useEffect(() => {
-  if (!user?.email) { setInboxUnread(0); return; }
-  const fetchCount = () => {
-    window.fetch(`/api/notifications?email=${encodeURIComponent(user.email)}`)
+  if (!user?.email) { 
+    setNotifications([]);
+    setNotificationsLoading(false);
+    return; 
+  }
+  const fetchNotifs = () => {
+    window.fetch(`/api/notifications?email=${encodeURIComponent(user.email)}&_t=${Date.now()}`)
       .then(r => r.ok ? r.json() : [])
-      .then((d: any[]) => setInboxUnread(d.filter(n => !n.read).length))
-      .catch(() => {});
+      .then(d => { 
+        setNotifications(prev => {
+          // Preserve locally cleared/read state to prevent stale background fetches from un-clearing items
+          const prevMap = new Map(prev.map(n => [String(n._id), n]));
+          return d.map((n: any) => {
+            const existing = prevMap.get(String(n._id));
+            if (existing?.cleared) n.cleared = true;
+            if (existing?.read) n.read = true;
+            return n;
+          });
+        });
+        setNotificationsLoading(false); 
+      })
+      .catch(() => setNotificationsLoading(false));
   };
-  fetchCount();
-  const t = setInterval(fetchCount, 60000);
+  fetchNotifs();
+  const t = setInterval(fetchNotifs, 15000); // 15s dynamic polling
   return () => clearInterval(t);
 }, [user?.email]);
+
+const inboxUnread = useMemo(() => notifications.filter(n => !n.read && !n.cleared).length, [notifications]);
 
  const handleAddRecord = async () => {
   let collection = '';
@@ -4197,18 +4328,6 @@ useEffect(() => {
       break;
   }
 
-  const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
-    'events': setEvents as any, 'sessions': setSessions as any,
-    'musiclog': setMusicLogs, 'videolog': setVideoLogs,
-    'media': setMedia as any, 'checklist': setChecklist as any,
-    'guidance': setGuidance as any, 'led_details': setLedDetails as any,
-    'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
-  };
-  const setter = optimisticSetter[collection];
-
-  // Close modal immediately, add temp record so UI doesn't feel empty
-  const tempId = `temp-${Date.now()}`;
-  if (setter) setter(prev => [...prev, { ...data, _id: tempId }]);
   setIsAddModalOpen(false);
   setNewRecord({});
 
@@ -4222,14 +4341,11 @@ useEffect(() => {
     });
 
     if (response.ok) {
-      // Fetch fresh data from server — replaces temp record with the real one
       await fetchActiveTable();
     } else {
-      if (setter) setter(prev => prev.filter(r => r._id !== tempId));
       showToast('Failed to save record to database.');
     }
   } catch (error) {
-    if (setter) setter(prev => prev.filter(r => r._id !== tempId));
     console.error("Add record error:", error);
     showToast('Failed to save record. Check your connection.');
   } finally {
@@ -4518,20 +4634,24 @@ const renderEditableRow = () => {
   const handleInlineSessionSelect = (sessionName: string) => {
     const s = sessions.find(s => s["Session Name"] === sessionName);
     if (!s) { setInlineRecord({ ...inlineRecord, Session: sessionName }); return; }
+    const norm = (d: any) => d ? String(d).split('T')[0] : '';
+    const sDate = s["Date"] || s["date"] || '';
+    const sTimeOfDay = s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '';
+    const sOccasion = s["Occasion"] || s["occasion"] || '';
     const patch: any = { Session: s["Session Name"] };
     if (activeTable === 'MusicLog') {
-      patch["Parent Event (from Session)"] = s["Parent Event"];
-      patch["Date (from Session)"] = s["Date"];
-      patch["TimeOfDay (from Session)"] = s["Time Of Day"];
-      patch["Occasion (from Session)"] = s["Occasion"];
+      patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+      patch["Date (from Session)"]         = norm(sDate);
+      patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+      patch["Occasion (from Session)"]     = sOccasion;
     } else {
-      patch["Parent Event (from Session)"] = s["Parent Event"];
-      patch["Date (from Session)"] = s["Date"];
-      patch["City (from Session)"] = s["City"];
-      patch["Venue (from Session)"] = s["Venue"];
-      patch["TimeOfDay (from Session)"] = s["Time Of Day"];
-      patch["Occasion (from Session)"] = s["Occasion"];
-      patch["SessionType (from Session)"] = s["SessionType"];
+      patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+      patch["Date (from Session)"]         = norm(sDate);
+      patch["City (from Session)"]         = s["City"] || '';
+      patch["Venue (from Session)"]        = s["Venue"] || '';
+      patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+      patch["Occasion (from Session)"]     = sOccasion;
+      patch["SessionType (from Session)"]  = s["SessionType"] || '';
     }
     setInlineRecord({ ...inlineRecord, ...patch });
   };
@@ -4539,10 +4659,11 @@ const renderEditableRow = () => {
   const isEventsTable = activeTable === 'Events';
   const selectCls = "w-full h-8 bg-white border border-blue-300 rounded px-2 text-[12px] font-bold text-black focus:ring-2 focus:ring-brand-primary outline-none shadow-sm";
   const inputCls = "w-full h-8 bg-white border border-blue-300 rounded px-2 text-[12px] font-bold text-black placeholder:text-slate-400 focus:ring-2 focus:ring-brand-primary outline-none shadow-sm";
-
   return (
     <>
-      {cols.map((col, i) => (
+      {cols.map((col, i) => {
+        const colType = getColumnType(col);
+        return (
         <td
           key={i}
           className={`px-2 py-2 border-r border-b border-slate-400 ${i === 0 ? (isMobileView ? 'bg-blue-100' : 'bg-blue-100 sticky left-[48px] z-10') : 'bg-blue-50/50'}`}
@@ -4616,21 +4737,28 @@ const renderEditableRow = () => {
               );
             }
             return (
-              <input
-                autoFocus={i === 0 && !isSessionLinkedTable && !isEventsTable}
-                className={inputCls}
-                placeholder={`Enter ${col}...`}
-                value={inlineRecord[col] || ''}
-                onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter') handleInlineSave();
-                  if (e.key === 'Escape') setIsInlineAdding(false);
-                }}
-              />
+             <input
+                  autoFocus={i === 0 && !isSessionLinkedTable && !isEventsTable}
+                  className={inputCls}
+                  // APPLY STYLE HERE
+                  style={colType === 'email' ? { 
+                    color: '#2563eb', 
+                    WebkitTextFillColor: '#2563eb', 
+                    textDecoration: 'underline' 
+                  } : {}}
+                  placeholder={`Enter ${col}...`}
+                  value={inlineRecord[col] || ''}
+                  onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter') handleInlineSave();
+                    if (e.key === 'Escape') setIsInlineAdding(false);
+                  }}
+                />
             );
           })()}
         </td>
-      ))}
+        );
+      })}
     </>
   );
 };
@@ -4759,7 +4887,7 @@ const renderEditInputs = (_item: any) => {
 
   const inputCls = () =>
   `w-full h-full bg-transparent border-none focus:border-none focus:ring-0
-   px-2 py-0 text-[12px] font-bold text-slate-900 outline-none shadow-none`;
+   px-2 py-0 text-[13px] font-normal text-slate-700 outline-none shadow-none`;
   const saveKeys    = (e: React.KeyboardEvent) => { 
     if (e.key === 'Enter') handleUpdateRecord(); 
     if (e.key === 'Escape') { setEditingId(null); setEditDraft(null); setEditingCell(null); } 
@@ -4776,20 +4904,24 @@ const updateDraftOnly = (col: string, val: string) => {
   const commitSession = (sessionName: string) => {
     const s = sessions.find((x: any) => x["Session Name"] === sessionName);
     const patch: any = { Session: sessionName };
+    const norm = (d: any) => d ? String(d).split('T')[0] : '';
     if (s) {
+      const sDate = s["Date"] || s["date"] || '';
+      const sTimeOfDay = s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '';
+      const sOccasion = s["Occasion"] || s["occasion"] || '';
       if (isML) {
-        patch["Parent Event (from Session)"] = s["Parent Event"];
-        patch["Date (from Session)"]         = s["Date"];
-        patch["TimeOfDay (from Session)"]    = s["Time Of Day"];
-        patch["Occasion (from Session)"]     = s["Occasion"];
+        patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+        patch["Date (from Session)"]         = norm(sDate);
+        patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+        patch["Occasion (from Session)"]     = sOccasion;
       } else {
-        patch["Parent Event (from Session)"] = s["Parent Event"];
-        patch["Date (from Session)"]         = s["Date"];
-        patch["City (from Session)"]         = s["City"];
-        patch["Venue (from Session)"]        = s["Venue"];
-        patch["TimeOfDay (from Session)"]    = s["Time Of Day"];
-        patch["Occasion (from Session)"]     = s["Occasion"];
-        patch["SessionType (from Session)"]  = s["SessionType"];
+        patch["Parent Event (from Session)"] = s["Parent Event"] || '';
+        patch["Date (from Session)"]         = norm(sDate);
+        patch["City (from Session)"]         = s["City"] || '';
+        patch["Venue (from Session)"]        = s["Venue"] || '';
+        patch["TimeOfDay (from Session)"]    = sTimeOfDay;
+        patch["Occasion (from Session)"]     = sOccasion;
+        patch["SessionType (from Session)"]  = s["SessionType"] || '';
       }
     }
     const nd = { ...editDraft, ...patch };
@@ -4819,7 +4951,7 @@ const updateDraftOnly = (col: string, val: string) => {
         const isActuallyActive = editingCell === col && !isAutoFilled;
         const colType = getColumnType(col);
         const isMulti = colType === 'badge_multi';
-        const isSingleBadge = colType === 'badge' || colType === 'status' || colType === 'select';
+        const isSingleBadge = colType === 'status' || colType === 'select';
         const isLinkCol = colType === 'link_to_record';
         const isFreezeEdge = i === frozen;
 
@@ -4968,7 +5100,7 @@ const updateDraftOnly = (col: string, val: string) => {
               }
 
               // --- RENDER EDITORS (Only for isActuallyActive) ---
-              
+
               // Handle Long Text (Moved inside the proper gate)
               if (colType === 'long_text') {
                 return (
@@ -5063,15 +5195,27 @@ const updateDraftOnly = (col: string, val: string) => {
                  return <input type="date" className={inputCls()} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => handleUpdateRecord()} onKeyDown={saveKeys} autoFocus />;
               }
 
+              if (colType === 'time') {
+                return <input type="time" step="1" className={inputCls()} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => handleUpdateRecord()} onKeyDown={saveKeys} autoFocus />;
+              }
+
               return (
                 <input
-                  autoFocus
-                  className={inputCls()}
-                  value={editDraft[col] || ''}
-                  onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
-                  onBlur={() => handleUpdateRecord()}
-                  onKeyDown={saveKeys}
-                />
+    autoFocus
+    type="text"
+    className={inputCls()}
+    // This style ensures the blue format stays while typing in the cell
+    style={colType === 'email' ? { 
+      color: '#2563eb', 
+      WebkitTextFillColor: '#2563eb', 
+      textDecoration: 'underline',
+      fontWeight: '500' // Matches your table's font weight
+    } : undefined}
+    value={editDraft[col] || ''}
+    onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
+    onBlur={() => handleUpdateRecord()}
+    onKeyDown={saveKeys}
+  />
               );
             })()}
           </td>
@@ -6494,7 +6638,7 @@ if (!health?.mongodb) {
                             ))}
                             <div onClick={(e) => { e.stopPropagation(); const fi = e.currentTarget.querySelector('input[type="file"]') as HTMLInputElement; if (fi) fi.click(); }} className="h-20 md:h-24 w-20 md:w-24 shrink-0 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary/50 transition-colors cursor-pointer bg-slate-50 hover:bg-white">
                               <Plus className="h-4 w-4 pointer-events-none" /><span className="text-[7px] md:text-[8px] font-black uppercase pointer-events-none">Add Media</span>
-                              <input type="file" accept="image/*" className="hidden" onClick={(e) => e.stopPropagation()} onChange={(e) => handleDirectImageUpload(e, item, 'sessions', setSessions as any)} />
+                              <input type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml" className="hidden" onClick={(e) => e.stopPropagation()} onChange={(e) => handleDirectImageUpload(e, item, 'sessions', setSessions as any)} />
                             </div>
                           </div>
                         </div>
@@ -7518,9 +7662,25 @@ if (!health?.mongodb) {
                     </select>
                   </div>
                   {addColumnModal.type === 'lookup' && addColumnModal.linkedTable && (() => {
-                    const linkedFields = Object.keys(
-                      getDataForTable(addColumnModal.linkedTable)[0] || {}
-                    ).filter(f => !['_id','id','created_at','__v'].includes(f));
+                    const baseColsMap: Record<string, string[]> = {
+                      'Events': ['Event Name', 'DateFrom', 'DateTo', 'Occasion', 'City', 'Venue', 'Sessions', 'Year'],
+                      'Session': ['Session Name', 'Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes'],
+                      'MusicLog': ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID'],
+                      'VideoLog': ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList'],
+                      'Tracks': ['PlayID', 'Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'],
+                      'DyatraChecklist': ['Task', 'Details', 'TaskGroup', 'OrderId', 'People Involved', 'Typical Timeline', 'Category', 'Period', 'Attachment'],
+                      'Guidance & Learning': ['LearningId', 'Event', 'DateFrom (from Event)', 'DateTo (from Event)', 'Year (from Event)', 'City', 'GuidanceFrom', 'Guidance/Learning', 'Category', 'Attachments'],
+                      'LED': ['LedId', '🕘 Session', 'Parent Event (from 🕘 Session)', 'Date (from 🕘 Session)', 'City (from 🕘 Session)', 'Venue (from 🕘 Session)', 'Indoor/Outdoor LED?', 'CentreLed', 'CntrPitch', 'CntrWdth', 'CntrHt', 'CntrRiser', 'Stageht', 'SideLed', 'SidePitch', 'SideWdth', 'SideHt', 'OtherLed1', 'OtherPitch', 'OtherWdth', 'OtherHt', 'OtherLed2', 'is Led Required?', 'Other2Wdth', 'Other2Ht', 'DGUseedKva', 'BackupPower', 'Vendor', 'Images'],
+                      'DataSharing': ['Sevak', 'Dept', 'EmailId', 'ShareFacts?', 'ShareData'],
+                      'VideoSetup': ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'],
+                      'AudioSetup': ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'],
+                    };
+                    const predefined = baseColsMap[addColumnModal.linkedTable] || [];
+                    const extras = extraColumns[addColumnModal.linkedTable] || [];
+                    const dataKeys = (getDataForTable(addColumnModal.linkedTable)[0]
+                      ? Object.keys(getDataForTable(addColumnModal.linkedTable)[0]).filter(f => !['_id','id','created_at','__v'].includes(f))
+                      : []);
+                    const linkedFields = [...new Set([...predefined, ...extras, ...dataKeys])];
                     return (
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Field to look up</label>
@@ -7600,9 +7760,25 @@ if (!health?.mongodb) {
                     </select>
                   </div>
                   {editColumnModal.type === 'lookup' && editColumnModal.linkedTable && (() => {
-                    const linkedFields = Object.keys(
-                      getDataForTable(editColumnModal.linkedTable)[0] || {}
-                    ).filter(f => !['_id','id','created_at','__v'].includes(f));
+                    const baseColsMap: Record<string, string[]> = {
+                      'Events': ['Event Name', 'DateFrom', 'DateTo', 'Occasion', 'City', 'Venue', 'Sessions', 'Year'],
+                      'Session': ['Session Name', 'Parent Event', 'Date', 'City', 'Venue', 'Time Of Day', 'Occasion', 'SessionType', 'Notes'],
+                      'MusicLog': ['PlayID', 'Session', 'Parent Event (from Session)', 'Date (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'Order', 'PlayedAt', 'Track', 'Theme', 'Relevance', 'Patrank', 'Topic', 'Cue', 'Notes', 'PPG', 'TrackID'],
+                      'VideoLog': ['VideoPlayId', 'Session', 'Date (from Session)', 'City (from Session)', 'Venue (from Session)', 'Parent Event (from Session)', 'TimeOfDay (from Session)', 'Occasion (from Session)', 'SessionType (from Session)', 'VideoTitle', 'Duration', 'ProposalsList'],
+                      'Tracks': ['PlayID', 'Title', 'Artist', 'Album', 'Duration', 'DurationTime', 'BPM', 'Key', 'Source', 'FileLink', 'Tags', 'Lyrics', 'LexiconID', 'LastUpdated', 'Plays'],
+                      'DyatraChecklist': ['Task', 'Details', 'TaskGroup', 'OrderId', 'People Involved', 'Typical Timeline', 'Category', 'Period', 'Attachment'],
+                      'Guidance & Learning': ['LearningId', 'Event', 'DateFrom (from Event)', 'DateTo (from Event)', 'Year (from Event)', 'City', 'GuidanceFrom', 'Guidance/Learning', 'Category', 'Attachments'],
+                      'LED': ['LedId', '🕘 Session', 'Parent Event (from 🕘 Session)', 'Date (from 🕘 Session)', 'City (from 🕘 Session)', 'Venue (from 🕘 Session)', 'Indoor/Outdoor LED?', 'CentreLed', 'CntrPitch', 'CntrWdth', 'CntrHt', 'CntrRiser', 'Stageht', 'SideLed', 'SidePitch', 'SideWdth', 'SideHt', 'OtherLed1', 'OtherPitch', 'OtherWdth', 'OtherHt', 'OtherLed2', 'is Led Required?', 'Other2Wdth', 'Other2Ht', 'DGUseedKva', 'BackupPower', 'Vendor', 'Images'],
+                      'DataSharing': ['Sevak', 'Dept', 'EmailId', 'ShareFacts?', 'ShareData'],
+                      'VideoSetup': ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'],
+                      'AudioSetup': ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'],
+                    };
+                    const predefined = baseColsMap[editColumnModal.linkedTable] || [];
+                    const extras = extraColumns[editColumnModal.linkedTable] || [];
+                    const dataKeys = (getDataForTable(editColumnModal.linkedTable)[0]
+                      ? Object.keys(getDataForTable(editColumnModal.linkedTable)[0]).filter(f => !['_id','id','created_at','__v'].includes(f))
+                      : []);
+                    const linkedFields = [...new Set([...predefined, ...extras, ...dataKeys])];
                     return (
                       <div>
                         <label className="text-[10px] font-bold text-slate-500 uppercase tracking-widest mb-1 block">Field to look up</label>
@@ -7770,8 +7946,9 @@ if (!health?.mongodb) {
               options={sessions.map((s: any) => s["Session Name"]).filter(Boolean)}
               onCommit={val => {
                 const s = sessions.find((x: any) => x["Session Name"] === val);
-                if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"] });
-                else setNewRecord({ ...newRecord, session: val });
+                const norm = (d: any) => d ? String(d).split('T')[0] : '';
+                if (s) setNewRecord((prev: any) => ({ ...prev, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), timeOfDay: s["Time Of Day"] || '', occasion: s["Occasion"] || '' }));
+                else setNewRecord((prev: any) => ({ ...prev, session: val }));
               }}
               onCancel={() => {}}
               placeholder="Select session…"
@@ -7779,10 +7956,10 @@ if (!health?.mongodb) {
             />
           </div>
         </div>
-        <Input value={newRecord.parentEvent || ''} onChange={(e) => setNewRecord({...newRecord, parentEvent: e.target.value})} placeholder="Parent Event" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.date || ''} onChange={(e) => setNewRecord({...newRecord, date: e.target.value})} placeholder="Date" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.timeOfDay || ''} onChange={(e) => setNewRecord({...newRecord, timeOfDay: e.target.value})} placeholder="Time of Day" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.occasion || ''} onChange={(e) => setNewRecord({...newRecord, occasion: e.target.value})} placeholder="Occasion" className="bg-brand-bg h-9 text-xs" />
+        <Input value={newRecord.parentEvent || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, parentEvent: e.target.value}))} placeholder="Parent Event" className="bg-brand-bg h-9 text-xs" />
+        <Input value={newRecord.date || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, date: e.target.value}))} placeholder="Date" className="bg-brand-bg h-9 text-xs" />
+        <Input value={newRecord.timeOfDay || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, timeOfDay: e.target.value}))} placeholder="Time of Day" className="bg-brand-bg h-9 text-xs" />
+        <Input value={newRecord.occasion || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, occasion: e.target.value}))} placeholder="Occasion" className="bg-brand-bg h-9 text-xs" />
       </div>
     </div>
 
@@ -8332,8 +8509,9 @@ if (!health?.mongodb) {
                     <label className={labelCls}>Session</label>
                     <CellDropdown value={newRecord.session || ''} options={sessionOpts} onCommit={val => {
                       const s = sessions.find((x: any) => x["Session Name"] === val);
-                      if (s) setNewRecord({...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"]});
-                      else setNewRecord({...newRecord, session: val});
+                      const norm = (d: any) => d ? String(d).split('T')[0] : '';
+                      if (s) setNewRecord((prev: any) => ({ ...prev, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), timeOfDay: s["Time Of Day"] || '', occasion: s["Occasion"] || '' }));
+                      else setNewRecord((prev: any) => ({ ...prev, session: val }));
                     }} onCancel={() => {}} placeholder="Select session…" tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20" />
                   </div>
                   {newRecord.parentEvent && (
