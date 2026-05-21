@@ -81,6 +81,7 @@ import {
   Share2,
   Volume2,
   Film,
+  Paperclip,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -2449,18 +2450,20 @@ const attachmentFileInputRef = useRef<HTMLInputElement>(null);
 // React.memo only works if props are stable; these refs forward to the latest functions.
 const _imgUpdateRef = useRef<((s: string) => Promise<void>) | null>(null);
 const _imgCloseRef  = useRef<(() => void) | null>(null);
+const _imgToastRef  = useRef<((msg: string, type?: 'error' | 'success') => void) | null>(null);
 const stableOnImgUpdate = useCallback((s: string) => _imgUpdateRef.current!(s), []);
 const stableOnImgClose  = useCallback(() => _imgCloseRef.current!(), []);
+const stableOnImgToast  = useCallback((msg: string, type?: 'error' | 'success') => _imgToastRef.current!(msg, type), []);
 
 const handleImageUpdate = async (updatedString: string) => {
   if (!imageManager?.item) return;
 
-  // Capture immediately — avoids any stale-closure risk in async callback
+  // Capture immediately — avoids stale-closure risk in async callbacks
   const recordId = String(imageManager.item._id || imageManager.item.id || '');
   const column = imageManager.column;
 
   if (!recordId || recordId === 'undefined') {
-    alert('Cannot save image: this record has no database ID.');
+    showToast('Cannot save image: record has no ID.', 'error');
     return;
   }
 
@@ -2480,56 +2483,85 @@ const handleImageUpdate = async (updatedString: string) => {
     default: collection = activeTable.toLowerCase();
   }
 
-  try {
-    // Send ONLY the changed column — not the full record.
-    // The server uses $set so other fields stay untouched.
-    // Sending the full record can exceed Vercel's 4.5 MB body limit
-    // when a large base64 image is already in the document.
-    const response = await window.fetch(`/api/${collection}/${recordId}`, {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ [column]: updatedString })
-    });
+  const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+    'events': setEvents as any, 'sessions': setSessions as any,
+    'musiclog': setMusicLogs, 'videolog': setVideoLogs,
+    'media': setMedia as any, 'checklist': setChecklist as any,
+    'guidance': setGuidance as any, 'led_details': setLedDetails as any,
+    'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+  };
 
-    if (response.ok) {
-      // Sync expandedRecord if the image manager was opened from within the expand modal
-      setExpandedRecord((prev: any) =>
-        prev && (String(prev._id || prev.id) === recordId)
-          ? { ...prev, [column]: updatedString }
-          : prev
-      );
-
-      // Sync editDraft if the image manager was opened during inline edit
-      setEditDraft((prev: any) =>
-        prev && (String(prev._id || prev.id) === recordId)
-          ? { ...prev, [column]: updatedString }
-          : prev
-      );
-      
-      // Sync the main state so the table reflects the new images immediately
-      const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
-        'events': setEvents as any, 'sessions': setSessions as any,
-        'musiclog': setMusicLogs, 'videolog': setVideoLogs,
-        'media': setMedia as any, 'checklist': setChecklist as any,
-        'guidance': setGuidance as any, 'led_details': setLedDetails as any,
-        'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
-      };
-      const setter = optimisticSetter[collection];
-      if (setter) {
-        setter(prev => prev.map(r => (String(r._id) === recordId || String(r.id) === recordId) ? { ...r, [column]: updatedString } : r));
-      }
-    } else {
-      const errorData = await response.text();
-      console.error('Server refused image update:', errorData);
-      alert('Failed to save image: ' + (errorData || 'server error'));
+  // Retry up to 2 times — handles transient MongoDB cold-start errors in
+  // Vercel serverless (first request after idle spins up a new function
+  // instance before the DB connection is ready, returning errors like
+  // "Node cannot be found in the current page").
+  const MAX_ATTEMPTS = 3;
+  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+    if (attempt > 1) {
+      await new Promise(r => setTimeout(r, 1000 * (attempt - 1))); // 1 s, 2 s
     }
-  } catch (error) {
-    console.error('Image upload error:', error);
-    alert('Network error — image could not be saved. Check your connection.');
+    try {
+      // Send ONLY the changed column — not the full record.
+      // The server uses $set so other fields stay untouched.
+      const response = await window.fetch(`/api/${collection}/${recordId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [column]: updatedString })
+      });
+
+      if (response.ok) {
+        // Sync expandedRecord if the image manager was opened from the expand modal
+        setExpandedRecord((prev: any) =>
+          prev && (String(prev._id || prev.id) === recordId)
+            ? { ...prev, [column]: updatedString }
+            : prev
+        );
+        // Sync editDraft if opened during inline edit
+        setEditDraft((prev: any) =>
+          prev && (String(prev._id || prev.id) === recordId)
+            ? { ...prev, [column]: updatedString }
+            : prev
+        );
+        // Optimistically update the table so thumbnails refresh immediately
+        const setter = optimisticSetter[collection];
+        if (setter) {
+          setter(prev => prev.map(r =>
+            (String(r._id) === recordId || String(r.id) === recordId)
+              ? { ...r, [column]: updatedString }
+              : r
+          ));
+        }
+        return; // success — done
+      }
+
+      // Non-2xx response — only retry 5xx (server errors), not 4xx (client errors)
+      if (response.status < 500) {
+        const errorData = await response.text();
+        console.error('Server refused image update:', errorData);
+        showToast('Image save failed — ' + (errorData || 'server error'), 'error');
+        return;
+      }
+
+      // 5xx: log and retry
+      const body = await response.text();
+      console.warn(`Image save attempt ${attempt} failed (${response.status}):`, body);
+
+    } catch (err) {
+      console.warn(`Image save attempt ${attempt} network error:`, err);
+      if (attempt === MAX_ATTEMPTS) {
+        showToast('Network error — image could not be saved.', 'error');
+      }
+    }
   }
+
+  // All 3 attempts failed with 5xx
+  showToast('Image save failed after retries. Check connection.', 'error');
 };
-// Keep the stable ref in sync with the latest version of handleImageUpdate
-_imgUpdateRef.current = handleImageUpdate;
+// Only update the ref when imageManager is open so the cleanup in
+// AttachmentManagerDialog always flushes via a version of handleImageUpdate
+// that still has imageManager?.item in its closure (not the null version
+// created after setImageManager(null) runs during close).
+if (imageManager) _imgUpdateRef.current = handleImageUpdate;
 
 
 const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -2869,18 +2901,21 @@ const buildLookupPatch = (
   return patch;
 };
 
-const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ manager, onClose, onUpdate }: any) {
-  type ImgEntry = { url: string; name: string; _tempId?: string };
+const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ manager, onClose, onUpdate, onToast }: any) {
+  // _key is a stable identity field that NEVER changes for the lifetime of an entry.
+  // Using it as the React key prevents the unmount/remount that happened when
+  // base64 (_tempId key) was swapped for the Drive URL (url key), which caused
+  // "Node cannot be found in the current page" React reconciliation errors.
+  type ImgEntry = { url: string; name: string; _key: string; _tempId?: string };
 
   const [images, setImages] = useState<ImgEntry[]>([]);
   const [isUploading, setIsUploading] = useState(false);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const parseImages = (raw: string): ImgEntry[] => {
     const result: ImgEntry[] = [];
     const re = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
     let m;
-    while ((m = re.exec(raw)) !== null) result.push({ name: m[1] || '', url: m[2] });
+    while ((m = re.exec(raw)) !== null) result.push({ name: m[1] || '', url: m[2], _key: m[2] });
     return result;
   };
 
@@ -2984,8 +3019,11 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
             const name = file.name.replace(/\.[^.]+$/, '');
             const tempId = `_t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 
-            // Step 1: show immediately with real filename; _tempId = syncing marker
-            commit(prev => [...prev, { url: base64Url, name, _tempId: tempId }]);
+            // Step 1: show immediately — use setImages (not commit) so no DB save is
+            // triggered for the large base64 blob. The save fires only after Drive URL
+            // replaces it in Step 2, keeping the upload to a single small PUT.
+            // _key = tempId so the React key stays stable even after Drive URL replaces base64
+            setImages(prev => [...prev, { url: base64Url, name, _tempId: tempId, _key: tempId }]);
             remaining--;
             if (remaining === 0) setIsUploading(false);
 
@@ -3023,13 +3061,13 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                 preloader.src = data.url;
               } else {
                 commit(prev => prev.map(e => { if (e._tempId === tempId) { const { _tempId, ...rest } = e; return rest; } return e; }));
-                alert("Saved locally — Drive sync failed: " + (data.error || 'Unknown error'));
+                onToast?.('Drive sync failed — image saved locally. ' + (data.error || ''), 'error');
               }
             })
             .catch(err => {
               console.error(err);
               commit(prev => prev.map(e => { if (e._tempId === tempId) { const { _tempId, ...rest } = e; return rest; } return e; }));
-              alert("Saved locally — Drive upload error");
+              onToast?.('Drive upload error — image saved locally.', 'error');
             });
           } else {
             remaining--;
@@ -3059,24 +3097,6 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
     setTimeout(() => { try { document.body.removeChild(a); } catch (_) {} }, 300);
   };
 
-  const moveUp = (i: number) => {
-    if (i === 0) return;
-    setImages(prev => {
-      const next = [...prev];
-      [next[i - 1], next[i]] = [next[i], next[i - 1]];
-      return next;
-    });
-  };
-
-  const moveDown = (i: number) => {
-    setImages(prev => {
-      if (i === prev.length - 1) return prev;
-      const next = [...prev];
-      [next[i], next[i + 1]] = [next[i + 1], next[i]];
-      return next;
-    });
-  };
-
   const commitRename = (i: number) => {
     commit(prev => prev.map((e, idx) => idx === i ? { ...e, name: renameVal.trim() } : e));
     setRenamingIdx(null);
@@ -3089,7 +3109,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
   const doReorder = (from: number | null, to: number | null) => {
     if (from === null || to === null || from === to) return;
-    setImages(prev => {
+    commit(prev => {
       const next = [...prev];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
@@ -3127,11 +3147,11 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   return (
     <div
       className="fixed inset-0 z-[600] flex items-end sm:items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.65)', backdropFilter: 'blur(2px)' }}
+      style={{ backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)' }}
       onClick={isSyncing ? undefined : onClose}
     >
       <div
-        className="w-full sm:w-[95vw] sm:max-w-[700px] bg-white rounded-t-3xl sm:rounded-[28px] flex flex-col shadow-2xl max-h-[92vh] sm:max-h-[85vh] overflow-hidden"
+        className="w-full sm:w-[460px] bg-white rounded-t-2xl sm:rounded-xl flex flex-col shadow-2xl max-h-[92vh] sm:max-h-[80vh] overflow-hidden border border-slate-200"
         onClick={e => e.stopPropagation()}
       >
         {/* Mobile drag handle */}
@@ -3139,43 +3159,54 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
           <div className="w-10 h-1 bg-slate-300 rounded-full" />
         </div>
 
-        {/* HEADER */}
-        <div className="flex items-center justify-between px-5 sm:px-7 py-3 sm:py-5 bg-slate-50 border-b border-slate-100 shrink-0">
-          <div>
-            <div className="flex items-center gap-1.5 text-brand-primary mb-0.5">
-              <Monitor className="h-3.5 w-3.5" />
-              <span className="text-[10px] font-black uppercase tracking-widest">{manager?.column || 'Media'}</span>
-            </div>
-            <h2 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-none">Image Manager</h2>
-            <p className="text-[11px] text-slate-400 mt-1">{images.length} image{images.length !== 1 ? 's' : ''}</p>
+        {/* HEADER — Airtable style */}
+        <div className="flex items-center justify-between px-3.5 pt-3 pb-2 shrink-0">
+          <div className="flex items-center gap-2">
+            <span className="text-[13px] font-semibold text-slate-800">{manager?.column || 'Images'}</span>
+            {images.length > 0 && (
+              <span className="text-[11px] text-slate-400">{images.length} file{images.length !== 1 ? 's' : ''}</span>
+            )}
           </div>
-          <div className="flex items-center gap-3">
-            <button onClick={() => fileInputRef.current?.click()} className="flex items-center gap-2 bg-brand-primary text-white px-4 py-2.5 rounded-xl text-[11px] font-black uppercase tracking-wider hover:opacity-90 shadow-md shadow-brand-primary/20 transition-all active:scale-95 cursor-pointer select-none">
-              <Plus className="h-3.5 w-3.5" /> Add Image
-            </button>
-            <input ref={fileInputRef} type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml" multiple className="hidden" onChange={handleUpload} />
-            <button onClick={isSyncing ? undefined : onClose} disabled={isSyncing} className={`p-1.5 rounded-xl transition-colors sm:hidden shrink-0 ${isSyncing ? 'opacity-50 cursor-not-allowed' : 'hover:bg-slate-200'}`}>
-              <X className="h-5 w-5 text-slate-500" />
-            </button>
-          </div>
+          <button
+            onClick={isSyncing ? undefined : onClose}
+            disabled={isSyncing}
+            className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <X className="h-4 w-4" />
+          </button>
         </div>
 
+        {/* Attach file button row — <label> wraps the input directly so the browser
+            always opens the file picker on click (programmatic .click() on hidden
+            inputs is unreliable and blocked in many browsers). */}
+        <div className="px-3.5 pb-2 shrink-0">
+          <label className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 px-2.5 py-1.5 rounded-md transition-colors border border-slate-200 cursor-pointer w-full justify-center sm:w-auto sm:justify-start select-none">
+            <Paperclip className="h-3.5 w-3.5" />
+            Attach file
+            <input type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml" multiple className="sr-only" onChange={handleUpload} />
+          </label>
+        </div>
+
+        {/* Divider */}
+        <div className="h-px bg-slate-200 shrink-0" />
+
         {/* IMAGE GRID */}
-        <div className="flex-1 overflow-y-auto bg-white min-h-0">
-          <div className="p-5 sm:p-6">
+        <div className="flex-1 overflow-y-auto min-h-0">
+          <div className="p-3">
             {images.length === 0 && !isUploading ? (
-              <div className="py-16 text-center space-y-3">
-                <Monitor className="h-12 w-12 text-slate-100 mx-auto" />
-                <p className="text-[11px] text-slate-300 italic uppercase tracking-widest font-bold">No images attached</p>
-                <button onClick={() => fileInputRef.current?.click()} className="mt-1 text-[11px] font-black text-brand-primary uppercase tracking-widest hover:opacity-70 transition-opacity cursor-pointer">
-                  + Add First Image
-                </button>
+              <div className="py-12 text-center space-y-2">
+                <Paperclip className="h-8 w-8 text-slate-200 mx-auto" />
+                <p className="text-[12px] text-slate-400">No attachments yet</p>
+                <label className="text-[12px] font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer select-none">
+                  Attach a file
+                  <input type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml" multiple className="sr-only" onChange={handleUpload} />
+                </label>
               </div>
             ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
+              <div className="grid grid-cols-2 gap-2.5">
                 {images.map((entry, i) => (
                   <div
-                    key={i}
+                    key={entry._key}
                     data-card-idx={i}
                     draggable={renamingIdx !== i}
                     onDragStart={(e) => { if (renamingIdx === i) { e.preventDefault(); return; } draggingIdxRef.current = i; setDraggingIdx(i); }}
@@ -3183,103 +3214,84 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                     onDragLeave={() => setDragOverIdx(null)}
                     onDrop={e => { e.preventDefault(); doReorder(draggingIdxRef.current, i); draggingIdxRef.current = null; setDraggingIdx(null); setDragOverIdx(null); }}
                     onDragEnd={() => { draggingIdxRef.current = null; setDraggingIdx(null); setDragOverIdx(null); }}
-                    onTouchStart={(e) => { if (renamingIdx === i) return; handleTouchStart(i); }}
+                    onTouchStart={() => { if (renamingIdx === i) return; handleTouchStart(i); }}
                     onTouchMove={(e) => { if (renamingIdx === i) return; handleTouchMove(e); }}
                     onTouchEnd={handleTouchEnd}
-                    className={`group/card flex flex-col gap-2 transition-all duration-150 ${renamingIdx !== i ? 'touch-none select-none' : ''} ${
-                      draggingIdx === i ? 'opacity-40 scale-95' : ''
-                    } ${dragOverIdx === i && draggingIdx !== i ? 'ring-2 ring-brand-primary ring-offset-2 rounded-xl scale-[1.03]' : ''}`}
+                    className={`group/card flex flex-col ${renamingIdx !== i ? 'touch-none select-none' : ''} ${
+                      draggingIdx === i ? 'opacity-40' : ''
+                    } ${dragOverIdx === i && draggingIdx !== i ? 'ring-2 ring-blue-500 ring-offset-1 rounded-lg' : ''}`}
                   >
-                    {/* Thumbnail + hover actions */}
-                    <div className="relative aspect-video rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shadow-sm hover:shadow-md transition-shadow cursor-grab active:cursor-grabbing">
-                      <img src={entry.url} loading="lazy" decoding="async" className="w-full h-full object-cover pointer-events-none" alt={entry.name || `Image ${i + 1}`} />
-                      {/* Syncing badge — shown while Drive upload is in progress */}
+                    {/* Thumbnail */}
+                    <div className="relative rounded-lg overflow-hidden bg-slate-100 cursor-grab active:cursor-grabbing" style={{ aspectRatio: '4/3' }}>
+                      <img
+                        src={entry.url}
+                        loading="eager"
+                        className="w-full h-full object-cover"
+                        alt={entry.name || `Image ${i + 1}`}
+                      />
+
+                      {/* Syncing overlay */}
                       {entry._tempId && (
-                        <div className="absolute inset-0 flex items-end justify-center pb-2 pointer-events-none">
-                          <div className="flex items-center gap-1 bg-black/60 px-2 py-0.5 rounded-full">
-                            <div className="h-2 w-2 rounded-full border border-white border-t-transparent animate-spin" />
-                            <span className="text-[8px] font-black text-white uppercase tracking-widest">Syncing</span>
-                          </div>
+                        <div className="absolute inset-0 bg-black/25 flex items-center justify-center pointer-events-none">
+                          <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
                         </div>
                       )}
-                      {/* Drag handle indicator */}
-                      <div className="absolute top-1.5 right-1.5 h-5 w-5 bg-black/40 rounded-md items-center justify-center hidden sm:group-hover/card:flex">
-                        <GripVertical className="h-3 w-3 text-white" />
-                      </div>
 
-                      {/* Index badge */}
-                      <div className="absolute top-1.5 left-1.5 h-5 w-5 bg-black/50 rounded-md flex items-center justify-center text-[9px] font-black text-white select-none">
-                        {i + 1}
-                      </div>
-
-                      {/* Hover overlay */}
-                      <div className="absolute inset-0 bg-black/55 opacity-0 group-hover/card:opacity-100 transition-all flex items-center justify-center gap-2 backdrop-blur-[1px]">
-                        <button
-                          onClick={() => { setRenamingIdx(i); setRenameVal(entry.name || `Image ${i + 1}`); }}
-                          title="Rename"
-                          className="p-2 bg-white/90 rounded-lg text-slate-700 hover:bg-brand-primary hover:text-white transition-all shadow-lg"
-                        ><Pencil className="h-3.5 w-3.5" /></button>
-                        <button
-                          onClick={() => handleDownload(entry, i)}
-                          title="Download"
-                          className="p-2 bg-white/90 rounded-lg text-slate-700 hover:bg-brand-primary hover:text-white transition-all shadow-lg"
-                        ><Download className="h-3.5 w-3.5" /></button>
-                        <button
-                          onClick={() => handleRemove(i)}
-                          title="Remove"
-                          className="p-2 bg-white/90 rounded-lg text-red-500 hover:bg-red-500 hover:text-white transition-all shadow-lg"
-                        ><Trash2 className="h-3.5 w-3.5" /></button>
-                      </div>
+                      {/* Hover action icons — bottom-right, Airtable-style */}
+                      {!entry._tempId && (
+                        <div className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => { setRenamingIdx(i); setRenameVal(entry.name || `Image ${i + 1}`); }}
+                            title="Rename"
+                            className="p-1 bg-white/95 rounded text-slate-500 hover:text-slate-900 shadow-sm transition-colors"
+                          ><Pencil className="h-3 w-3" /></button>
+                          <button
+                            onClick={() => handleDownload(entry, i)}
+                            title="Download"
+                            className="p-1 bg-white/95 rounded text-slate-500 hover:text-slate-900 shadow-sm transition-colors"
+                          ><Download className="h-3 w-3" /></button>
+                          <button
+                            onClick={() => handleRemove(i)}
+                            title="Remove"
+                            className="p-1 bg-white/95 rounded text-slate-500 hover:text-red-600 shadow-sm transition-colors"
+                          ><Trash2 className="h-3 w-3" /></button>
+                        </div>
+                      )}
                     </div>
 
-                    {/* Inline rename */}
+                    {/* Filename / inline rename */}
                     {renamingIdx === i ? (
-                      <div className="flex items-center gap-1 w-full mt-1">
+                      <div className="flex items-center gap-1 mt-1.5">
                         <input
                           autoFocus
                           value={renameVal}
                           onChange={e => setRenameVal(e.target.value)}
                           onKeyDown={e => { if (e.key === 'Enter') commitRename(i); if (e.key === 'Escape') setRenamingIdx(null); }}
-                          className="flex-1 min-w-0 text-[11px] font-bold text-slate-800 bg-white border border-brand-primary rounded-lg px-2 py-1.5 outline-none focus:ring-2 focus:ring-brand-primary/20"
+                          className="flex-1 min-w-0 text-[11px] text-slate-700 bg-white border border-blue-500 rounded px-2 py-1 outline-none shadow-sm"
                         />
-                        <button onClick={() => commitRename(i)} className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition-colors shrink-0">
+                        <button onClick={() => commitRename(i)} className="shrink-0 p-1 text-green-600 hover:text-green-800 transition-colors">
                           <Check className="h-3.5 w-3.5" strokeWidth={3} />
                         </button>
-                        <button onClick={() => setRenamingIdx(null)} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition-colors shrink-0">
-                          <X className="h-3.5 w-3.5" strokeWidth={3} />
+                        <button onClick={() => setRenamingIdx(null)} className="shrink-0 p-1 text-slate-400 hover:text-slate-600 transition-colors">
+                          <X className="h-3.5 w-3.5" strokeWidth={2} />
                         </button>
                       </div>
                     ) : (
                       <button
                         onClick={() => { setRenamingIdx(i); setRenameVal(entry.name || `Image ${i + 1}`); }}
-                        className="text-left w-full text-[10px] font-bold text-slate-500 uppercase tracking-wider hover:text-brand-primary transition-colors truncate flex items-center gap-1 group/name mt-1"
-                        title="Click to rename"
+                        className="mt-1.5 w-full text-left text-[11px] text-slate-500 hover:text-slate-800 truncate px-0.5 transition-colors leading-snug"
+                        title={entry.name || `Image ${i + 1}`}
                       >
-                        <Pencil className="h-2.5 w-2.5 shrink-0 opacity-0 group-hover/name:opacity-100 transition-opacity" />
-                        <span className="truncate">{entry.name || `Image ${i + 1}`}</span>
+                        {entry.name || `Image ${i + 1}`}
                       </button>
                     )}
-
-                    {/* Reorder buttons */}
-                    <div className="flex gap-1">
-                      <button
-                        onClick={() => moveUp(i)} disabled={i === 0}
-                        title="Move left"
-                        className="flex-1 h-6 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-25 disabled:cursor-not-allowed transition-all flex items-center justify-center"
-                      ><ChevronLeft className="h-3.5 w-3.5" /></button>
-                      <button
-                        onClick={() => moveDown(i)} disabled={i === images.length - 1}
-                        title="Move right"
-                        className="flex-1 h-6 rounded-lg border border-slate-200 text-slate-400 hover:bg-slate-50 hover:text-slate-700 disabled:opacity-25 disabled:cursor-not-allowed transition-all flex items-center justify-center"
-                      ><ChevronRight className="h-3.5 w-3.5" /></button>
-                    </div>
-
                   </div>
                 ))}
+
+                {/* Processing placeholder card */}
                 {isUploading && (
-                  <div className="aspect-video rounded-xl overflow-hidden border-2 border-dashed border-brand-primary/40 bg-brand-primary/5 flex flex-col items-center justify-center">
-                    <div className="h-5 w-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin mb-1.5" />
-                    <span className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Processing</span>
+                  <div className="rounded-lg bg-slate-100 flex items-center justify-center" style={{ aspectRatio: '4/3' }}>
+                    <div className="h-4 w-4 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
                   </div>
                 )}
               </div>
@@ -3287,17 +3299,16 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
           </div>
         </div>
 
-        {/* FOOTER */}
-        <div
-          className="px-5 sm:px-7 py-3 bg-slate-50 border-t border-slate-100 flex items-center justify-between gap-4 shrink-0"
-          style={{ paddingBottom: 'max(12px, env(safe-area-inset-bottom))' }}
-        >
-          <span className="text-[10px] text-slate-400 font-medium hidden sm:block">Hover image for actions · Click name to rename · ‹ › to reorder</span>
-          <span className="text-[10px] text-slate-400 font-medium sm:hidden">Tap name to rename</span>
-          <button onClick={isSyncing ? undefined : onClose} disabled={isSyncing} className={`shrink-0 text-[11px] font-black uppercase tracking-widest transition-colors ${isSyncing ? 'text-brand-primary opacity-70 cursor-wait' : 'text-slate-600 hover:text-slate-900'}`}>
-            {isSyncing ? 'Syncing...' : 'Done'}
-          </button>
-        </div>
+        {/* Footer — syncing indicator + safe area */}
+        {isSyncing && (
+          <div className="px-3.5 py-2 border-t border-slate-100 flex items-center gap-2 shrink-0" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
+            <div className="h-3 w-3 rounded-full border-2 border-brand-primary border-t-transparent animate-spin shrink-0" />
+            <span className="text-[11px] text-slate-400">Saving to cloud…</span>
+          </div>
+        )}
+        {!isSyncing && (
+          <div className="shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} />
+        )}
       </div>
     </div>
   );
@@ -3993,7 +4004,7 @@ const renderRow = (item: any) => {
           );
         }
 
-        // Images/Attachments — thumbnail gallery with expand button
+        // Images/Attachments — thumbnail gallery cell
         if (col === 'Images' || col === 'Attachments' || col === 'Attachment') {
           const imageString = item[col] || "";
           const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
@@ -4001,24 +4012,39 @@ const renderRow = (item: any) => {
           let m;
           const re = new RegExp(urlRegex.source, 'g');
           while ((m = re.exec(imageString)) !== null) matches.push(m[1]);
+          const openMgr = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setImageManager({ item: { ...item }, column: col, isOpen: true }); };
           return (
-            <td key={col} className={`${cellCls} relative group/cell ${isColFrozen ? stickyBg : ''}`} style={{ ...style, minWidth: '200px' }}>
-              <div className="flex items-center gap-2 overflow-hidden w-full relative h-full">
-                {matches.slice(0, 3).map((url, idx) => (
-                  <img key={idx} src={url} loading="lazy" decoding="async" className="h-8 w-12 object-cover rounded border border-slate-300 shrink-0" alt="" />
-                ))}
-                {matches.length > 3 && <span className="text-[10px] font-black text-slate-400 shrink-0">+{matches.length - 3}</span>}
-                
-                <button
-                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setImageManager({ item: { ...item }, column: col, isOpen: true }); }}
-                  className={`h-8 shrink-0 rounded border-2 border-dashed border-slate-300 flex items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary transition-colors bg-slate-50 hover:bg-white ${
-                    matches.length > 0 ? 'w-8 opacity-0 group-hover/cell:opacity-100 absolute right-2 z-20 shadow-md' : 'px-3'
-                  }`}
-                  title="Add Media"
-                >
-                  <Plus className="h-4 w-4" />
-                  {matches.length === 0 && <span className="text-[9px] font-black uppercase tracking-widest">Add Media</span>}
-                </button>
+            <td key={col} className={`${cellCls} relative group/cell ${isColFrozen ? stickyBg : ''}`} style={{ ...style, minWidth: '180px' }}>
+              <div className="flex items-center gap-1.5 overflow-hidden w-full relative h-full">
+                {matches.length > 0 ? (
+                  <>
+                    {matches.slice(0, 4).map((url, idx) => (
+                      <img key={idx} src={url} loading="lazy" className="h-8 w-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer" onClick={openMgr} alt="" />
+                    ))}
+                    {matches.length > 4 && (
+                      <span className="text-[10px] font-semibold text-slate-400 shrink-0 cursor-pointer" onClick={openMgr}>
+                        +{matches.length - 4}
+                      </span>
+                    )}
+                    {/* Manage button — appears on hover */}
+                    <button
+                      onClick={openMgr}
+                      className="h-7 w-7 shrink-0 rounded-md border border-slate-200 flex items-center justify-center text-slate-400 hover:text-brand-primary hover:border-brand-primary hover:bg-white transition-colors bg-slate-50 opacity-0 group-hover/cell:opacity-100 absolute right-1 z-20 shadow-sm"
+                      title="Manage images"
+                    >
+                      <Paperclip className="h-3 w-3" />
+                    </button>
+                  </>
+                ) : (
+                  <button
+                    onClick={openMgr}
+                    className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 hover:text-brand-primary transition-colors px-1"
+                    title="Attach file"
+                  >
+                    <Paperclip className="h-3.5 w-3.5" />
+                    <span>Attach file</span>
+                  </button>
+                )}
               </div>
             </td>
           );
@@ -4187,6 +4213,7 @@ const fetchAllData = async () => {
 };
 // Keep stable close ref in sync — calls setImageManager(null) + fetchAllData
 _imgCloseRef.current = () => { setImageManager(null); fetchAllData(); };
+_imgToastRef.current = showToast;
 
 // Fetch only the active table's collection (plus sessions for linked-record tables) concurrently
 const fetchActiveTable = async (table = activeTableRef.current) => {
@@ -9068,7 +9095,7 @@ if (!health?.mongodb) {
     manager={imageManager}
     onClose={stableOnImgClose}
     onUpdate={stableOnImgUpdate}
-    activeTable={activeTable}
+    onToast={stableOnImgToast}
   />
 
       {expandedRecord && (
