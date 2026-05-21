@@ -448,6 +448,24 @@ app.patch('/api/notifications/:id/read', async (req, res) => {
   } catch (e) { res.status(500).json({ error: 'Update failed' }); }
 });
 
+app.patch('/api/notifications/:id/clear', async (req, res) => {
+  try {
+    const db = await getDb();
+    await db.collection('notifications').updateOne({ _id: new ObjectId(req.params.id) }, { $set: { cleared: true, read: true } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Update failed' }); }
+});
+
+app.patch('/api/notifications/clear-all', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    await db.collection('notifications').updateMany({ recipientEmail: email }, { $set: { cleared: true, read: true } });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Update failed' }); }
+});
+
 app.delete('/api/notifications/clear-all', async (req, res) => {
   try {
     const db = await getDb();

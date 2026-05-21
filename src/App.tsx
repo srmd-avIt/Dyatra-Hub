@@ -1825,14 +1825,24 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
     await window.fetch('/api/notifications/read-all', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
   };
 
+  const clearNotif = async (id: string) => {
+    setItems(prev => prev.map(n => String(n._id) === id ? { ...n, cleared: true, read: true } : n));
+    await window.fetch(`/api/notifications/${id}/clear`, { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+  };
+
   const deleteNotif = async (id: string) => {
     setItems(prev => prev.filter(n => String(n._id) !== id));
     await window.fetch(`/api/notifications/${id}`, { method: 'DELETE' });
   };
 
   const clearAll = async () => {
-    setItems([]);
-    await window.fetch('/api/notifications/clear-all', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    if (showHistory) {
+      setItems(prev => prev.filter(n => !n.cleared));
+      await window.fetch('/api/notifications/clear-all', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    } else {
+      setItems(prev => prev.map(n => ({ ...n, cleared: true, read: true })));
+      await window.fetch('/api/notifications/clear-all', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+    }
   };
 
   const openReply = (n: any) => {
@@ -1993,9 +2003,9 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
                     {/* Right side: done check + chevron */}
                     <div className="flex flex-col items-center gap-1 shrink-0 mt-0.5">
                       <button
-                        onClick={(e) => { e.stopPropagation(); deleteNotif(nid); }}
+                        onClick={(e) => { e.stopPropagation(); showHistory ? deleteNotif(nid) : clearNotif(nid); }}
                         className="h-6 w-6 rounded-full border-2 border-slate-200 group-hover:border-green-400 flex items-center justify-center text-transparent group-hover:text-green-400 hover:bg-green-50 hover:border-green-500 hover:text-green-500 transition-all"
-                        title="Mark done"
+                        title={showHistory ? 'Delete permanently' : 'Mark done'}
                       >
                         <Check className="h-3 w-3" />
                       </button>
