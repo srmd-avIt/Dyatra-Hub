@@ -100,22 +100,37 @@ const TAG_COLORS = [
   "bg-stone-500/20 text-stone-800 border-stone-500/30 dark:text-stone-200",
 ];
 // Helper to consistently assign a color to a string
+const STATUS_STYLE: Record<string, string> = {
+  'Ready':       'bg-green-100 text-green-700 border-green-200',
+  'Done':        'bg-green-100 text-green-700 border-green-200',
+  'Complete':    'bg-green-100 text-green-700 border-green-200',
+  'Completed':   'bg-green-100 text-green-700 border-green-200',
+  'Pending':     'bg-yellow-100 text-yellow-700 border-yellow-200',
+  'In Progress': 'bg-yellow-100 text-yellow-700 border-yellow-200',
+  'In Review':   'bg-yellow-100 text-yellow-700 border-yellow-200',
+  'To Do':       'bg-slate-100 text-slate-600 border-slate-200',
+  'Not Started': 'bg-slate-100 text-slate-600 border-slate-200',
+  'Blocked':     'bg-red-100 text-red-700 border-red-200',
+  'Cancelled':   'bg-red-100 text-red-700 border-red-200',
+};
+
 const getTagStyle = (val: any) => {
   if (val === null || val === undefined || val === '') {
     return "px-2.5 py-0.5 rounded-md border font-bold text-[12px] bg-slate-900 text-slate-500 border-slate-800 shadow-sm";
   }
 
   const str = String(val);
+  const base = 'px-2.5 py-1 rounded-md border font-bold text-[12px] tracking-tight whitespace-nowrap inline-block shadow-sm';
+
+  if (STATUS_STYLE[str]) return `${base} ${STATUS_STYLE[str]}`;
+
   let hash = 0;
-  // Enhanced hashing to spread indices more effectively
   for (let i = 0; i < str.length; i++) {
     hash = str.charCodeAt(i) + ((hash << 5) - hash);
-    hash = hash & hash; // Convert to 32bit integer
+    hash = hash & hash;
   }
-
   const index = Math.abs(hash) % TAG_COLORS.length;
-
-  return ['px-2.5', 'py-1', 'rounded-md', 'border', 'font-bold', 'text-[12px]', 'tracking-tight', 'whitespace-nowrap', 'inline-block', 'shadow-sm', TAG_COLORS[index]].join(' ');
+  return [base, TAG_COLORS[index]].join(' ');
 };
 
 const UNIFORM_DROPDOWN_STYLE = "bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-semibold text-[13px] px-3 py-1.5 rounded-md shadow-sm tracking-tighter whitespace-nowrap inline-block";
@@ -2011,6 +2026,7 @@ const FIELD_TYPES = [
   { id: 'number',      label: 'Number',      icon: Hash,        desc: 'Monospace numeric value' },
   { id: 'id',          label: 'ID / Code',   icon: Hash,        desc: 'Monospace ID in brand color' },
   { id: 'date',        label: 'Date',        icon: Calendar,    desc: 'Date, shown monospace' },
+  { id: 'time',        label: 'Time',        icon: Clock,       desc: 'Time value (HH:MM)' },
   { id: 'year',        label: 'Year',        icon: Calendar,    desc: 'Year pill badge' },
   { id: 'checkbox',    label: 'Checkbox',    icon: CheckSquare, desc: 'True / false toggle' },
   { id: 'yes_no',      label: 'Yes / No',    icon: CheckSquare, desc: 'Yes or No colored badge' },
@@ -3298,6 +3314,9 @@ const renderCell = (col: string, item: any): React.ReactNode => {
     
     case 'date':
       return <span className="font-mono text-slate-700 text-[13px]">{val || empty}</span>;
+
+    case 'time':
+      return <span className="font-mono text-slate-700 text-[13px]">{val || empty}</span>;
     
     case 'number':
       return <span className="font-mono text-slate-700 text-[13px] block text-center">{val || empty}</span>;
@@ -3332,17 +3351,32 @@ case 'text':
     <Check className="h-4 w-4 text-green-600 mx-auto" strokeWidth={4} />
   ) : null;
 
-    case 'status':
-      return val
-        ? <Badge className={`${val === 'Ready' ? 'bg-green-100 text-green-700 border-green-200' : val === 'Pending' ? 'bg-yellow-100 text-yellow-700 border-yellow-200' : 'bg-red-100 text-red-700 border-red-200'} text-[11px] px-2`}>{val}</Badge>
-        : empty;
+    case 'status': {
+      const statusCls = (() => {
+        switch (val) {
+          case 'Ready':
+          case 'Done':
+          case 'Complete':
+          case 'Completed':    return 'bg-green-100 text-green-700 border-green-200';
+          case 'Pending':
+          case 'In Progress':
+          case 'In Review':    return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+          case 'To Do':
+          case 'Not Started':  return 'bg-slate-100 text-slate-600 border-slate-200';
+          case 'Blocked':
+          case 'Cancelled':    return 'bg-red-100 text-red-700 border-red-200';
+          default:             return 'bg-blue-50 text-blue-600 border-blue-100';
+        }
+      })();
+      return val ? <Badge className={`${statusCls} text-[11px] px-2`}>{val}</Badge> : empty;
+    }
         
     case 'email':
       return val ? <span className="text-brand-primary underline text-[13px]">{val}</span> : empty;
     
     case 'url':
       return val
-        ? <a href={val} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px]">Link</a>
+        ? <a href={val} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px]">{val}</a>
         : empty;
     
    case 'long_text':
@@ -4665,7 +4699,7 @@ const renderEditInputs = (_item: any) => {
 
   const inputCls = () =>
   `w-full h-full bg-transparent border-none focus:border-none focus:ring-0
-   px-2 py-0 text-[12px] font-bold text-slate-900 outline-none shadow-none`;
+   px-2 py-0 text-[13px] font-normal text-slate-700 outline-none shadow-none`;
   const saveKeys    = (e: React.KeyboardEvent) => { 
     if (e.key === 'Enter') handleUpdateRecord(); 
     if (e.key === 'Escape') { setEditingId(null); setEditDraft(null); setEditingCell(null); } 
@@ -4729,7 +4763,7 @@ const updateDraftOnly = (col: string, val: string) => {
         const isActuallyActive = editingCell === col && !isAutoFilled;
         const colType = getColumnType(col);
         const isMulti = colType === 'badge_multi';
-        const isSingleBadge = colType === 'badge' || colType === 'status' || colType === 'select';
+        const isSingleBadge = colType === 'status' || colType === 'select';
         const isLinkCol = colType === 'link_to_record';
         const isFreezeEdge = i === frozen;
 
@@ -4878,7 +4912,7 @@ const updateDraftOnly = (col: string, val: string) => {
               }
 
               // --- RENDER EDITORS (Only for isActuallyActive) ---
-              
+
               // Handle Long Text (Moved inside the proper gate)
               if (colType === 'long_text') {
                 return (
@@ -4971,6 +5005,10 @@ const updateDraftOnly = (col: string, val: string) => {
 
               if (colType === 'date') {
                  return <input type="date" className={inputCls()} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => handleUpdateRecord()} onKeyDown={saveKeys} autoFocus />;
+              }
+
+              if (colType === 'time') {
+                return <input type="time" step="1" className={inputCls()} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => handleUpdateRecord()} onKeyDown={saveKeys} autoFocus />;
               }
 
               return (
