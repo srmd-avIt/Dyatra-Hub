@@ -155,6 +155,9 @@ app.get(['/auth/google/callback', '/api/auth/google/callback'], async (req, res)
       };
       const result = await db.collection('users').insertOne(newUser);
       user = { ...newUser, _id: result.insertedId };
+    } else {
+      await db.collection('users').updateOne({ _id: user._id }, { $set: { name: googleUser.name, avatar_url: googleUser.picture } });
+      user = { ...user, name: googleUser.name, avatar_url: googleUser.picture };
     }
 
     // Return HTML to close popup or redirect
@@ -438,6 +441,24 @@ app.patch('/api/notifications/:id/read', async (req, res) => {
     await db.collection('notifications').updateOne({ _id: new ObjectId(req.params.id) }, { $set: { read: true } });
     res.json({ success: true });
   } catch (e) { res.status(500).json({ error: 'Update failed' }); }
+});
+
+app.delete('/api/notifications/clear-all', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { email } = req.body;
+    if (!email) return res.status(400).json({ error: 'Missing email' });
+    await db.collection('notifications').deleteMany({ recipientEmail: email });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Delete failed' }); }
+});
+
+app.delete('/api/notifications/:id', async (req, res) => {
+  try {
+    const db = await getDb();
+    await db.collection('notifications').deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'Delete failed' }); }
 });
 
 app.delete('/api/comments/:id', async (req, res) => {

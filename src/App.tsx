@@ -61,6 +61,8 @@ import {
   ArrowDown,
   ArrowUp,
   ArrowUpRight,
+  Send,
+  MessageCircle,
   Check,
   Maximize2,
   Eye,
@@ -897,7 +899,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   }, [sessions]);
 
   // Build wizard steps (mobile): group fields into logical sections
-  const wizardSteps: { label: string; fields: string[] }[] = (() => {
+  const wizardSteps: { label: string; fields: string[] }[] = ((): { label: string; fields: string[] }[] => {
     const makeGroups = (groups: { label: string; fields: string[] }[]) => {
       const filtered = groups
         .map(g => ({ ...g, fields: g.fields.filter(f => columns.includes(f)) }))
@@ -959,7 +961,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     for (let i = 0; i < columns.length; i += 3)
       chunks.push({ label: `Step ${Math.floor(i / 3) + 1}`, fields: columns.slice(i, i + 3) });
     return chunks;
-  })();
+  })().concat([{ label: 'Messages', fields: [] }]);
 
   const totalSteps = wizardSteps.length;
   const currentStepData = wizardSteps[Math.min(step, totalSteps - 1)] || { label: '', fields: [] };
@@ -1050,6 +1052,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   };
 
   const deleteComment = async (commentId: string) => {
+    if (!window.confirm('Delete this comment?')) return;
     await window.fetch(`/api/comments/${commentId}`, { method: 'DELETE' });
     setComments(prev => prev.filter(c => String(c._id) !== commentId));
   };
@@ -1564,8 +1567,12 @@ if (hasDropdown) {
             ))}
           </div>
           <div className="flex items-center justify-between">
-            <span className="text-[10px] font-black text-brand-primary uppercase tracking-[0.15em]">
+            <span className="text-[10px] font-black text-brand-primary uppercase tracking-[0.15em] flex items-center gap-1">
+              {currentStepData.label === 'Messages' && <MessageCircle className="h-3 w-3" />}
               {currentStepData.label}
+              {currentStepData.label === 'Messages' && comments.length > 0 && (
+                <span className="bg-brand-primary text-white text-[8px] font-black px-1.5 py-0.5 rounded-full ml-1">{comments.length}</span>
+              )}
             </span>
             <span className="text-[10px] font-bold text-slate-400">
               {step + 1} / {totalSteps}
@@ -1573,16 +1580,99 @@ if (hasDropdown) {
           </div>
         </div>
 
-        {/* Fields for this step */}
-        <div className="flex-1 overflow-y-auto px-5 pb-2 space-y-5 min-h-0">
-          {currentStepData.fields.map(col => (
-            <div key={col}>
-             <label className="text-[11px] font-black text-slate-600 uppercase tracking-[0.15em] block mb-2">
-  {colLabel(col)}
-</label>
-              {renderField(col)}
+        {/* Fields / Messages for this step */}
+        <div className="flex-1 overflow-y-auto px-5 pb-2 min-h-0">
+          {currentStepData.label === 'Messages' ? (
+            <div className="flex flex-col h-full gap-3">
+              {/* Comment list */}
+              <div className="flex-1 space-y-3 overflow-y-auto min-h-0">
+                {comments.length === 0 && (
+                  <div className="text-[11px] text-slate-400 italic pt-2">No messages yet. Start the conversation!</div>
+                )}
+                {comments.map((c: any) => {
+                  const cid = String(c._id);
+                  const isOwn = (currentUser?.email && c.authorId === currentUser.email) || (currentUser?.name && c.authorName === currentUser.name);
+                  return (
+                    <div key={cid} className="group flex gap-2 pt-1">
+                      <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[10px] font-black shrink-0 mt-0.5">
+                        {(c.authorName || '?')[0].toUpperCase()}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-baseline gap-2">
+                          <span className="text-[11px] font-black text-slate-800">{c.authorName}</span>
+                          <span className="text-[9px] text-slate-400">{formatCommentTime(c.createdAt)}</span>
+                          {isOwn && (
+                            <button onClick={() => deleteComment(cid)} className="ml-auto opacity-0 group-hover:opacity-100 text-[9px] text-red-400 hover:text-red-600 transition-all shrink-0">
+                              delete
+                            </button>
+                          )}
+                        </div>
+                        <div className="text-[12px] text-slate-700 leading-snug mt-0.5 break-words">
+                          {renderCommentText(c.text)}
+                        </div>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+              {/* Compose box */}
+              <div className="relative shrink-0 pb-1">
+                {mentionOpen && (
+                  <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-[9999]">
+                    {filteredMentionUsers.length === 0 ? (
+                      <div className="px-3 py-2.5 text-[11px] text-slate-400 italic">
+                        {allUsers.length === 0 ? 'No team members found' : `No match for "@${mentionQuery}"`}
+                      </div>
+                    ) : filteredMentionUsers.map((u: any) => (
+                      <button key={u._id || u.email} onMouseDown={e => { e.preventDefault(); selectMention(u); }}
+                        className="w-full flex items-center gap-2 px-3 py-2 hover:bg-brand-primary/5 transition-colors text-left"
+                      >
+                        <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-[9px] font-black shrink-0">
+                          {(u.name || u.email || '?')[0].toUpperCase()}
+                        </div>
+                        <div className="min-w-0">
+                          <div className="text-[11px] font-bold text-slate-800 truncate">{u.name || u.email}</div>
+                          {u.email && <div className="text-[9px] text-slate-400 truncate">{u.email}</div>}
+                        </div>
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="border border-slate-200 rounded-xl bg-white shadow-sm overflow-hidden focus-within:border-brand-primary/40 focus-within:ring-1 focus-within:ring-brand-primary/20 transition-all">
+                  <textarea
+                    ref={commentInputRef}
+                    value={commentText}
+                    onChange={handleCommentInput}
+                    onKeyDown={e => {
+                      if (e.key === 'Escape') { e.preventDefault(); setMentionOpen(false); }
+                      if (e.key === 'Enter' && !e.shiftKey && !mentionOpen) { e.preventDefault(); postComment(); }
+                    }}
+                    rows={2}
+                    placeholder="Comment… type @ to tag someone"
+                    className="w-full text-[12px] bg-transparent outline-none resize-none text-slate-700 placeholder:text-slate-400 px-3 pt-2.5 pb-1"
+                  />
+                  <div className="flex justify-end px-3 pb-2">
+                    <button onClick={postComment} disabled={!commentText.trim() || commentPosting}
+                      className="text-[10px] font-black text-white uppercase tracking-widest bg-brand-primary px-3 py-1.5 rounded-lg hover:bg-brand-primary/90 disabled:opacity-30 transition-colors flex items-center gap-1"
+                    >
+                      {commentPosting ? '…' : <><Send className="h-3 w-3" />Post</>}
+                    </button>
+                  </div>
+                </div>
+              </div>
             </div>
-          ))}
+          ) : (
+            <div className="space-y-5 py-2">
+              {currentStepData.fields.map(col => (
+                <div key={col}>
+                  <label className="text-[11px] font-black text-slate-600 uppercase tracking-[0.15em] block mb-2">
+                    {colLabel(col)}
+                  </label>
+                  {renderField(col)}
+                </div>
+              ))}
+            </div>
+          )}
         </div>
 
         {/* Footer nav */}
@@ -1600,14 +1690,14 @@ if (hasDropdown) {
                 onClick={() => setStep(s => s + 1)}
                 className="flex-[2] h-12 bg-brand-primary text-white rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-brand-primary/90 transition-colors shadow-lg shadow-brand-primary/25"
               >
-                Next
+                {step === totalSteps - 2 ? 'Messages' : 'Next'}
               </button>
             ) : (
               <button
                 onClick={() => { onSave(draftRef.current); onClose(); }}
                 className="flex-[2] h-12 bg-green-600 text-white rounded-2xl text-[12px] font-black uppercase tracking-widest hover:bg-green-700 transition-colors shadow-lg shadow-green-600/25"
               >
-                Save &amp; Close
+                Done
               </button>
             )}
           </div>
@@ -1658,14 +1748,20 @@ if (hasDropdown) {
 });
 
 // ── InboxPanel ────────────────────────────────────────────────────────────────
-const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord, onUnreadChange }: {
+const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord, onUnreadChange, isMobileView, currentUser }: {
   email: string;
   onClose: () => void;
   onOpenRecord: (tableName: string, collection: string, recordId: string) => void;
   onUnreadChange?: (count: number) => void;
+  isMobileView?: boolean;
+  currentUser?: any;
 }) {
   const [items, setItems] = React.useState<any[]>([]);
   const [loading, setLoading] = React.useState(true);
+  const [replyingTo, setReplyingTo] = React.useState<string | null>(null);
+  const [replyText, setReplyText] = React.useState('');
+  const [replyPosting, setReplyPosting] = React.useState(false);
+  const replyInputRef = React.useRef<HTMLTextAreaElement>(null);
 
   React.useEffect(() => {
     if (!email) return;
@@ -1686,6 +1782,53 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
     await window.fetch('/api/notifications/read-all', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
   };
 
+  const deleteNotif = async (id: string) => {
+    setItems(prev => prev.filter(n => String(n._id) !== id));
+    await window.fetch(`/api/notifications/${id}`, { method: 'DELETE' });
+  };
+
+  const clearAll = async () => {
+    setItems([]);
+    await window.fetch('/api/notifications/clear-all', { method: 'DELETE', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email }) });
+  };
+
+  const openReply = (n: any) => {
+    const nid = String(n._id);
+    if (replyingTo === nid) { setReplyingTo(null); return; }
+    markRead(nid);
+    const firstName = (n.authorName || '').split(' ')[0];
+    setReplyText(firstName ? `@${firstName} ` : '');
+    setReplyingTo(nid);
+    setTimeout(() => replyInputRef.current?.focus(), 80);
+  };
+
+  const postReply = async (n: any) => {
+    const text = replyText.trim();
+    if (!text || replyPosting) return;
+    setReplyPosting(true);
+    try {
+      const mentions = [...text.matchAll(/@(\w+)/g)].map(m => m[1]);
+      await window.fetch('/api/comments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          collection: n.collection,
+          recordId: n.recordId,
+          text,
+          authorId: currentUser?.email || '',
+          authorName: currentUser?.name || 'Anonymous',
+          mentions,
+          recordTitle: n.recordTitle,
+          tableName: n.tableName,
+        }),
+      });
+      setReplyText('');
+      setReplyingTo(null);
+    } finally {
+      setReplyPosting(false);
+    }
+  };
+
   const fmt = (raw: any) => {
     const d = new Date(raw);
     if (isNaN(d.getTime())) return '';
@@ -1704,13 +1847,22 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
   return (
     <>
       {/* Backdrop */}
-      <div
+      <motion.div
+        initial={{ opacity: 0 }}
+        animate={{ opacity: 1 }}
+        exit={{ opacity: 0 }}
+        transition={{ duration: 0.2 }}
         className="fixed inset-0 z-[650]"
         style={{ backgroundColor: 'rgba(0,0,0,0.4)', backdropFilter: 'blur(2px)' }}
         onClick={onClose}
       />
       {/* Panel — bottom sheet on mobile, right side-panel on desktop */}
-      <div className="fixed z-[660] bg-white shadow-2xl flex flex-col
+      <motion.div
+        initial={isMobileView ? { y: '100%' } : { x: '100%' }}
+        animate={isMobileView ? { y: 0 } : { x: 0 }}
+        exit={isMobileView ? { y: '100%' } : { x: '100%' }}
+        transition={{ type: 'spring', damping: 30, stiffness: 280 }}
+        className="fixed z-[660] bg-white shadow-2xl flex flex-col
         inset-x-0 bottom-0 rounded-t-3xl max-h-[92vh]
         sm:inset-y-0 sm:right-0 sm:left-auto sm:bottom-auto sm:rounded-none sm:max-h-none sm:w-[400px] sm:border-l sm:border-slate-200"
         style={{ paddingBottom: 'max(0px, env(safe-area-inset-bottom))' }}
@@ -1726,10 +1878,15 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
             <span className="text-[15px] font-black text-slate-900">Inbox</span>
             {unread > 0 && <span className="h-5 min-w-[20px] px-1.5 bg-brand-primary text-white text-[10px] font-black rounded-full flex items-center justify-center">{unread}</span>}
           </div>
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1">
             {unread > 0 && (
               <button onClick={markAllRead} className="text-[10px] font-black text-slate-500 hover:text-brand-primary uppercase tracking-widest transition-colors px-2 py-1 rounded-lg hover:bg-brand-primary/5">
                 Mark all read
+              </button>
+            )}
+            {items.length > 0 && (
+              <button onClick={clearAll} className="text-[10px] font-black text-slate-500 hover:text-red-500 uppercase tracking-widest transition-colors px-2 py-1 rounded-lg hover:bg-red-50">
+                Clear all
               </button>
             )}
             <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-slate-100 transition-colors">
@@ -1754,39 +1911,94 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
           )}
           {!loading && items.map((n: any) => {
             const nid = String(n._id);
+            const isExpanded = replyingTo === nid;
             return (
-              <div
-                key={nid}
-                onClick={() => { markRead(nid); onOpenRecord(n.tableName, n.collection, n.recordId); onClose(); }}
-                className={`px-5 py-4 border-b border-slate-100 cursor-pointer hover:bg-slate-50 transition-colors ${!n.read ? 'bg-brand-primary/[0.03]' : ''}`}
-              >
-                <div className="flex gap-3">
-                  {/* Avatar */}
-                  <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[11px] font-black shrink-0 mt-0.5">
-                    {(n.authorName || '?')[0].toUpperCase()}
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    {/* Meta line */}
-                    <div className="flex items-center gap-1.5 flex-wrap">
-                      <span className="text-[12px] font-black text-slate-800">{n.authorName}</span>
-                      <span className="text-[11px] text-slate-400">mentioned you in</span>
-                      <span className="text-[11px] font-bold text-brand-primary">{n.tableName}</span>
+              <div key={nid} className={`border-b border-slate-100 transition-colors ${!n.read ? 'bg-brand-primary/[0.03]' : ''} ${isExpanded ? 'bg-slate-50' : ''}`}>
+                {/* Notification row */}
+                <div
+                  onClick={() => openReply(n)}
+                  className="group px-5 py-4 cursor-pointer hover:bg-slate-50 transition-colors"
+                >
+                  <div className="flex gap-3">
+                    {/* Avatar */}
+                    <div className="h-8 w-8 rounded-xl bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[11px] font-black shrink-0 mt-0.5">
+                      {(n.authorName || '?')[0].toUpperCase()}
                     </div>
-                    {/* Record title */}
-                    <div className="text-[13px] font-semibold text-slate-800 mt-0.5 truncate">{n.recordTitle}</div>
-                    {/* Comment preview */}
-                    <div className="text-[12px] text-slate-500 mt-1 leading-snug line-clamp-2">{n.text}</div>
-                    {/* Time */}
-                    <div className="text-[10px] text-slate-400 mt-1.5">{fmt(n.createdAt)}</div>
+                    <div className="flex-1 min-w-0">
+                      {/* Meta line */}
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <span className="text-[12px] font-black text-slate-800">{n.authorName}</span>
+                        <span className="text-[11px] text-slate-400">mentioned you in</span>
+                        <span className="text-[11px] font-bold text-brand-primary">{n.tableName}</span>
+                      </div>
+                      {/* Record title */}
+                      <div className="text-[13px] font-semibold text-slate-800 mt-0.5 truncate">{n.recordTitle}</div>
+                      {/* Comment preview */}
+                      <div className="text-[12px] text-slate-500 mt-1 leading-snug line-clamp-2">{n.text}</div>
+                      {/* Time + open link */}
+                      <div className="flex items-center gap-3 mt-1.5">
+                        <span className="text-[10px] text-slate-400">{fmt(n.createdAt)}</span>
+                        <button
+                          onClick={(e) => { e.stopPropagation(); markRead(nid); onOpenRecord(n.tableName, n.collection, n.recordId); onClose(); }}
+                          className="text-[10px] font-bold text-brand-primary hover:underline flex items-center gap-0.5"
+                        >
+                          Open record <ArrowUpRight className="h-2.5 w-2.5" />
+                        </button>
+                      </div>
+                    </div>
+                    {/* Right side: done check + chevron */}
+                    <div className="flex flex-col items-center gap-1 shrink-0 mt-0.5">
+                      <button
+                        onClick={(e) => { e.stopPropagation(); deleteNotif(nid); }}
+                        className="h-6 w-6 rounded-full border-2 border-slate-200 group-hover:border-green-400 flex items-center justify-center text-transparent group-hover:text-green-400 hover:bg-green-50 hover:border-green-500 hover:text-green-500 transition-all"
+                        title="Mark done"
+                      >
+                        <Check className="h-3 w-3" />
+                      </button>
+                      <ChevronDown className={`h-3.5 w-3.5 text-slate-400 transition-transform mt-1 ${isExpanded ? 'rotate-180' : ''}`} />
+                    </div>
                   </div>
-                  {/* Unread dot */}
-                  {!n.read && <div className="h-2 w-2 bg-brand-primary rounded-full mt-1.5 shrink-0" />}
                 </div>
+
+                {/* Inline reply box */}
+                {isExpanded && (
+                  <div className="px-5 pb-4 pt-1" onClick={(e) => e.stopPropagation()}>
+                    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+                      <textarea
+                        ref={replyInputRef}
+                        value={replyText}
+                        onChange={(e) => setReplyText(e.target.value)}
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); postReply(n); }
+                          if (e.key === 'Escape') setReplyingTo(null);
+                        }}
+                        rows={2}
+                        placeholder="Write a reply… Enter to send"
+                        className="w-full text-[12px] bg-transparent outline-none resize-none text-slate-700 placeholder:text-slate-400 px-3 pt-2.5 pb-1"
+                      />
+                      <div className="flex items-center justify-end gap-2 px-3 pb-2.5">
+                        <button
+                          onClick={() => setReplyingTo(null)}
+                          className="text-[10px] font-bold text-slate-400 hover:text-slate-600 uppercase tracking-widest px-2 py-1 rounded-lg transition-colors"
+                        >
+                          Cancel
+                        </button>
+                        <button
+                          onClick={() => postReply(n)}
+                          disabled={!replyText.trim() || replyPosting}
+                          className="text-[10px] font-black text-white uppercase tracking-widest bg-brand-primary px-3 py-1.5 rounded-lg hover:bg-brand-primary/90 disabled:opacity-30 transition-colors flex items-center gap-1"
+                        >
+                          {replyPosting ? '…' : <><Send className="h-3 w-3" /> Reply</>}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })}
         </div>
-      </div>
+      </motion.div>
     </>
   );
 });
@@ -5485,22 +5697,6 @@ if (!health?.mongodb) {
     </div>
   )}
 
-  {/* Inbox button — always visible on both mobile and desktop */}
-  {user && (
-    <button
-      onClick={() => setInboxOpen(v => !v)}
-      className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all ${inboxOpen ? 'text-brand-primary bg-brand-primary/10' : 'text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10'}`}
-      title="Inbox"
-    >
-      <Inbox className="h-5 w-5" />
-      {inboxUnread > 0 && !inboxOpen && (
-        <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-0.5 bg-brand-primary text-white text-[9px] font-black rounded-full flex items-center justify-center leading-none">
-          {inboxUnread > 9 ? '9+' : inboxUnread}
-        </span>
-      )}
-    </button>
-  )}
-
   {/* 4. NEW RECORD BUTTON */}
   {activeTable !== 'Home' && <Button
     onClick={openAddModal}
@@ -5511,6 +5707,25 @@ if (!health?.mongodb) {
       Add Record
     </span>
   </Button>}
+
+  {/* Inbox button — after primary actions */}
+  {user && (
+    <>
+      <div className="w-px h-6 bg-slate-200 mx-0.5 shrink-0" />
+      <button
+        onClick={() => setInboxOpen(v => !v)}
+        className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all shrink-0 ${inboxOpen ? 'text-brand-primary bg-brand-primary/10' : 'text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10'}`}
+        title="Inbox"
+      >
+        <Inbox className="h-5 w-5" />
+        {inboxUnread > 0 && !inboxOpen && (
+          <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-0.5 bg-brand-primary text-white text-[9px] font-black rounded-full flex items-center justify-center leading-none">
+            {inboxUnread > 9 ? '9+' : inboxUnread}
+          </span>
+        )}
+      </button>
+    </>
+  )}
 
 </div>
 </header>
@@ -8709,14 +8924,18 @@ if (!health?.mongodb) {
         </div>
       )}
 
-      {inboxOpen && user?.email && (
-        <InboxPanel
-          email={user.email}
-          onClose={() => setInboxOpen(false)}
-          onOpenRecord={openNotificationRecord}
-          onUnreadChange={(count) => setInboxUnread(count)}
-        />
-      )}
+      <AnimatePresence>
+        {inboxOpen && user?.email && (
+          <InboxPanel
+            email={user.email}
+            onClose={() => setInboxOpen(false)}
+            onOpenRecord={openNotificationRecord}
+            onUnreadChange={(count) => setInboxUnread(count)}
+            isMobileView={isMobileView}
+            currentUser={user}
+          />
+        )}
+      </AnimatePresence>
 
       {linkedSession && (
         <div
