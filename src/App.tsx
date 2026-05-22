@@ -82,6 +82,11 @@ import {
   Volume2,
   Film,
   Paperclip,
+  Users,
+  UserPlus,
+  Shield,
+  UserCog,
+  UserCheck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 
@@ -135,6 +140,319 @@ const getTagStyle = (val: any) => {
   const index = Math.abs(hash) % TAG_COLORS.length;
   return [base, TAG_COLORS[index]].join(' ');
 };
+
+const ALL_TABLES = ['Events', 'Session', 'MusicLog', 'VideoLog', 'Tracks', 'DyatraChecklist', 'Guidance & Learning', 'LED', 'DataSharing', 'VideoSetup', 'AudioSetup'];
+
+// RBAC Permission Checker
+const hasPerm = (user: any, table: string, action: 'view' | 'add' | 'edit' | 'delete') => {
+  if (!user) return false;
+  if (user.role === 'admin' || user.role === 'owner') return true;
+  if (table === 'Home') return true; // All users can see the Home dashboard.
+  if (table === 'UserManagement') return false; // Only admins/owners can see this, which is handled by the rule above.
+
+  if (user.permissions && user.permissions[table]) {
+    return !!user.permissions[table][action];
+  }
+  if (user.role === 'guest') return action === 'view'; // Guests view-only by default
+  return false; // Deny by default. If no permissions are set for a user/table, they can't access it.
+};
+
+// Admin Dashboard Component
+const UserManagement = React.memo(function UserManagement({ currentUser, onToast }: { currentUser: any, onToast: (m: string, t?: 'error'|'success') => void }) {
+  const [users, setUsers] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [isModalOpen, setIsModalOpen] = useState(false);
+  const [editDraft, setEditDraft] = useState<any>({});
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [userSearch, setUserSearch] = useState('');
+  const [userSortBy, setUserSortBy] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
+  const [userGroupBy, setUserGroupBy] = useState<string | null>(null);
+  const [isSortOpen, setIsSortOpen] = useState(false);
+  const [isGroupOpen, setIsGroupOpen] = useState(false);
+  const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
+
+  const fetchUsers = async () => {
+    try {
+      const res = await window.fetch('/api/users');
+      if (res.ok) setUsers(await res.json());
+    } catch (e) {
+      onToast('Failed to load users', 'error');
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => { fetchUsers(); }, []); // eslint-disable-line
+
+  const handleSave = async () => {
+    if (!editDraft.email || !editDraft.name || !editDraft.role) {
+      onToast('Please fill out all required fields', 'error');
+      return;
+    }
+    setIsSubmitting(true);
+    const isNew = !editDraft._id;
+    try {
+      const method = isNew ? 'POST' : 'PUT';
+      const url = isNew ? '/api/users' : `/api/users/${editDraft._id}`;
+      const res = await window.fetch(url, {
+        method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(editDraft)
+      });
+      if (res.ok) {
+        onToast(`User ${isNew ? 'added' : 'updated'} successfully`, 'success');
+        setIsModalOpen(false);
+        fetchUsers();
+      } else {
+        const errData = await res.json().catch(() => ({}));
+        onToast(errData.error || 'Failed to save user', 'error');
+      }
+    } catch (e) {
+      onToast('Network error', 'error');
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const toggleGroup = (group: string) => {
+    setCollapsedGroups(prev => prev.includes(group) ? prev.filter(g => g !== group) : [...prev, group]);
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!window.confirm("Delete this user?")) return;
+    try {
+      const res = await window.fetch(`/api/users/${id}`, { method: 'DELETE' });
+      if (res.ok) {
+        onToast('User deleted', 'success');
+        setUsers(prev => prev.filter(u => u._id !== id));
+      }
+    } catch (e) {
+      onToast('Failed to delete user', 'error');
+    }
+  };
+
+  const togglePermission = (table: string, action: 'view' | 'add' | 'edit' | 'delete') => {
+    const perms = editDraft.permissions || {};
+    const tablePerms = perms[table] || { view: false, add: false, edit: false, delete: false };
+    setEditDraft({ ...editDraft, permissions: { ...perms, [table]: { ...tablePerms, [action]: !tablePerms[action] } } });
+  };
+
+  const admins = users.filter(u => ['admin', 'owner'].includes(u.role)).length;
+  const standard = users.filter(u => u.role === 'user').length;
+  const guests = users.filter(u => u.role === 'guest').length;
+
+  const filteredUsers = useMemo(() => {
+    const filtered = users.filter(u => 
+      (u.name || '').toLowerCase().includes(userSearch.toLowerCase()) || 
+      (u.email || '').toLowerCase().includes(userSearch.toLowerCase()) ||
+      (u.role || '').toLowerCase().includes(userSearch.toLowerCase()) ||
+      (u.department || '').toLowerCase().includes(userSearch.toLowerCase())
+    );
+    
+    if (userSortBy) {
+      filtered.sort((a, b) => {
+        let valA = a[userSortBy.field] || '';
+        let valB = b[userSortBy.field] || '';
+        
+        if (userSortBy.field === 'created_at') {
+          valA = new Date(valA).getTime();
+          valB = new Date(valB).getTime();
+          return userSortBy.direction === 'asc' ? valA - valB : valB - valA;
+        }
+        
+        const cmp = String(valA).localeCompare(String(valB));
+        return userSortBy.direction === 'asc' ? cmp : -cmp;
+      });
+    } else {
+      const rolePriority: Record<string, number> = { owner: 1, admin: 2, user: 3, guest: 4 };
+      filtered.sort((a, b) => {
+        const rankA = rolePriority[a.role] || 99;
+        const rankB = rolePriority[b.role] || 99;
+        if (rankA !== rankB) return rankA - rankB;
+        return (a.name || '').localeCompare(b.name || '');
+      });
+    }
+    return filtered;
+  }, [users, userSearch, userSortBy]);
+
+  const groupedUsers = useMemo(() => {
+    if (!userGroupBy) return null;
+    const groups: Record<string, any[]> = {};
+    filteredUsers.forEach(u => {
+      const key = u[userGroupBy] || 'unspecified';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(u);
+    });
+    return groups;
+  }, [filteredUsers, userGroupBy]);
+
+  const renderUserRow = (u: any) => (
+    <tr key={u._id} className="hover:bg-slate-50/50 transition-colors">
+      <td className="px-5 py-3">
+        <div className="flex items-center gap-3"><div className="h-8 w-8 rounded-lg bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white font-black shrink-0">{(u.name || u.email || '?')[0].toUpperCase()}</div><div><div className="font-bold text-slate-900 text-[13px]">{u.name}</div><div className="text-slate-500 text-[11px]">{u.email}</div></div></div>
+      </td>
+      <td className="px-5 py-3">{u.department ? <span className="px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-widest bg-blue-100 text-blue-700">{u.department}</span> : <span className="font-semibold text-[12px] text-slate-400">—</span>}</td>
+      <td className="px-5 py-3"><span className={`px-2.5 py-1 rounded text-[10px] font-black uppercase tracking-widest ${u.role === 'admin' || u.role === 'owner' ? 'bg-violet-100 text-violet-700' : u.role === 'user' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-600'}`}>{u.role || 'user'}</span></td>
+      <td className="px-5 py-3 font-mono text-slate-500">{u.created_at ? new Date(u.created_at).toLocaleDateString() : '—'}</td>
+      <td className="px-5 py-3 text-right">
+        <div className="flex justify-end gap-2"><button onClick={() => { setEditDraft(u); setIsModalOpen(true); }} className="p-1.5 rounded-lg text-slate-400 hover:text-brand-primary hover:bg-brand-primary/10 transition-colors"><Pencil className="h-4 w-4" /></button>{u.email !== currentUser?.email && <button onClick={() => handleDelete(u._id)} className="p-1.5 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"><Trash2 className="h-4 w-4" /></button>}</div>
+      </td>
+    </tr>
+  );
+
+  return (
+    <div className="p-4 sm:p-8 max-w-[1400px] mx-auto space-y-6 w-full pb-20">
+      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-black uppercase tracking-tight text-slate-900">User <span className="text-brand-primary">Management</span></h2>
+          <p className="text-[11px] font-bold text-slate-500 uppercase tracking-widest mt-1">Manage team access and roles</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
+          {/* GROUP BY */}
+          <div className="relative">
+            <button onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }} className="flex items-center bg-white border border-slate-200 rounded-xl px-3 h-10 shadow-sm hover:border-brand-primary/50 transition-all text-xs font-bold text-slate-700">
+              <Layers className="h-4 w-4 sm:mr-2 text-slate-500 shrink-0" />
+              <span className="hidden sm:inline">{userGroupBy ? `Group: ${userGroupBy}` : "No Grouping"}</span>
+              <ChevronDown className={`ml-1 sm:ml-2 h-4 w-4 text-slate-400 transition-transform shrink-0 ${isGroupOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isGroupOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsGroupOpen(false)} />
+                <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2">
+                  <button onClick={() => { setUserGroupBy(null); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50">No Grouping</button>
+                  <button onClick={() => { setUserGroupBy('role'); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase">Role</button>
+                  <button onClick={() => { setUserGroupBy('department'); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase">Department</button>
+                </div>
+              </>
+            )}
+          </div>
+          
+          {/* SORT BY */}
+          <div className="relative">
+            <button onClick={() => { setIsSortOpen(!isSortOpen); setIsGroupOpen(false); }} className="flex items-center bg-white border border-slate-200 rounded-xl px-3 h-10 shadow-sm hover:border-brand-primary/50 transition-all text-xs font-bold text-slate-700">
+              <ArrowUpDown className="h-4 w-4 sm:mr-2 text-slate-500 shrink-0" />
+              <span className="hidden sm:inline">{userSortBy ? `Sort: ${userSortBy.field.replace('_', ' ')}` : "No Sort"}</span>
+              <ChevronDown className={`ml-1 sm:ml-2 h-4 w-4 text-slate-400 transition-transform shrink-0 ${isSortOpen ? 'rotate-180' : ''}`} />
+            </button>
+            {isSortOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsSortOpen(false)} />
+                <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2">
+                  <button onClick={() => { setUserSortBy(null); setIsSortOpen(false); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50">No Sort</button>
+                  {['name', 'email', 'department', 'role', 'created_at'].map(f => (
+                    <button key={f} onClick={() => { setUserSortBy({ field: f, direction: userSortBy?.field === f && userSortBy.direction === 'asc' ? 'desc' : 'asc' }); setIsSortOpen(false); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-brand-primary hover:text-white flex justify-between uppercase">
+                      {f.replace('_', ' ')} {userSortBy?.field === f && <span className="opacity-70">{userSortBy.direction === 'asc' ? '↑' : '↓'}</span>}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+          </div>
+
+          <div className="relative hidden sm:block">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+            <Input 
+              placeholder="Search users..." 
+              value={userSearch} 
+              onChange={e => setUserSearch(e.target.value)} 
+              className="pl-9 h-10 w-[200px] bg-white border-slate-200"
+            />
+          </div>
+          <Button onClick={() => { 
+            const defaultPerms: any = {};
+            ALL_TABLES.forEach(t => { defaultPerms[t] = { view: true, add: true, edit: true, delete: false }; });
+            setEditDraft({ role: 'user', permissions: defaultPerms }); 
+            setIsModalOpen(true); 
+          }} className="bg-brand-primary text-white hover:bg-brand-primary/90 font-bold uppercase text-[11px] tracking-widest rounded-xl h-10 px-5 shadow-lg shadow-brand-primary/20">
+            <UserPlus className="h-4 w-4 mr-2" /> Add User
+          </Button>
+        </div>
+      </div>
+
+      <div className="sm:hidden relative">
+        <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
+        <Input 
+          placeholder="Search users..." 
+          value={userSearch} 
+          onChange={e => setUserSearch(e.target.value)} 
+          className="pl-9 h-10 w-full bg-white border-slate-200"
+        />
+      </div>
+
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        {[
+          { label: 'Total Users', value: users.length, icon: Users, color: 'text-blue-600', bg: 'bg-blue-50' },
+          { label: 'Admins', value: admins, icon: Shield, color: 'text-violet-600', bg: 'bg-violet-50' },
+          { label: 'Standard', value: standard, icon: UserCog, color: 'text-green-600', bg: 'bg-green-50' },
+          { label: 'Guests', value: guests, icon: UserCheck, color: 'text-slate-600', bg: 'bg-slate-100' },
+        ].map(s => (
+          <div key={s.label} className={`${s.bg} rounded-2xl p-4 flex flex-col shadow-sm border border-slate-200/50`}>
+            <s.icon className={`h-5 w-5 mb-2 ${s.color} opacity-80`} />
+            <div className={`text-3xl font-black ${s.color} leading-none`}>{s.value}</div>
+            <div className="text-[10px] font-black text-slate-700 mt-1.5 uppercase tracking-wider">{s.label}</div>
+          </div>
+        ))}
+      </div>
+
+      <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
+        {loading ? <div className="p-8 text-center text-slate-400 text-sm font-bold uppercase tracking-widest animate-pulse">Loading users...</div> : (
+          <div className="overflow-x-auto thin-scrollbar"><table className="w-full text-left text-[12px]"><thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-widest text-[9px]"><tr><th className="px-5 py-3">User</th><th className="px-5 py-3">Department</th><th className="px-5 py-3">Role</th><th className="px-5 py-3">Joined</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">
+            {filteredUsers.length === 0 ? <tr><td colSpan={5} className="px-5 py-8 text-center text-slate-400 italic">No users found</td></tr> : (
+              groupedUsers ? (
+                Object.entries(groupedUsers).map(([group, usersInGroup]) => {
+                  const isCollapsed = collapsedGroups.includes(group);
+                  return (
+                    <React.Fragment key={group}>
+                      <tr className="bg-slate-100/50 border-y border-slate-200 cursor-pointer hover:bg-slate-200/50 transition-colors" onClick={() => toggleGroup(group)}>
+                        <td colSpan={5} className="px-5 py-2">
+                          <div className="flex items-center gap-1.5 font-black text-[10px] text-slate-600 uppercase tracking-widest">
+                            {isCollapsed ? <ChevronRight className="h-3.5 w-3.5 shrink-0" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0" />}
+                            {group} <span className="text-brand-primary">({usersInGroup.length})</span>
+                          </div>
+                        </td>
+                      </tr>
+                      {!isCollapsed && usersInGroup.map(renderUserRow)}
+                    </React.Fragment>
+                  );
+                })
+              ) : (
+                filteredUsers.map(renderUserRow)
+              )
+            )}
+          </tbody></table></div>
+        )}
+      </div>
+
+      <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
+        <DialogContent className="bg-white border-none p-0 overflow-hidden flex flex-col max-h-[90vh] sm:max-w-[700px] rounded-[24px] shadow-2xl">
+          <div className="p-5 sm:p-6 border-b border-slate-100 bg-slate-50 shrink-0"><h3 className="text-lg font-black text-slate-900 uppercase tracking-tight">{editDraft._id ? 'Edit User' : 'Add User'}</h3></div>
+          <div className="p-5 sm:p-6 flex-1 overflow-y-auto thin-scrollbar space-y-6">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Name</label><Input value={editDraft.name || ''} onChange={e => setEditDraft({...editDraft, name: e.target.value})} className="bg-slate-50 h-10" placeholder="Full name" /></div>
+              <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Email</label><Input value={editDraft.email || ''} onChange={e => setEditDraft({...editDraft, email: e.target.value})} className="bg-slate-50 h-10" placeholder="Email address" type="email" disabled={!!editDraft._id} /></div>
+              <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Department</label><Input value={editDraft.department || ''} onChange={e => setEditDraft({...editDraft, department: e.target.value})} className="bg-slate-50 h-10" placeholder="Department" /></div>
+              <div className="space-y-1.5"><label className="text-[10px] font-black uppercase tracking-widest text-slate-500">Role</label><select className="w-full h-10 px-3 bg-slate-50 border border-slate-200 rounded-lg text-[13px] font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-brand-primary/30" value={editDraft.role || 'user'} onChange={e => {
+                const r = e.target.value;
+                const perms = { ...(editDraft.permissions || {}) };
+                if (r === 'user') {
+                  ALL_TABLES.forEach(t => { perms[t] = { view: true, add: true, edit: true, delete: false }; });
+                } else if (r === 'guest') {
+                  ALL_TABLES.forEach(t => { perms[t] = { view: true, add: false, edit: false, delete: false }; });
+                }
+                setEditDraft({...editDraft, role: r, permissions: perms});
+              }}><option value="user">Standard User</option><option value="guest">Guest (Read-only default)</option><option value="admin">Admin (Full Access)</option>{currentUser?.role === 'owner' && <option value="owner">Owner</option>}</select></div>
+            </div>
+            {(!['admin', 'owner'].includes(editDraft.role)) && (
+              <div className="space-y-3"><div className="flex items-center justify-between"><label className="text-[10px] font-black uppercase tracking-[0.15em] text-brand-primary">Table Permissions</label><p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest">Toggle access</p></div><div className="border border-slate-200 rounded-xl overflow-hidden text-[11px] font-semibold text-slate-700"><div className="grid grid-cols-5 bg-slate-50 border-b border-slate-200 p-3 font-black text-slate-500 uppercase tracking-widest text-[9px] text-center"><div className="text-left">Table</div><div>View</div><div>Add</div><div>Edit</div><div>Delete</div></div><div className="divide-y divide-slate-100">{ALL_TABLES.map(t => { const p = editDraft.permissions?.[t] || { view: false, add: false, edit: false, delete: false }; return (<div key={t} className="grid grid-cols-5 p-3 items-center text-center hover:bg-slate-50/50 transition-colors"><div className="text-left font-bold">{t}</div><div className="flex justify-center"><input type="checkbox" checked={p.view} onChange={() => togglePermission(t, 'view')} className="h-4 w-4 accent-brand-primary" /></div><div className="flex justify-center"><input type="checkbox" checked={p.add} onChange={() => togglePermission(t, 'add')} className="h-4 w-4 accent-brand-primary" /></div><div className="flex justify-center"><input type="checkbox" checked={p.edit} onChange={() => togglePermission(t, 'edit')} className="h-4 w-4 accent-brand-primary" /></div><div className="flex justify-center"><input type="checkbox" checked={p.delete} onChange={() => togglePermission(t, 'delete')} className="h-4 w-4 accent-brand-primary" /></div></div>); })}</div></div></div>
+            )}
+          </div>
+          <div className="p-5 sm:p-6 border-t border-slate-100 bg-slate-50 shrink-0 flex justify-end gap-3">
+            <Button variant="ghost" onClick={() => setIsModalOpen(false)} className="text-[11px] font-black uppercase tracking-widest text-slate-500 hover:bg-slate-200 rounded-lg">Cancel</Button>
+            <Button onClick={handleSave} disabled={isSubmitting} className="bg-brand-primary text-white hover:bg-brand-primary/90 text-[11px] font-black uppercase tracking-widest rounded-lg px-6 shadow-lg shadow-brand-primary/20">{isSubmitting ? 'Saving...' : 'Save User'}</Button>
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+  );
+});
 
 const UNIFORM_DROPDOWN_STYLE = "bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-semibold text-[13px] px-3 py-1.5 rounded-md shadow-sm tracking-tighter whitespace-nowrap inline-block";
 const FROZEN_STYLE: React.CSSProperties = { backgroundColor: 'rgba(255, 255, 255, 0.72)', backdropFilter: 'blur(18px) saturate(1.8)', WebkitBackdropFilter: 'blur(18px) saturate(1.8)', boxShadow: 'inset -1px 0 0 #e2e8f0, inset 0 -1px 0 #e2e8f0' };
@@ -196,7 +514,7 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
 
   return (
     <div
-      className="h-44 w-full relative group/gallery overflow-hidden rounded-xl border border-slate-800 bg-black shadow-inner"
+      className="h-44 w-full relative group/gallery overflow-hidden rounded-xl border border-slate-200 bg-slate-100 shadow-[inset_0_2px_8px_rgba(0,0,0,0.05)]"
       onTouchStart={handleTouchStart}
       onTouchEnd={handleTouchEnd}
     >
@@ -208,7 +526,7 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: dir * -24 }}
           transition={{ duration: 0.18, ease: 'easeOut' }}
-          className="w-full h-full object-cover"
+          className="w-full h-full object-contain drop-shadow-lg"
           alt={`Image ${currentIndex + 1}`}
         />
       </AnimatePresence>
@@ -218,13 +536,13 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
           {/* Arrows — always visible on mobile, hover-only on desktop */}
           <button
             onClick={e => goTo(currentIndex - 1, -1, e)}
-            className="absolute left-1.5 top-1/2 -translate-y-1/2 bg-black/55 text-white p-1.5 rounded-full transition-all hover:bg-brand-primary sm:opacity-0 sm:group-hover/gallery:opacity-100 active:scale-90"
+            className="absolute left-1.5 top-1/2 -translate-y-1/2 bg-black/40 text-white p-1.5 rounded-full transition-all hover:bg-brand-primary sm:opacity-0 sm:group-hover/gallery:opacity-100 active:scale-90 shadow-md"
           >
             <ChevronLeft className="h-3.5 w-3.5" />
           </button>
           <button
             onClick={e => goTo(currentIndex + 1, 1, e)}
-            className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-black/55 text-white p-1.5 rounded-full transition-all hover:bg-brand-primary sm:opacity-0 sm:group-hover/gallery:opacity-100 active:scale-90"
+            className="absolute right-1.5 top-1/2 -translate-y-1/2 bg-black/40 text-white p-1.5 rounded-full transition-all hover:bg-brand-primary sm:opacity-0 sm:group-hover/gallery:opacity-100 active:scale-90 shadow-md"
           >
             <ChevronRight className="h-3.5 w-3.5" />
           </button>
@@ -245,7 +563,7 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
           </div>
 
           {/* Counter badge — top-right, small */}
-          <div className="absolute top-1.5 right-1.5 bg-black/55 px-1.5 py-0.5 rounded-md text-[9px] font-black text-white/90 border border-white/10 tabular-nums">
+          <div className="absolute top-1.5 right-1.5 bg-black/40 px-1.5 py-0.5 rounded-md text-[9px] font-black text-white/90 border border-white/10 tabular-nums shadow-sm">
             {currentIndex + 1}/{images.length}
           </div>
         </>
@@ -1399,7 +1717,7 @@ if (hasDropdown) {
           {thumbs.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {thumbs.map((url, idx) => (
-                <img key={idx} src={url.replace('export=view', 'export=download')} loading="lazy" className="h-14 w-20 object-cover rounded-xl border border-slate-200" alt="" />
+                <img key={idx} src={url.replace('export=view', 'export=download')} loading="lazy" className="h-14 w-20 object-cover rounded-xl border border-slate-200 shadow-sm drop-shadow-sm" alt="" />
               ))}
             </div>
           )}
@@ -1490,7 +1808,7 @@ if (hasDropdown) {
                     <span className="text-[11px] font-black text-slate-800">{c.authorName}</span>
                     <span className="text-[9px] text-slate-400">{formatCommentTime(c.createdAt)}</span>
                     {isOwn && (
-                      <button onClick={() => deleteComment(cid)} className="ml-auto opacity-0 group-hover:opacity-100 text-[9px] text-red-400 hover:text-red-600 transition-all shrink-0">
+                      <button onClick={() => deleteComment(cid)} className="ml-auto opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-[9px] text-red-400 hover:text-red-600 transition-all shrink-0">
                         delete
                       </button>
                     )}
@@ -1637,7 +1955,7 @@ if (hasDropdown) {
                           <span className="text-[11px] font-black text-slate-800">{c.authorName}</span>
                           <span className="text-[9px] text-slate-400">{formatCommentTime(c.createdAt)}</span>
                           {isOwn && (
-                            <button onClick={() => deleteComment(cid)} className="ml-auto opacity-0 group-hover:opacity-100 text-[9px] text-red-400 hover:text-red-600 transition-all shrink-0">
+                            <button onClick={() => deleteComment(cid)} className="ml-auto opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-[9px] text-red-400 hover:text-red-600 transition-all shrink-0">
                               delete
                             </button>
                           )}
@@ -2388,7 +2706,14 @@ const handleMouseDown = (e: React.MouseEvent, columnName: string) => {
   document.addEventListener('mouseup', onMouseUp);
   document.body.style.cursor = 'col-resize';
 };
+
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('error') === 'access_denied') {
+      setLoginError('Access denied. You must be added by an administrator.');
+      window.history.replaceState({}, document.title, window.location.pathname);
+    }
+
     const savedUser = localStorage.getItem('dyatra_user');
     if (savedUser) {
       try {
@@ -2910,6 +3235,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
   const [images, setImages] = useState<ImgEntry[]>([]);
   const [isUploading, setIsUploading] = useState(false);
+  const [uploadCount, setUploadCount] = useState(0);
 
   const parseImages = (raw: string): ImgEntry[] => {
     const result: ImgEntry[] = [];
@@ -2925,68 +3251,44 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   const [renamingIdx, setRenamingIdx] = useState<number | null>(null);
   const [renameVal, setRenameVal] = useState('');
   const onUpdateRef = useRef(onUpdate);
-  const managedItemIdRef = useRef<string | null>(null);
   onUpdateRef.current = onUpdate;
 
+  const initialStringRef = useRef<string | null>(null);
   const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const pendingSerializedRef = useRef<string | null>(null);
 
-  // Commit: update local images state immediately (instant UI), then debounce the network save.
-  // Calling onUpdate directly inside setImages caused React to fire multiple concurrent PUTs;
-  // if they arrived out of order the last-to-land request would overwrite later changes.
-  const commit = (updater: (prev: ImgEntry[]) => ImgEntry[]) => {
-    setImages(prev => {
-      const next = updater(prev);
-      pendingSerializedRef.current = serialize(next); // ref mutation is safe inside updater
-      return next;
-    });
-    // Schedule save outside the state updater to keep the updater pure
+  useEffect(() => {
+    if (!manager?.isOpen || !manager?.item) return;
+    const raw = manager.item[manager.column] || '';
+    initialStringRef.current = raw;
+    setImages(parseImages(raw));
+    setRenamingIdx(null);
+    setIsUploading(false);
+    setUploadCount(0);
+  }, [manager?.isOpen, manager?.item?._id, manager?.item?.id, manager?.column]);
+
+  // Auto-save whenever `images` changes and there are no active uploads
+   useEffect(() => {
+    if (!manager?.isOpen) return;
+
+    // CHANGE: We removed the "isSyncing" check that used to return early.
+    // We only block if the browser is physically processing the files (isUploading).
+    // This allows the base64 string to be sent to 'onUpdate' immediately.
+    if (isUploading) return; 
+
+    const serialized = serialize(images);
+    if (serialized === initialStringRef.current) return;
+
     if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
     saveTimerRef.current = setTimeout(() => {
       saveTimerRef.current = null;
-      const s = pendingSerializedRef.current;
-      pendingSerializedRef.current = null;
-      if (s !== null) onUpdateRef.current(s);
+      initialStringRef.current = serialized;
+      onUpdateRef.current(serialized); // This triggers handleImageUpdate (The DB Save)
     }, 300);
-  };
-
-  // Initialise from manager.item when dialog opens; flush any pending save on close.
-  useEffect(() => {
-    if (!manager?.isOpen || !manager?.item) {
-      managedItemIdRef.current = null;
-      return;
-    }
-
-    const recordId = String(manager.item._id || manager.item.id);
-    const currentKey = `${recordId}-${manager.column}`;
-
-    // If we are already managing this specific record/column, DO NOT reset state.
-    // This prevents the "refresh" glitch when an upload finishes and syncs to parent.
-    if (managedItemIdRef.current === currentKey) return;
-
-    managedItemIdRef.current = currentKey;
-
-    // Cancel any stale timer from a previous session
-    if (saveTimerRef.current !== null) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
-    pendingSerializedRef.current = null;
-
-    setImages(parseImages(manager.item[manager.column] || ''));
-    setRenamingIdx(null);
-
-    // Capture onUpdate now — it closes over the valid imageManager (_id won't change
-    // during this session), so it's safe to call from the cleanup after manager is nulled.
-    const capturedOnUpdate = onUpdate;
 
     return () => {
-      // Flush any debounced save before imageManager becomes null on close
-      if (saveTimerRef.current !== null) { clearTimeout(saveTimerRef.current); saveTimerRef.current = null; }
-      if (pendingSerializedRef.current !== null) {
-        const s = pendingSerializedRef.current;
-        pendingSerializedRef.current = null;
-        capturedOnUpdate(s);
-      }
+      if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
     };
-  }, [manager?.isOpen, manager?.item?._id, manager?.item?.id, manager?.column]);
+  }, [images, isUploading, manager?.isOpen]);
 
   // All handlers defined before the early return — no stale closures
   const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2996,7 +3298,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
     if (files.length === 0) return;
 
     setIsUploading(true);
-    let remaining = files.length;
+    setUploadCount(prev => prev + files.length);
 
     const processOne = (file: File) => {
       const reader = new FileReader();
@@ -3024,8 +3326,6 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
             // replaces it in Step 2, keeping the upload to a single small PUT.
             // _key = tempId so the React key stays stable even after Drive URL replaces base64
             setImages(prev => [...prev, { url: base64Url, name, _tempId: tempId, _key: tempId }]);
-            remaining--;
-            if (remaining === 0) setIsUploading(false);
 
             // Step 2: upload to Drive in background, replace base64 with Drive URL
             window.fetch('/api/upload', {
@@ -3036,42 +3336,22 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
             .then(res => res.json())
             .then(data => {
               if (data.url) {
-                // Preload the Drive URL so the browser caches it before we swap.
-                // This prevents a blank flash when img.src changes from base64 to the Drive URL.
-                const preloader = new window.Image();
-                preloader.onload = () => {
-                  commit(prev => prev.map(e => {
-                    if (e._tempId === tempId) {
-                      const { _tempId, ...rest } = e;
-                      return { ...rest, url: data.url };
-                    }
-                    return e;
-                  }));
-                };
-                preloader.onerror = () => {
-                  // Drive URL failed to render — keep base64, clear syncing marker
-                  commit(prev => prev.map(e => {
-                    if (e._tempId === tempId) {
-                      const { _tempId, ...rest } = e;
-                      return rest;
-                    }
-                    return e;
-                  }));
-                };
-                preloader.src = data.url;
+                setImages(prev => prev.map(e => e._tempId === tempId ? { name: e.name, url: data.url, _key: e._key } : e));
               } else {
-                commit(prev => prev.map(e => { if (e._tempId === tempId) { const { _tempId, ...rest } = e; return rest; } return e; }));
+                setImages(prev => prev.map(e => e._tempId === tempId ? { name: e.name, url: e.url, _key: e._key } : e));
                 onToast?.('Drive sync failed — image saved locally. ' + (data.error || ''), 'error');
               }
             })
             .catch(err => {
               console.error(err);
-              commit(prev => prev.map(e => { if (e._tempId === tempId) { const { _tempId, ...rest } = e; return rest; } return e; }));
+              setImages(prev => prev.map(e => e._tempId === tempId ? { name: e.name, url: e.url, _key: e._key } : e));
               onToast?.('Drive upload error — image saved locally.', 'error');
+            })
+            .finally(() => {
+              setUploadCount(prev => prev - 1);
             });
           } else {
-            remaining--;
-            if (remaining === 0) setIsUploading(false);
+            setUploadCount(prev => prev - 1);
           }
         };
         img.src = event.target?.result as string;
@@ -3081,10 +3361,11 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
     // Process all selected files in parallel
     files.forEach(processOne);
+    setIsUploading(false);
   };
 
   const handleRemove = (i: number) => {
-    commit(prev => prev.filter((_, idx) => idx !== i));
+    setImages(prev => prev.filter((_, idx) => idx !== i));
   };
 
   const handleDownload = (entry: ImgEntry, i: number) => {
@@ -3098,7 +3379,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   };
 
   const commitRename = (i: number) => {
-    commit(prev => prev.map((e, idx) => idx === i ? { ...e, name: renameVal.trim() } : e));
+    setImages(prev => prev.map((e, idx) => idx === i ? { ...e, name: renameVal.trim() } : e));
     setRenamingIdx(null);
   };
 
@@ -3109,7 +3390,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
   const doReorder = (from: number | null, to: number | null) => {
     if (from === null || to === null || from === to) return;
-    commit(prev => {
+    setImages(prev => {
       const next = [...prev];
       const [moved] = next.splice(from, 1);
       next.splice(to, 0, moved);
@@ -3142,7 +3423,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
   };
 
   if (!manager?.isOpen) return null;
-  const isSyncing = isUploading || images.some(img => !!img._tempId);
+  const isSyncing = isUploading || uploadCount > 0 || images.some(img => !!img._tempId);
 
   return (
     <div
@@ -3151,7 +3432,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
       onClick={isSyncing ? undefined : onClose}
     >
       <div
-        className="w-full sm:w-[460px] bg-white rounded-t-2xl sm:rounded-xl flex flex-col shadow-2xl max-h-[92vh] sm:max-h-[80vh] overflow-hidden border border-slate-200"
+        className="w-full sm:w-[600px] bg-white rounded-t-2xl sm:rounded-xl flex flex-col shadow-2xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden border border-slate-200"
         onClick={e => e.stopPropagation()}
       >
         {/* Mobile drag handle */}
@@ -3203,7 +3484,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                 </label>
               </div>
             ) : (
-              <div className="grid grid-cols-2 gap-2.5">
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
                 {images.map((entry, i) => (
                   <div
                     key={entry._key}
@@ -3222,7 +3503,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
                     } ${dragOverIdx === i && draggingIdx !== i ? 'ring-2 ring-blue-500 ring-offset-1 rounded-lg' : ''}`}
                   >
                     {/* Thumbnail */}
-                    <div className="relative rounded-lg overflow-hidden bg-slate-100 cursor-grab active:cursor-grabbing" style={{ aspectRatio: '4/3' }}>
+                    <div className="relative rounded-lg overflow-hidden bg-slate-100 shadow-md cursor-grab active:cursor-grabbing" style={{ aspectRatio: '4/3' }}>
                       <img
                         src={entry.url}
                         loading="eager"
@@ -3239,7 +3520,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
 
                       {/* Hover action icons — bottom-right, Airtable-style */}
                       {!entry._tempId && (
-                        <div className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 opacity-0 group-hover/card:opacity-100 transition-opacity">
+                        <div className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover/card:opacity-100 transition-opacity">
                           <button
                             onClick={() => { setRenamingIdx(i); setRenameVal(entry.name || `Image ${i + 1}`); }}
                             title="Rename"
@@ -4019,7 +4300,7 @@ const renderRow = (item: any) => {
                 {matches.length > 0 ? (
                   <>
                     {matches.slice(0, 4).map((url, idx) => (
-                      <img key={idx} src={url} loading="lazy" className="h-8 w-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer" onClick={openMgr} alt="" />
+                      <img key={idx} src={url} loading="lazy" className="h-8 w-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer shadow-sm drop-shadow-sm" onClick={openMgr} alt="" />
                     ))}
                     {matches.length > 4 && (
                       <span className="text-[10px] font-semibold text-slate-400 shrink-0 cursor-pointer" onClick={openMgr}>
@@ -4029,7 +4310,7 @@ const renderRow = (item: any) => {
                     {/* Manage button — appears on hover */}
                     <button
                       onClick={openMgr}
-                      className="h-7 w-7 shrink-0 rounded-md border border-slate-200 flex items-center justify-center text-slate-400 hover:text-brand-primary hover:border-brand-primary hover:bg-white transition-colors bg-slate-50 opacity-0 group-hover/cell:opacity-100 absolute right-1 z-20 shadow-sm"
+                      className="h-7 w-7 shrink-0 rounded-md border border-slate-200 flex items-center justify-center text-slate-400 hover:text-brand-primary hover:border-brand-primary hover:bg-white transition-colors bg-slate-50 opacity-100 sm:opacity-0 sm:group-hover/cell:opacity-100 absolute right-1 z-20 shadow-sm"
                       title="Manage images"
                     >
                       <Paperclip className="h-3 w-3" />
@@ -4529,6 +4810,8 @@ useEffect(() => {
         const userData = event.data.user;
         setUser(userData);
         localStorage.setItem('dyatra_user', JSON.stringify(userData));
+        } else if (event.data?.type === 'OAUTH_AUTH_ERROR') {
+          setLoginError(event.data.error);
       }
     };
     window.addEventListener('message', handleMessage);
@@ -4563,8 +4846,17 @@ const handleGoogleLogin = async () => {
 
   const handleLogout = () => {
     setUser(null);
+    setActiveTable('Home');
+    setViewingRecord(null);
     localStorage.removeItem('dyatra_user');
   };
+
+  useEffect(() => {
+    if (user && activeTable && !hasPerm(user, activeTable, 'view')) {
+      setActiveTable('Home');
+      setViewingRecord(null);
+    }
+  }, [user, activeTable]);
 
 const handleDirectImageUpload = (e: React.ChangeEvent<HTMLInputElement>, item: any, collectionName: string, setter: React.Dispatch<React.SetStateAction<any[]>>) => {
   e.stopPropagation();
@@ -5591,7 +5883,13 @@ if (!health?.mongodb) {
           },
         ];
 
-        return navGroups.map((group, gi) => (
+        // Filter routes based on user permissions
+        const filteredNavGroups = navGroups.map(group => ({
+          ...group,
+          items: group.items.filter(item => hasPerm(user, item.table, 'view'))
+        })).filter(g => g.items.length > 0);
+
+        return filteredNavGroups.map((group, gi) => (
           <div key={gi} className={gi > 0 ? 'mt-4' : ''}>
             {group.groupLabel && (
               isSidebarOpen ? (
@@ -5634,6 +5932,25 @@ if (!health?.mongodb) {
           </div>
         ));
       })()}
+
+      {/* ADMIN SECTION */}
+      {(user?.role === 'admin' || user?.role === 'owner') && (
+        <div className="mt-4 pt-4 border-t border-slate-800/40">
+          <div className="px-2 mb-1.5 flex justify-center lg:justify-start">
+            <span className={`text-[9px] font-black uppercase tracking-[0.2em] text-slate-600 ${!isSidebarOpen && 'hidden lg:block'}`}>Admin</span>
+            {!isSidebarOpen && <span className="lg:hidden text-[7px] font-black uppercase tracking-widest text-slate-600 bg-slate-800/80 rounded px-1.5 py-0.5 leading-none">A</span>}
+          </div>
+          <button
+            onClick={() => { setActiveTable('UserManagement'); setViewingRecord(null); if (isMobileView) setIsSidebarOpen(false); }}
+            title="User Management"
+            className={`w-full flex items-center rounded-xl transition-all duration-200 group ${isSidebarOpen ? 'px-3 py-2.5 gap-3' : 'h-11 justify-center'} ${activeTable === 'UserManagement' ? 'bg-brand-primary text-white shadow-lg shadow-brand-primary/20' : 'text-slate-400 hover:text-white hover:bg-slate-800/50'}`}
+          >
+            <Users className={`h-[18px] w-[18px] shrink-0 ${activeTable !== 'UserManagement' ? 'group-hover:scale-110 transition-transform' : ''}`} />
+            {isSidebarOpen && <motion.span initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="text-[13px] font-bold whitespace-nowrap overflow-hidden text-ellipsis">User Management</motion.span>}
+          </button>
+        </div>
+      )}
+
     </div>
   </ScrollArea>
 
@@ -5647,7 +5964,7 @@ if (!health?.mongodb) {
     {isSidebarOpen && (
       <motion.div initial={{ opacity: 0, x: -8 }} animate={{ opacity: 1, x: 0 }} className="flex-1 min-w-0">
         <div className="text-[13px] font-black text-white truncate uppercase">{user?.name || 'it_sevarpit'}</div>
-        <div className="text-[9px] text-brand-primary font-black uppercase tracking-widest mt-0.5">ADMIN</div>
+        <div className="text-[9px] text-brand-primary font-black uppercase tracking-widest mt-0.5">{user?.role || 'USER'}</div>
       </motion.div>
     )}
     {isSidebarOpen && (
@@ -5679,7 +5996,7 @@ if (!health?.mongodb) {
     </Button>
 
     {/* Search Input — desktop always visible, mobile toggle */}
-    {activeTable !== 'Home' && (
+    {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
       <>
         {/* Desktop search */}
         <div className="relative hidden sm:block">
@@ -5705,7 +6022,7 @@ if (!health?.mongodb) {
 <div className="flex items-center justify-between w-full md:w-auto gap-1.5 md:gap-2">
 
     {/* 3. VIEW SWITCHER */}
-  {activeTable !== 'Home' && <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-11 items-center">
+  {activeTable !== 'Home' && activeTable !== 'UserManagement' && <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-11 items-center">
    <Button
   size="sm"
   variant="ghost"
@@ -5736,7 +6053,7 @@ if (!health?.mongodb) {
 
 
   {/* 1. GROUP BY + SORT BY */}
-  {activeTable !== 'Home' && (viewMode === 'grid' || viewMode === 'visual') && <>
+  {activeTable !== 'Home' && activeTable !== 'UserManagement' && (viewMode === 'grid' || viewMode === 'visual') && <>
   <div className="relative hidden sm:block">
   <button
     onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
@@ -5809,7 +6126,7 @@ if (!health?.mongodb) {
   </>}
 
   {/* HIDE FIELDS */}
-  {activeTable !== 'Home' && viewMode === 'grid' && (
+  {activeTable !== 'Home' && activeTable !== 'UserManagement' && viewMode === 'grid' && (
   <div className="relative hidden sm:block">
     <button
       onClick={() => { setIsFieldsOpen(!isFieldsOpen); setIsGroupOpen(false); setIsSortOpen(false); }}
@@ -5855,7 +6172,7 @@ if (!health?.mongodb) {
   )}
 
   {/* Mobile Group By + Sort By buttons */}
-  {activeTable !== 'Home' && (viewMode === 'grid' || viewMode === 'visual') && (
+  {activeTable !== 'Home' && activeTable !== 'UserManagement' && (viewMode === 'grid' || viewMode === 'visual') && (
     <div className="sm:hidden flex items-center gap-1.5">
       <button
         onClick={() => setMobileGroupOpen(true)}
@@ -5886,7 +6203,8 @@ if (!health?.mongodb) {
   )}
 
   {/* 4. NEW RECORD BUTTON */}
-  {activeTable !== 'Home' && <Button
+  {activeTable !== 'Home' && activeTable !== 'UserManagement' && hasPerm(user, activeTable, 'add') && (
+  <Button
     onClick={openAddModal}
     className="bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-4 shadow-md flex items-center gap-2 transition-transform active:scale-95 ml-1"
   >
@@ -5894,7 +6212,8 @@ if (!health?.mongodb) {
     <span className="hidden md:inline uppercase text-xs font-bold tracking-wide">
       Add Record
     </span>
-  </Button>}
+  </Button>
+  )}
 
   {/* Inbox button — after primary actions */}
   {user && (
@@ -6159,11 +6478,11 @@ if (!health?.mongodb) {
         {/* STAT PILLS */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           {[
-            { label: 'Total Events', value: events.length, sub: 'across all years', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
-            { label: 'Sessions', value: sessions.length, sub: 'recorded', color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
-            { label: 'Music Plays', value: musicLogs.length, sub: 'log entries', color: 'text-pink-600', bg: 'bg-pink-50', border: 'border-pink-100' },
-            { label: 'Video Plays', value: videoLogs.length, sub: 'log entries', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
-          ].map(s => (
+            { label: 'Total Events', table: 'Events', value: events.length, sub: 'across all years', color: 'text-blue-600', bg: 'bg-blue-50', border: 'border-blue-100' },
+            { label: 'Sessions', table: 'Session', value: sessions.length, sub: 'recorded', color: 'text-violet-600', bg: 'bg-violet-50', border: 'border-violet-100' },
+            { label: 'Music Plays', table: 'MusicLog', value: musicLogs.length, sub: 'log entries', color: 'text-pink-600', bg: 'bg-pink-50', border: 'border-pink-100' },
+            { label: 'Video Plays', table: 'VideoLog', value: videoLogs.length, sub: 'log entries', color: 'text-orange-600', bg: 'bg-orange-50', border: 'border-orange-100' },
+          ].filter(s => hasPerm(user, s.table, 'view')).map(s => (
             <div key={s.label} className={`${s.bg} border ${s.border} rounded-2xl p-4`}>
               <div className={`text-3xl font-black ${s.color} leading-none`}>{s.value}</div>
               <div className="text-[11px] font-black text-slate-700 mt-1 uppercase tracking-wide">{s.label}</div>
@@ -6174,10 +6493,10 @@ if (!health?.mongodb) {
 
         {/* MAIN GRID: NAV + CHECKLIST */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-          <div className="lg:col-span-2 bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+          <div className={`${hasPerm(user, 'DyatraChecklist', 'view') ? 'lg:col-span-2' : 'lg:col-span-3'} bg-white border border-slate-200 rounded-2xl p-5 shadow-sm`}>
             <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400 mb-4">Quick Navigate</p>
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-              {navLinks.map(n => (
+              {navLinks.filter(n => hasPerm(user, n.table, 'view')).map(n => (
                 <button key={n.table} onClick={() => setActiveTable(n.table)}
                   className="flex flex-col items-start gap-2 p-3 rounded-xl border border-slate-100 hover:border-brand-primary/30 hover:bg-brand-primary/5 transition-all text-left">
                   <div className={`h-8 w-8 ${n.color} rounded-lg flex items-center justify-center`}>
@@ -6192,6 +6511,7 @@ if (!health?.mongodb) {
             </div>
           </div>
 
+          {hasPerm(user, 'DyatraChecklist', 'view') && (
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm flex flex-col">
             <div className="flex items-center justify-between mb-4">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Recent Tasks</p>
@@ -6222,10 +6542,13 @@ if (!health?.mongodb) {
                 </div>
             }
           </div>
+          )}
         </div>
 
         {/* BOTTOM GRID: RECENT EVENTS + SESSIONS */}
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        {(hasPerm(user, 'Events', 'view') || hasPerm(user, 'Session', 'view')) && (
+        <div className={`grid grid-cols-1 ${hasPerm(user, 'Events', 'view') && hasPerm(user, 'Session', 'view') ? 'lg:grid-cols-2' : ''} gap-4`}>
+          {hasPerm(user, 'Events', 'view') && (
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Recent Events</p>
@@ -6247,7 +6570,9 @@ if (!health?.mongodb) {
               ))}
             </div>
           </div>
+          )}
 
+          {hasPerm(user, 'Session', 'view') && (
           <div className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
             <div className="flex items-center justify-between mb-4">
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Recent Sessions</p>
@@ -6269,7 +6594,9 @@ if (!health?.mongodb) {
               ))}
             </div>
           </div>
+          )}
         </div>
+        )}
 
       </motion.div>
     );
@@ -6283,11 +6610,13 @@ if (!health?.mongodb) {
                 sessions={sessions}
                 musicLogs={musicLogs}
                 onSessionClick={(s) => setLinkedSession(s)}
-                onEdit={() => setExpandedRecord(viewingRecord)}
-                onDelete={() => { handleDeleteRecord(viewingRecord); setViewingRecord(null); }}
+                onEdit={hasPerm(user, activeTable, 'edit') ? () => setExpandedRecord(viewingRecord) : undefined}
+                onDelete={hasPerm(user, activeTable, 'delete') ? () => { handleDeleteRecord(viewingRecord); setViewingRecord(null); } : undefined}
                 getPrimaryField={getPrimaryField}
                 setLinkedRecordPopup={setLinkedRecordPopup}
               />
+            ) : activeTable === 'UserManagement' ? (
+              ['admin', 'owner'].includes(user?.role) ? <UserManagement currentUser={user} onToast={showToast} /> : null
             ) : (
               <>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -6301,15 +6630,17 @@ if (!health?.mongodb) {
                   <div className="flex items-center justify-between sm:justify-end gap-2 md:gap-4">
   
   {/* MOVED: Export Button now appears before Count */}
-  <Button 
-    variant="ghost" 
-    size="sm" 
-    onClick={exportToCSV}
-    className="h-8 px-3 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 flex items-center gap-2 transition-all active:scale-95"
-  >
-    <FileText className="h-3.5 w-3.5 text-slate-400" />
-    <span className="text-[10px] font-black uppercase tracking-widest">Export CSV</span>
-  </Button>
+  {activeTable !== 'UserManagement' && (
+    <Button 
+      variant="ghost" 
+      size="sm" 
+      onClick={exportToCSV}
+      className="h-8 px-3 border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 flex items-center gap-2 transition-all active:scale-95"
+    >
+      <FileText className="h-3.5 w-3.5 text-slate-400" />
+      <span className="text-[10px] font-black uppercase tracking-widest">Export CSV</span>
+    </Button>
+  )}
 
   
 
@@ -6401,7 +6732,7 @@ if (!health?.mongodb) {
                 </div>
               </motion.div>
             ))}
-            {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Event</span></motion.div>}
+            {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Event</span></motion.div>}
           </div>
         </div>
       );
@@ -6411,7 +6742,7 @@ if (!health?.mongodb) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4 gap-4 sm:gap-6 py-4 sm:py-6">
         {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
         {sortedVisualData.map((item: any) => renderEventCard(item))}
-        {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Event</span></motion.div>}
+        {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[180px] sm:min-h-[300px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Event</span></motion.div>}
       </div>
     );
   })()
@@ -6472,7 +6803,7 @@ if (!health?.mongodb) {
                 </div>
               </motion.div>
             ))}
-            {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[150px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add track</span></motion.div>}
+            {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[150px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add track</span></motion.div>}
           </div>
         </div>
       );
@@ -6482,7 +6813,7 @@ if (!health?.mongodb) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
         {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
         {sortedVisualData.map((item: any) => renderTrackCard(item))}
-        {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[150px] sm:min-h-[220px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add track</span></motion.div>}
+        {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[150px] sm:min-h-[220px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add track</span></motion.div>}
       </div>
     );
   })()
@@ -6541,7 +6872,7 @@ if (!health?.mongodb) {
                 </div>
               </motion.div>
             ))}
-            {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[120px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add record</span></motion.div>}
+            {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[120px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add record</span></motion.div>}
           </div>
         </div>
       );
@@ -6551,7 +6882,7 @@ if (!health?.mongodb) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
         {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
         {sortedVisualData.map((item: any) => renderDataCard(item))}
-        {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[160px] sm:min-h-[240px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add record</span></motion.div>}
+        {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[160px] sm:min-h-[240px]"><Plus className="h-5 w-5 sm:h-6 sm:w-6 mb-1 sm:mb-2" /><span className="text-[9px] sm:text-[10px] font-black uppercase tracking-widest">Add record</span></motion.div>}
       </div>
     );
   })()
@@ -6607,7 +6938,7 @@ if (!health?.mongodb) {
                 </div>
               </motion.div>
             ))}
-            {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[120px]"><Plus className="h-6 w-6 mb-2" /><span className="text-[10px] font-black uppercase tracking-widest">Add Guidance & Learning</span></motion.div>}
+            {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[120px]"><Plus className="h-6 w-6 mb-2" /><span className="text-[10px] font-black uppercase tracking-widest">Add Guidance & Learning</span></motion.div>}
           </div>
         </div>
       );
@@ -6617,7 +6948,7 @@ if (!health?.mongodb) {
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 sm:gap-5 py-4 sm:py-6">
         {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
         {sortedVisualData.map((item: any) => renderGuidanceCard(item))}
-        {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[240px] sm:min-h-[380px]"><Plus className="h-6 w-6 mb-2" /><span className="text-[10px] font-black uppercase tracking-widest">Add Guidance & Learning</span></motion.div>}
+        {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-xl flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[240px] sm:min-h-[380px]"><Plus className="h-6 w-6 mb-2" /><span className="text-[10px] font-black uppercase tracking-widest">Add Guidance & Learning</span></motion.div>}
       </div>
     );
   })()
@@ -6675,9 +7006,9 @@ if (!health?.mongodb) {
                           </div>
                           <div className="mt-4 flex overflow-x-auto gap-2 md:gap-3 scrollbar-hide pb-1">
                             {images.map((imgSrc, imgIdx) => (
-                              <div key={imgIdx} className="relative h-20 md:h-24 w-28 md:w-36 shrink-0 rounded-xl overflow-hidden border border-slate-200 group/sessionimg hover:ring-2 hover:ring-brand-primary transition-all" onClick={(e) => e.stopPropagation()}>
+                              <div key={imgIdx} className="relative h-20 md:h-24 w-28 md:w-36 shrink-0 rounded-xl overflow-hidden border border-slate-200 group/sessionimg hover:ring-2 hover:ring-brand-primary transition-all shadow-md" onClick={(e) => e.stopPropagation()}>
                                 <img src={imgSrc.replace('export=view', 'export=download')} loading="lazy" decoding="async" className="h-full w-full object-cover" alt="Upload" />
-                                <button onClick={(e) => { e.stopPropagation(); if (!window.confirm("Remove this image?")) return; const entries: string[] = []; const re2 = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g; let mr; while ((mr = re2.exec(item["Images"] || "")) !== null) entries.push(mr[0]); entries.splice(imgIdx, 1); const updated = { ...realItem, ["Images"]: entries.join(' ') }; setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r)); window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) }); }} className="absolute top-1 right-1 p-1.5 bg-black/60 text-white rounded-lg opacity-0 group-hover/sessionimg:opacity-100 hover:bg-red-600 transition-all shadow-sm" title="Remove Image"><Trash2 className="h-3 w-3" /></button>
+                                <button onClick={(e) => { e.stopPropagation(); if (!window.confirm("Remove this image?")) return; const entries: string[] = []; const re2 = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g; let mr; while ((mr = re2.exec(item["Images"] || "")) !== null) entries.push(mr[0]); entries.splice(imgIdx, 1); const updated = { ...realItem, ["Images"]: entries.join(' ') }; setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r)); window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) }); }} className="absolute top-1 right-1 p-1.5 bg-black/60 text-white rounded-lg opacity-100 sm:opacity-0 sm:group-hover/sessionimg:opacity-100 hover:bg-red-600 transition-all shadow-sm" title="Remove Image"><Trash2 className="h-3 w-3" /></button>
                               </div>
                             ))}
                             <div onClick={(e) => { e.stopPropagation(); const fi = e.currentTarget.querySelector('input[type="file"]') as HTMLInputElement; if (fi) fi.click(); }} className="h-20 md:h-24 w-20 md:w-24 shrink-0 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary/50 transition-colors cursor-pointer bg-slate-50 hover:bg-white">
@@ -6709,7 +7040,7 @@ if (!health?.mongodb) {
                                 </div>
                               </motion.div>
                             ))}
-                            {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[120px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Session</span></motion.div>}
+                            {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[120px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Session</span></motion.div>}
                           </div>
                         </div>
                       );
@@ -6718,7 +7049,7 @@ if (!health?.mongodb) {
                       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6 py-4 md:py-6">
                         {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
                         {sortedData.map((item: any) => renderSessionCard(item))}
-                        {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} whileHover={{ y: -4 }} className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[280px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Session</span></motion.div>}
+                        {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} whileHover={{ y: -4 }} className="border-2 border-dashed border-slate-200 rounded-[16px] sm:rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white/50 min-h-[280px]"><Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" /><span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Session</span></motion.div>}
                       </div>
                     );
                   })()
@@ -6866,7 +7197,7 @@ if (!health?.mongodb) {
                                 </div>
                               </motion.div>
                             ))}
-                            {filteredData.length > 0 && !searchQuery && (
+                            {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && (
                               <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]">
                                 <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
                                 <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Music Entry</span>
@@ -6880,7 +7211,7 @@ if (!health?.mongodb) {
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 py-4 sm:py-6">
                         {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
                         {mlSortedData.map((item: any) => renderMusicCard(item))}
-                        {filteredData.length > 0 && !searchQuery && (
+                        {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && (
                           <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]">
                             <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
                             <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Music Entry</span>
@@ -6997,7 +7328,7 @@ if (!health?.mongodb) {
                                 </div>
                               </motion.div>
                             ))}
-                            {filteredData.length > 0 && !searchQuery && (
+                            {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && (
                               <motion.div onClick={openAddModal} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]">
                                 <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
                                 <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Video Entry</span>
@@ -7011,7 +7342,7 @@ if (!health?.mongodb) {
                       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 sm:gap-6 py-4 sm:py-6">
                         {filteredData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
                         {vlSortedData.map((item: any) => renderVideoCard(item))}
-                        {filteredData.length > 0 && !searchQuery && (
+                        {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && (
                           <motion.div onClick={openAddModal} className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-4 sm:p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/50 transition-all bg-white min-h-[120px]">
                             <Plus className="h-6 w-6 sm:h-8 sm:w-8 mb-1 sm:mb-2" />
                             <span className="text-[10px] sm:text-[11px] font-black uppercase tracking-widest">New Video Entry</span>
@@ -7194,7 +7525,7 @@ if (!health?.mongodb) {
                               </div>
                             </motion.div>
                           ))}
-                          {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} whileHover={{ y: -4 }} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/40 transition-all bg-white min-h-[120px]"><Plus className="h-6 w-6 mb-3" /><span className="text-[10px] font-black uppercase tracking-[0.2em]">New {activeTable} Entry</span></motion.div>}
+                          {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} whileHover={{ y: -4 }} className="ml-12 md:ml-16 border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/40 transition-all bg-white min-h-[120px]"><Plus className="h-6 w-6 mb-3" /><span className="text-[10px] font-black uppercase tracking-[0.2em]">New {activeTable} Entry</span></motion.div>}
                         </div>
                       </div>
                     );
@@ -7204,7 +7535,7 @@ if (!health?.mongodb) {
                     <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-2 xl:grid-cols-3 gap-4 md:gap-6">
                       {sortedVisualData.length === 0 && <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={openAddModal} />}
                       {sortedVisualData.map((item: any) => renderGenericCard(item))}
-                      {filteredData.length > 0 && !searchQuery && <motion.div onClick={openAddModal} whileHover={{ y: -4 }} className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/40 transition-all bg-white min-h-[160px]"><Plus className="h-6 w-6 mb-3" /><span className="text-[10px] font-black uppercase tracking-[0.2em]">New {activeTable} Entry</span></motion.div>}
+                      {filteredData.length > 0 && !searchQuery && hasPerm(user, activeTable, 'add') && <motion.div onClick={openAddModal} whileHover={{ y: -4 }} className="border-2 border-dashed border-slate-200 rounded-[20px] flex flex-col items-center justify-center p-8 text-slate-400 cursor-pointer hover:text-brand-primary hover:border-brand-primary/40 transition-all bg-white min-h-[160px]"><Plus className="h-6 w-6 mb-3" /><span className="text-[10px] font-black uppercase tracking-[0.2em]">New {activeTable} Entry</span></motion.div>}
                     </div>
                   );
                   })()
@@ -7472,7 +7803,14 @@ if (!health?.mongodb) {
             className="h-3.5 w-3.5 rounded border-slate-300 text-brand-primary focus:ring-brand-primary cursor-pointer"
           />
           <button
-            onClick={e => { e.stopPropagation(); setExpandedRecord(row.data); }}
+            onClick={e => { 
+              e.stopPropagation(); 
+              if (hasPerm(user, activeTable, 'edit')) {
+                setExpandedRecord(row.data); 
+              } else {
+                setViewingRecord(row.data);
+              }
+            }}
             className="p-0.5 rounded hover:bg-slate-200 text-slate-400 hover:text-brand-primary transition-colors"
             title="Expand record"
           >
@@ -7487,7 +7825,16 @@ if (!health?.mongodb) {
         ) : (
           <div className="contents" onClick={(e) => {
             if (isMobileView) {
+            if (hasPerm(user, activeTable, 'edit')) {
               setExpandedRecord(row.data);
+            } else {
+              setViewingRecord(row.data);
+            }
+              return;
+            }
+            // Disable edit if user lacks permissions
+            if (!hasPerm(user, activeTable, 'edit')) {
+            setViewingRecord(row.data);
               return;
             }
             // Detect which column cell was clicked via DOM position
@@ -7551,12 +7898,12 @@ if (!health?.mongodb) {
   {filteredData.length === 0 && !isInlineAdding && (
     <tr>
       <td colSpan={getTableColumns().length + 2}>
-        <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={() => handleAddBlankRow()} />
+        <EmptyState searchQuery={searchQuery} onClearSearch={() => setSearchQuery('')} onAddFirst={() => hasPerm(user, activeTable, 'add') ? handleAddBlankRow() : showToast("No permission to add")} />
       </td>
     </tr>
   )}
 
-  {filteredData.length > 0 && !isInlineAdding && (
+  {filteredData.length > 0 && !isInlineAdding && hasPerm(user, activeTable, 'add') && (
     <tr
   className="hover:bg-slate-50 cursor-pointer group border-b border-slate-200"
   onClick={() => handleAddBlankRow()}
@@ -7625,12 +7972,14 @@ if (!health?.mongodb) {
         </button>
       )}
 
-      <button
-        className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 text-[13px] font-bold transition-colors whitespace-nowrap"
-        onClick={handleBulkDelete}
-      >
-        <X className="h-4 w-4" /> Delete
-      </button>
+      {hasPerm(user, activeTable, 'delete') && (
+        <button
+          className="flex items-center gap-1.5 px-3 sm:px-4 py-2 rounded-xl text-red-400 hover:text-red-300 hover:bg-red-500/10 text-[13px] font-bold transition-colors whitespace-nowrap"
+          onClick={handleBulkDelete}
+        >
+          <X className="h-4 w-4" /> Delete
+        </button>
+      )}
 
       <div className="w-px h-5 bg-slate-700 sm:hidden" />
 

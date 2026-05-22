@@ -143,18 +143,36 @@ app.get(['/auth/google/callback', '/api/auth/google/callback'], async (req, res)
     const googleUser = await userRes.json();
 
     // Sync User in DB
+    const userCount = await db.collection('users').countDocuments();
     let user = await db.collection('users').findOne({ email: googleUser.email });
+    
     if (!user) {
-      const newUser = {
-        email: googleUser.email,
-        name: googleUser.name,
-        google_id: googleUser.sub,
-        avatar_url: googleUser.picture,
-        role: 'user',
-        created_at: new Date()
-      };
-      const result = await db.collection('users').insertOne(newUser);
-      user = { ...newUser, _id: result.insertedId };
+      if (userCount === 0) {
+        // Failsafe: First user ever becomes the owner
+        const newUser = {
+          email: googleUser.email,
+          name: googleUser.name,
+          google_id: googleUser.sub,
+          avatar_url: googleUser.picture,
+          role: 'owner',
+          created_at: new Date()
+        };
+        const result = await db.collection('users').insertOne(newUser);
+        user = { ...newUser, _id: result.insertedId };
+      } else {
+        // Reject unregistered user
+        res.send(`
+          <script>
+            if (window.opener) {
+              window.opener.postMessage({ type: 'OAUTH_AUTH_ERROR', error: 'Access denied. You must be added by an administrator.' }, '*');
+              window.close();
+            } else {
+              window.location.href = '/?error=access_denied';
+            }
+          </script>
+        `);
+        return;
+      }
     } else {
       await db.collection('users').updateOne({ _id: user._id }, { $set: { name: googleUser.name, avatar_url: googleUser.picture } });
       user = { ...user, name: googleUser.name, avatar_url: googleUser.picture };
@@ -349,9 +367,46 @@ app.post('/api/settings/columns', async (req, res) => {
 app.get('/api/users', async (req, res) => {
   try {
     const db = await getDb();
-    const users = await db.collection('users').find({}, { projection: { _id: 1, name: 1, email: 1 } }).toArray();
+    // Return full user objects so the frontend can check roles/permissions
+    const users = await db.collection('users').find({}).sort({ created_at: -1 }).toArray();
     res.json(users);
   } catch (e) { res.status(500).json({ error: 'Users fetch failed' }); }
+});
+
+app.post('/api/users', async (req, res) => {
+  try {
+    const db = await getDb();
+    const existing = await db.collection('users').findOne({ email: req.body.email });
+    if (existing) {
+      return res.status(400).json({ error: 'A user with this email already exists' });
+    }
+    const newUser = { ...req.body, created_at: new Date() };
+    const result = await db.collection('users').insertOne(newUser);
+    res.status(201).json({ ...newUser, _id: result.insertedId });
+  } catch (e) { res.status(500).json({ error: 'User creation failed' }); }
+});
+
+app.put('/api/users/:id', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { id } = req.params;
+    const updateData = { ...req.body };
+    delete updateData._id;
+    delete updateData.email; // Email is tied to Google OAuth, prevent overwriting
+    await db.collection('users').updateOne(
+      { _id: new ObjectId(id) },
+      { $set: updateData }
+    );
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'User update failed' }); }
+});
+
+app.delete('/api/users/:id', async (req, res) => {
+  try {
+    const db = await getDb();
+    await db.collection('users').deleteOne({ _id: new ObjectId(req.params.id) });
+    res.json({ success: true });
+  } catch (e) { res.status(500).json({ error: 'User delete failed' }); }
 });
 
 // COMMENTS
