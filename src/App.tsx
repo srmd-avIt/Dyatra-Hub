@@ -2528,8 +2528,11 @@ const handleImageUpdate = async (updatedString: string) => {
     alert('Network error — image could not be saved. Check your connection.');
   }
 };
-// Keep the stable ref in sync with the latest version of handleImageUpdate
-_imgUpdateRef.current = handleImageUpdate;
+// Keep the stable ref in sync via useEffect so it updates AFTER child cleanups.
+// If updated in the render body, React re-renders App (imageManager=null) and updates
+// the ref BEFORE AttachmentManagerDialog's cleanup fires, causing the cleanup's
+// pending save to call handleImageUpdate with null imageManager and silently skip saving.
+useEffect(() => { _imgUpdateRef.current = handleImageUpdate; });
 
 
 const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -4185,8 +4188,12 @@ const fetchAllData = async () => {
     setIsLoading(false);
   }
 };
-// Keep stable close ref in sync — calls setImageManager(null) + fetchAllData
-_imgCloseRef.current = () => { setImageManager(null); fetchAllData(); };
+// Keep stable close ref in sync.
+// Do NOT call fetchAllData() here — handleImageUpdate already updates the data
+// arrays optimistically after each PUT. Calling fetchAllData races with the
+// cleanup's pending PUT: if fetchAllData resolves last it overwrites the saved
+// image with stale DB data, making the image appear not to have been added.
+_imgCloseRef.current = () => { setImageManager(null); };
 
 // Fetch only the active table's collection (plus sessions for linked-record tables) concurrently
 const fetchActiveTable = async (table = activeTableRef.current) => {
