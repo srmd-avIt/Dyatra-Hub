@@ -394,7 +394,7 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
 
       <div className="bg-white border border-slate-200 rounded-2xl shadow-sm overflow-hidden">
         {loading ? <div className="p-8 text-center text-slate-400 text-sm font-bold uppercase tracking-widest animate-pulse">Loading users...</div> : (
-          <div className="overflow-x-auto thin-scrollbar"><table className="w-full text-left text-[12px]"><thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-bold uppercase tracking-widest text-[9px]"><tr><th className="px-5 py-3">User</th><th className="px-5 py-3">Department</th><th className="px-5 py-3">Role</th><th className="px-5 py-3">Joined</th><th className="px-5 py-3 text-right">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">
+          <div className="overflow-auto scrollbar-hide max-h-[65vh]"><table className="w-full text-left text-[12px]"><thead className="bg-slate-50 text-slate-500 font-bold uppercase tracking-widest text-[9px] sticky top-0 z-10 shadow-[0_1px_0_0_#e2e8f0]"><tr><th className="px-5 py-3 bg-slate-50">User</th><th className="px-5 py-3 bg-slate-50">Department</th><th className="px-5 py-3 bg-slate-50">Role</th><th className="px-5 py-3 bg-slate-50">Joined</th><th className="px-5 py-3 text-right bg-slate-50">Actions</th></tr></thead><tbody className="divide-y divide-slate-100">
             {filteredUsers.length === 0 ? <tr><td colSpan={5} className="px-5 py-8 text-center text-slate-400 italic">No users found</td></tr> : (
               groupedUsers ? (
                 Object.entries(groupedUsers).map(([group, usersInGroup]) => {
@@ -1369,7 +1369,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     setCommentPosting(true);
     try {
       const mentions = [...text.matchAll(/@(\w+)/g)].map(m => m[1]);
-      const body = { collection: colName, recordId, text, authorId: currentUser?.email || '', authorName: currentUser?.name || 'Anonymous', mentions, recordTitle, tableName };
+      const body = { collection: colName, recordId, text, authorId: currentUser?.email || '', authorName: currentUser?.name || currentUser?.email || 'Anonymous', mentions, recordTitle, tableName };
       const res = await window.fetch('/api/comments', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
       if (res.ok) {
         const c = await res.json();
@@ -2188,7 +2188,7 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
           recordId: n.recordId,
           text,
           authorId: currentUser?.email || '',
-          authorName: currentUser?.name || 'Anonymous',
+          authorName: currentUser?.name || currentUser?.email || 'Anonymous',
           mentions,
           recordTitle: n.recordTitle,
           tableName: n.tableName,
@@ -2714,12 +2714,12 @@ const handleMouseDown = (e: React.MouseEvent, columnName: string) => {
       window.history.replaceState({}, document.title, window.location.pathname);
     }
 
-    const savedUser = localStorage.getItem('dyatra_user');
+    const savedUser = sessionStorage.getItem('dyatra_user');
     if (savedUser) {
       try {
         setUser(JSON.parse(savedUser));
       } catch (e) {
-        localStorage.removeItem('dyatra_user');
+        sessionStorage.removeItem('dyatra_user');
       }
     }
     setLoading(false);
@@ -3300,7 +3300,8 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
     setIsUploading(true);
     setUploadCount(prev => prev + files.length);
 
-    const processOne = (file: File) => {
+    const processOne = (file: File): Promise<void> => {
+      return new Promise(resolve => {
       const reader = new FileReader();
       reader.onload = (event) => {
         const img = new Image();
@@ -3326,6 +3327,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
             // replaces it in Step 2, keeping the upload to a single small PUT.
             // _key = tempId so the React key stays stable even after Drive URL replaces base64
             setImages(prev => [...prev, { url: base64Url, name, _tempId: tempId, _key: tempId }]);
+            resolve();
 
             // Step 2: upload to Drive in background, replace base64 with Drive URL
             window.fetch('/api/upload', {
@@ -3351,17 +3353,22 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ ma
               setUploadCount(prev => prev - 1);
             });
           } else {
+            resolve();
             setUploadCount(prev => prev - 1);
           }
         };
+        img.onerror = () => { resolve(); setUploadCount(prev => prev - 1); };
         img.src = event.target?.result as string;
       };
+      reader.onerror = () => { resolve(); setUploadCount(prev => prev - 1); };
       reader.readAsDataURL(file);
+      });
     };
 
-    // Process all selected files in parallel
-    files.forEach(processOne);
-    setIsUploading(false);
+    // Wait for all local processing to finish before unblocking save
+    Promise.all(files.map(processOne)).then(() => {
+      setIsUploading(false);
+    });
   };
 
   const handleRemove = (i: number) => {
@@ -4812,7 +4819,7 @@ useEffect(() => {
       if (event.data?.type === 'OAUTH_AUTH_SUCCESS') {
         const userData = event.data.user;
         setUser(userData);
-        localStorage.setItem('dyatra_user', JSON.stringify(userData));
+        sessionStorage.setItem('dyatra_user', JSON.stringify(userData));
         } else if (event.data?.type === 'OAUTH_AUTH_ERROR') {
           setLoginError(event.data.error);
       }
@@ -4851,7 +4858,7 @@ const handleGoogleLogin = async () => {
     setUser(null);
     setActiveTable('Home');
     setViewingRecord(null);
-    localStorage.removeItem('dyatra_user');
+    sessionStorage.removeItem('dyatra_user');
   };
 
   useEffect(() => {

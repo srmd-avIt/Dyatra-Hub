@@ -186,7 +186,7 @@ app.get(['/auth/google/callback', '/api/auth/google/callback'], async (req, res)
           window.opener.postMessage({ type: 'OAUTH_AUTH_SUCCESS', user }, '*');
           window.close();
         } else {
-          localStorage.setItem('dyatra_user', JSON.stringify(user));
+          sessionStorage.setItem('dyatra_user', JSON.stringify(user));
           window.location.href = '/';
         }
       </script>
@@ -425,7 +425,7 @@ app.post('/api/comments', async (req, res) => {
     const db = await getDb();
     const { collection, recordId, text, authorId, authorName, mentions, recordTitle, tableName } = req.body;
     if (!collection || !recordId || !text) return res.status(400).json({ error: 'Missing required fields' });
-    const comment = { collection, recordId, text, authorId: authorId || 'anonymous', authorName: authorName || 'Anonymous', mentions: mentions || [], createdAt: new Date() };
+    const comment = { collection, recordId, text, authorId: authorId || 'anonymous', authorName: authorName || authorId || 'Anonymous', mentions: mentions || [], createdAt: new Date() };
     const result = await db.collection('comments').insertOne(comment);
 
     // Respond immediately so the client isn't blocked by notification processing
@@ -449,7 +449,7 @@ app.post('/api/comments', async (req, res) => {
               recipientName: match.name || token,
               type: 'mention',
               text,
-              authorName: authorName || 'Anonymous',
+              authorName: authorName || authorId || 'Anonymous',
               authorId: authorId || '',
               recordId,
               recordTitle: recordTitle || 'a record',
