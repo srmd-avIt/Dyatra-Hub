@@ -572,6 +572,299 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
   );
 };
 
+/** Attachment / image manager dialog — defined OUTSIDE App for stable component identity */
+const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({
+  manager,
+  onSaved,
+  onClose,
+}: {
+  manager: { item: any; column: string; collection: string; isOpen: boolean } | null;
+  onSaved: (newValue: string) => void;
+  onClose: () => void;
+}) {
+  type ImgEntry = { url: string; name: string; tempKey?: string; loading?: boolean };
+
+  // Each entry has a stable tempKey used as React key; loading=true while Drive upload is in flight
+  const [images, setImages] = useState<ImgEntry[]>([]);
+  const [uploadError, setUploadError] = useState<string | null>(null);
+  const imagesRef = useRef<ImgEntry[]>([]);
+  const uploadingRef = useRef(false); // guard against double-trigger
+
+  const parseImages = (raw: string): ImgEntry[] => {
+    const result: ImgEntry[] = [];
+    // Match both http(s) URLs and data: URIs so existing base64-stored images are shown
+    const re = /(?:\[([^\]]*)\])?\(((?:https?:\/\/|data:image\/)[^)]+)\)/g;
+    let m;
+    while ((m = re.exec(raw)) !== null) result.push({ name: m[1] || '', url: m[2], tempKey: m[2] });
+    return result;
+  };
+
+  const serialize = (entries: ImgEntry[]): string =>
+    entries
+      .filter(e => e.url && !e.loading) // never persist loading placeholders or empty URLs
+      .map(e => e.name ? `[${e.name}](${e.url})` : `(${e.url})`)
+      .join(' ');
+
+  // Re-initialize only when a different record / column is opened
+  useEffect(() => {
+    if (!manager?.isOpen || !manager?.item) return;
+    const parsed = parseImages(manager.item[manager.column] || '');
+    setImages(parsed);
+    imagesRef.current = parsed;
+    setUploadError(null);
+    uploadingRef.current = false;
+  }, [manager?.isOpen, String(manager?.item?._id ?? manager?.item?.id ?? ''), manager?.column]);
+
+  const persist = async (entries: ImgEntry[]) => {
+    if (!manager?.item) return;
+    const recordId = String(manager.item._id || manager.item.id || '');
+    if (!recordId || recordId === 'undefined') return;
+    const str = serialize(entries);
+    try {
+      const res = await window.fetch(`/api/${manager.collection}/${recordId}`, {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ [manager.column]: str }),
+      });
+      if (res.ok) {
+        onSaved(str);
+      } else {
+        const msg = await res.text().catch(() => '');
+        setUploadError(`Save failed: ${msg || res.status}`);
+      }
+    } catch (err: any) {
+      console.error('Image save error:', err);
+      setUploadError('Network error — could not save image.');
+    }
+  };
+
+  const handleUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const input = e.target;
+    const files = Array.from(input.files || []);
+    input.value = '';
+    if (!files.length || uploadingRef.current) return;
+    uploadingRef.current = true;
+    setUploadError(null);
+
+    for (const file of files) {
+      const tempKey = `_t_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`;
+      const name = file.name.replace(/\.[^.]+$/, '');
+
+      // Show loading placeholder immediately so the user sees feedback
+      const withPlaceholder: ImgEntry[] = [...imagesRef.current, { url: '', name, loading: true, tempKey }];
+      imagesRef.current = withPlaceholder;
+      setImages([...withPlaceholder]);
+
+      try {
+        // Compress to JPEG ≤ 1200px
+        const base64 = await new Promise<string>((resolve, reject) => {
+          const reader = new FileReader();
+          reader.onerror = reject;
+          reader.onload = ev => {
+            const img = new Image();
+            img.onerror = reject;
+            img.onload = () => {
+              const canvas = document.createElement('canvas');
+              let { width, height } = img;
+              const max = 1200;
+              if (width > max || height > max) {
+                if (width > height) { height = Math.round(height * max / width); width = max; }
+                else { width = Math.round(width * max / height); height = max; }
+              }
+              canvas.width = width; canvas.height = height;
+              canvas.getContext('2d')?.drawImage(img, 0, 0, width, height);
+              resolve(canvas.toDataURL('image/jpeg', 0.7));
+            };
+            img.src = ev.target?.result as string;
+          };
+          reader.readAsDataURL(file);
+        });
+
+        // Upload to Google Drive — only commit Drive URL, never base64
+        const res = await window.fetch('/api/upload', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ imageBase64: base64, name: file.name }),
+        });
+        const data = await res.json();
+
+        if (data.url) {
+          // Replace loading placeholder with real Drive URL
+          const realEntry: ImgEntry = { url: data.url, name, tempKey };
+          const updated = imagesRef.current.map(e => e.tempKey === tempKey ? realEntry : e);
+          imagesRef.current = updated;
+          setImages([...updated]);
+          await persist(updated);
+        } else {
+          // Remove placeholder and surface error
+          const cleaned = imagesRef.current.filter(e => e.tempKey !== tempKey);
+          imagesRef.current = cleaned;
+          setImages([...cleaned]);
+          setUploadError(data.error || 'Upload failed — check Google Drive credentials.');
+        }
+      } catch (err: any) {
+        const cleaned = imagesRef.current.filter(e => e.tempKey !== tempKey);
+        imagesRef.current = cleaned;
+        setImages([...cleaned]);
+        setUploadError('Upload error: ' + (err?.message || 'unknown'));
+        console.error('Upload error for', file.name, err);
+      }
+    }
+    uploadingRef.current = false;
+  };
+
+  const handleRemove = async (idx: number) => {
+    const updated = imagesRef.current.filter((_, i) => i !== idx);
+    imagesRef.current = updated;
+    setImages([...updated]);
+    await persist(updated);
+  };
+
+  const anyLoading = images.some(e => e.loading);
+
+  if (!manager?.isOpen) return null;
+
+  const realCount = images.filter(e => !e.loading).length;
+
+  return (
+    <div
+      className="fixed inset-0 z-[600] flex items-end sm:items-center justify-center"
+      style={{ backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)' }}
+      onClick={anyLoading ? undefined : onClose}
+    >
+      <div
+        className="w-full sm:w-[580px] bg-white rounded-t-2xl sm:rounded-xl flex flex-col shadow-2xl max-h-[92vh] sm:max-h-[88vh] overflow-hidden border border-slate-200"
+        onClick={e => e.stopPropagation()}
+      >
+        {/* Mobile drag handle */}
+        <div className="sm:hidden flex justify-center pt-3 pb-1 shrink-0">
+          <div className="w-10 h-1 bg-slate-300 rounded-full" />
+        </div>
+
+        {/* Header */}
+        <div className="flex items-center justify-between px-4 pt-3 pb-2.5 shrink-0 border-b border-slate-100">
+          <div className="flex items-center gap-2">
+            <Paperclip className="h-4 w-4 text-slate-400" />
+            <span className="text-[13px] font-semibold text-slate-800">{manager.column}</span>
+            {realCount > 0 && (
+              <span className="text-[11px] text-slate-400">{realCount} file{realCount !== 1 ? 's' : ''}</span>
+            )}
+          </div>
+          <button
+            onClick={anyLoading ? undefined : onClose}
+            disabled={anyLoading}
+            className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            <X className="h-4 w-4" />
+          </button>
+        </div>
+
+        {/* Attach button */}
+        <div className="px-4 py-2.5 shrink-0">
+          <label className={`inline-flex items-center gap-1.5 text-[12px] font-medium px-3 py-1.5 rounded-lg transition-colors border border-slate-200 w-full justify-center sm:w-auto sm:justify-start select-none ${anyLoading ? 'text-slate-300 cursor-not-allowed' : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100 cursor-pointer'}`}>
+            {anyLoading
+              ? <div className="h-3.5 w-3.5 rounded-full border-2 border-slate-400 border-t-transparent animate-spin shrink-0" />
+              : <Paperclip className="h-3.5 w-3.5" />
+            }
+            {anyLoading ? 'Uploading…' : 'Attach image'}
+            <input
+              type="file"
+              accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+              multiple
+              className="sr-only"
+              onChange={handleUpload}
+              disabled={anyLoading}
+            />
+          </label>
+        </div>
+
+        {/* Error banner */}
+        {uploadError && (
+          <div className="mx-4 mb-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200 flex items-start gap-2 shrink-0">
+            <X className="h-3.5 w-3.5 text-red-500 mt-0.5 shrink-0" />
+            <span className="text-[11px] text-red-700 leading-snug">{uploadError}</span>
+            <button onClick={() => setUploadError(null)} className="ml-auto shrink-0 text-red-400 hover:text-red-600">
+              <X className="h-3 w-3" />
+            </button>
+          </div>
+        )}
+
+        <div className="h-px bg-slate-100 shrink-0" />
+
+        {/* Image grid */}
+        <div className="flex-1 overflow-y-auto min-h-0 p-4">
+          {images.length === 0 ? (
+            <div className="py-12 text-center space-y-2">
+              <Paperclip className="h-8 w-8 text-slate-200 mx-auto" />
+              <p className="text-[12px] text-slate-400">No attachments yet</p>
+              <label className="text-[12px] font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer select-none">
+                Attach a file
+                <input
+                  type="file"
+                  accept="image/png,image/jpeg,image/jpg,image/webp,image/gif"
+                  multiple
+                  className="sr-only"
+                  onChange={handleUpload}
+                />
+              </label>
+            </div>
+          ) : (
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+              {images.map((entry, i) => (
+                <div key={entry.tempKey || entry.url || i} className="group/card flex flex-col">
+                  <div
+                    className="relative rounded-lg overflow-hidden bg-slate-100 shadow-sm"
+                    style={{ aspectRatio: '4/3' }}
+                  >
+                    {entry.loading ? (
+                      /* Loading placeholder — shown immediately on file select */
+                      <div className="w-full h-full flex flex-col items-center justify-center gap-1.5 bg-slate-100">
+                        <div className="h-5 w-5 rounded-full border-2 border-brand-primary border-t-transparent animate-spin" />
+                        <span className="text-[10px] text-slate-400">Uploading…</span>
+                      </div>
+                    ) : (
+                      <>
+                        <img
+                          src={entry.url.replace('export=download', 'export=view')}
+                          loading="eager"
+                          className="w-full h-full object-cover"
+                          alt={entry.name || `Image ${i + 1}`}
+                        />
+                        <div className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover/card:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => handleRemove(i)}
+                            className="p-1 bg-white/95 rounded text-slate-500 hover:text-red-600 shadow-sm transition-colors"
+                            title="Remove"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                          </button>
+                        </div>
+                      </>
+                    )}
+                  </div>
+                  <p className="mt-1.5 text-[11px] text-slate-500 truncate px-0.5 leading-snug">
+                    {entry.name || `Image ${i + 1}`}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+
+        {/* Footer — uploading indicator or safe-area spacer */}
+        {anyLoading ? (
+          <div className="px-4 py-2.5 border-t border-slate-100 flex items-center gap-2 shrink-0" style={{ paddingBottom: 'max(10px, env(safe-area-inset-bottom))' }}>
+            <div className="h-3 w-3 rounded-full border-2 border-brand-primary border-t-transparent animate-spin shrink-0" />
+            <span className="text-[11px] text-slate-400">Uploading to Google Drive…</span>
+          </div>
+        ) : (
+          <div className="shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} />
+        )}
+      </div>
+    </div>
+  );
+});
+
 /** Airtable-style searchable dropdown with free-type "Create" option */
 /** Airtable-style searchable dropdown with free-type "Create" option */
 /** Airtable-style multi-select: Click cell to see tags, click Plus to see options */
@@ -2762,131 +3055,66 @@ const handleMouseDown = (e: React.MouseEvent, columnName: string) => {
   }, []);
 
   const isConfigured = health?.mongodb; // Only require MongoDB for general operation
-// Add these to your existing useState hooks
+
 const [imageManager, setImageManager] = useState<{
-  item: any,
-  column: string,
-  isOpen: boolean
+  item: any;
+  column: string;
+  collection: string;
+  isOpen: boolean;
 } | null>(null);
 
-const attachmentFileInputRef = useRef<HTMLInputElement>(null);
-
-// Stable refs so AttachmentManagerDialog never re-renders due to prop identity changes.
-// React.memo only works if props are stable; these refs forward to the latest functions.
-const _imgUpdateRef = useRef<((s: string) => Promise<void>) | null>(null);
-const _imgCloseRef  = useRef<(() => void) | null>(null);
-const _imgToastRef  = useRef<((msg: string, type?: 'error' | 'success') => void) | null>(null);
-const stableOnImgUpdate = useCallback((s: string) => _imgUpdateRef.current!(s), []);
-const stableOnImgClose  = useCallback(() => _imgCloseRef.current!(), []);
-const stableOnImgToast  = useCallback((msg: string, type?: 'error' | 'success') => _imgToastRef.current!(msg, type), []);
-
-const handleImageUpdate = async (updatedString: string) => {
-  if (!imageManager?.item) return;
-
-  // Capture immediately — avoids stale-closure risk in async callbacks
-  const recordId = String(imageManager.item._id || imageManager.item.id || '');
-  const column = imageManager.column;
-
-  if (!recordId || recordId === 'undefined') {
-    showToast('Cannot save image: record has no ID.', 'error');
-    return;
-  }
-
-  let collection = '';
+// Resolve collection name for the current active table
+const getImageCollection = () => {
   switch (activeTable) {
-    case 'LED': collection = 'led_details'; break;
-    case 'Session': collection = 'sessions'; break;
-    case 'Events': collection = 'events'; break;
-    case 'MusicLog': collection = 'musiclog'; break;
-    case 'Tracks': collection = 'media'; break;
-    case 'VideoSetup': collection = 'videosetup'; break;
-    case 'AudioSetup': collection = 'audiosetup'; break;
-    case 'DyatraChecklist': collection = 'checklist'; break;
-    case 'Guidance & Learning': collection = 'guidance'; break;
-    case 'VideoLog': collection = 'videolog'; break;
-    case 'DataSharing': collection = 'locations'; break;
-    default: collection = activeTable.toLowerCase();
+    case 'Events': return 'events';
+    case 'Session': return 'sessions';
+    case 'MusicLog': return 'musiclog';
+    case 'VideoLog': return 'videolog';
+    case 'Tracks': return 'media';
+    case 'DyatraChecklist': return 'checklist';
+    case 'Guidance & Learning': return 'guidance';
+    case 'LED': return 'led_details';
+    case 'DataSharing': return 'locations';
+    case 'VideoSetup': return 'videosetup';
+    case 'AudioSetup': return 'audiosetup';
+    default: return activeTable.toLowerCase();
   }
-
-  const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
-    'events': setEvents as any, 'sessions': setSessions as any,
-    'musiclog': setMusicLogs, 'videolog': setVideoLogs,
-    'media': setMedia as any, 'checklist': setChecklist as any,
-    'guidance': setGuidance as any, 'led_details': setLedDetails as any,
-    'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
-  };
-
-  // Retry up to 2 times — handles transient MongoDB cold-start errors in
-  // Vercel serverless (first request after idle spins up a new function
-  // instance before the DB connection is ready, returning errors like
-  // "Node cannot be found in the current page").
-  const MAX_ATTEMPTS = 3;
-  for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
-    if (attempt > 1) {
-      await new Promise(r => setTimeout(r, 1000 * (attempt - 1))); // 1 s, 2 s
-    }
-    try {
-      // Send ONLY the changed column — not the full record.
-      // The server uses $set so other fields stay untouched.
-      const response = await window.fetch(`/api/${collection}/${recordId}`, {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ [column]: updatedString })
-      });
-
-      if (response.ok) {
-        // Sync expandedRecord if the image manager was opened from the expand modal
-        setExpandedRecord((prev: any) =>
-          prev && (String(prev._id || prev.id) === recordId)
-            ? { ...prev, [column]: updatedString }
-            : prev
-        );
-        // Sync editDraft if opened during inline edit
-        setEditDraft((prev: any) =>
-          prev && (String(prev._id || prev.id) === recordId)
-            ? { ...prev, [column]: updatedString }
-            : prev
-        );
-        // Optimistically update the table so thumbnails refresh immediately
-        const setter = optimisticSetter[collection];
-        if (setter) {
-          setter(prev => prev.map(r =>
-            (String(r._id) === recordId || String(r.id) === recordId)
-              ? { ...r, [column]: updatedString }
-              : r
-          ));
-        }
-        return; // success — done
-      }
-
-      // Non-2xx response — only retry 5xx (server errors), not 4xx (client errors)
-      if (response.status < 500) {
-        const errorData = await response.text();
-        console.error('Server refused image update:', errorData);
-        showToast('Image save failed — ' + (errorData || 'server error'), 'error');
-        return;
-      }
-
-      // 5xx: log and retry
-      const body = await response.text();
-      console.warn(`Image save attempt ${attempt} failed (${response.status}):`, body);
-
-    } catch (err) {
-      console.warn(`Image save attempt ${attempt} network error:`, err);
-      if (attempt === MAX_ATTEMPTS) {
-        showToast('Network error — image could not be saved.', 'error');
-      }
-    }
-  }
-
-  // All 3 attempts failed with 5xx
-  showToast('Image save failed after retries. Check connection.', 'error');
 };
-// Keep the stable ref in sync via useEffect so it updates AFTER child cleanups.
-// If updated in the render body, React re-renders App (imageManager=null) and updates
-// the ref BEFORE AttachmentManagerDialog's cleanup fires, causing the cleanup's
-// pending save to call handleImageUpdate with null imageManager and silently skip saving.
-useEffect(() => { _imgUpdateRef.current = handleImageUpdate; });
+
+// Called by AttachmentManagerDialog after each successful DB save
+const handleImageSaved = (newValue: string) => {
+  if (!imageManager?.item) return;
+  const recordId = String(imageManager.item._id || imageManager.item.id || '');
+  const col = imageManager.column;
+  const coll = imageManager.collection;
+
+  const setterMap: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
+    events: setEvents as any, sessions: setSessions as any,
+    musiclog: setMusicLogs, videolog: setVideoLogs,
+    media: setMedia as any, checklist: setChecklist as any,
+    guidance: setGuidance as any, led_details: setLedDetails as any,
+    locations: setLocations, videosetup: setVideoSetup, audiosetup: setAudioSetup,
+  };
+  const setter = setterMap[coll];
+  if (setter) {
+    setter((prev: any[]) => prev.map(r =>
+      (String(r._id) === recordId || String(r.id) === recordId)
+        ? { ...r, [col]: newValue }
+        : r
+    ));
+  }
+  setExpandedRecord((prev: any) =>
+    prev && String(prev._id || prev.id) === recordId ? { ...prev, [col]: newValue } : prev
+  );
+  setEditDraft((prev: any) =>
+    prev && String(prev._id || prev.id) === recordId ? { ...prev, [col]: newValue } : prev
+  );
+};
+
+const _imgSavedRef = useRef(handleImageSaved);
+_imgSavedRef.current = handleImageSaved;
+const stableOnImageSaved = useCallback((v: string) => _imgSavedRef.current(v), []);
+const stableOnImageClose = useCallback(() => setImageManager(null), []);
 
 
 const [selectedIds, setSelectedIds] = useState<string[]>([]);
@@ -3226,381 +3454,6 @@ const buildLookupPatch = (
   return patch;
 };
 
-const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({ manager, onClose, onUpdate, onToast }: any) {
-  // _key is a stable identity field that NEVER changes for the lifetime of an entry.
-  // Using it as the React key prevents the unmount/remount that happened when
-  // base64 (_tempId key) was swapped for the Drive URL (url key), which caused
-  // "Node cannot be found in the current page" React reconciliation errors.
-  type ImgEntry = { url: string; name: string; _key: string; _tempId?: string };
-
-  const [images, setImages] = useState<ImgEntry[]>([]);
-  const [isUploading, setIsUploading] = useState(false);
-  const [uploadCount, setUploadCount] = useState(0);
-
-  const parseImages = (raw: string): ImgEntry[] => {
-    const result: ImgEntry[] = [];
-    const re = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
-    let m;
-    while ((m = re.exec(raw)) !== null) result.push({ name: m[1] || '', url: m[2], _key: m[2] });
-    return result;
-  };
-
-  const serialize = (entries: ImgEntry[]): string =>
-    entries.map(e => e.name ? `[${e.name}](${e.url})` : `(${e.url})`).join(' ');
-
-  const [renamingIdx, setRenamingIdx] = useState<number | null>(null);
-  const [renameVal, setRenameVal] = useState('');
-  const onUpdateRef = useRef(onUpdate);
-  onUpdateRef.current = onUpdate;
-
-  const initialStringRef = useRef<string | null>(null);
-  const saveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  useEffect(() => {
-    if (!manager?.isOpen || !manager?.item) return;
-    const raw = manager.item[manager.column] || '';
-    initialStringRef.current = raw;
-    setImages(parseImages(raw));
-    setRenamingIdx(null);
-    setIsUploading(false);
-    setUploadCount(0);
-  }, [manager?.isOpen, manager?.item?._id, manager?.item?.id, manager?.column]);
-
-  // Auto-save whenever `images` changes and there are no active uploads
-   useEffect(() => {
-    if (!manager?.isOpen) return;
-
-    // CHANGE: We removed the "isSyncing" check that used to return early.
-    // We only block if the browser is physically processing the files (isUploading).
-    // This allows the base64 string to be sent to 'onUpdate' immediately.
-    if (isUploading) return; 
-
-    const serialized = serialize(images);
-    if (serialized === initialStringRef.current) return;
-
-    if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
-    saveTimerRef.current = setTimeout(() => {
-      saveTimerRef.current = null;
-      initialStringRef.current = serialized;
-      onUpdateRef.current(serialized); // This triggers handleImageUpdate (The DB Save)
-    }, 300);
-
-    return () => {
-      if (saveTimerRef.current !== null) clearTimeout(saveTimerRef.current);
-    };
-  }, [images, isUploading, manager?.isOpen]);
-
-  // All handlers defined before the early return — no stale closures
-  const handleUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const input = e.target;
-    const files = Array.from(input.files || []);
-    input.value = '';
-    if (files.length === 0) return;
-
-    setIsUploading(true);
-    setUploadCount(prev => prev + files.length);
-
-    const processOne = (file: File): Promise<void> => {
-      return new Promise(resolve => {
-      const reader = new FileReader();
-      reader.onload = (event) => {
-        const img = new Image();
-        img.onload = () => {
-          const canvas = document.createElement('canvas');
-          let { width, height } = img;
-          const max = 1200;
-          if (width > max || height > max) {
-            if (width > height) { height = Math.round(height * (max / width)); width = max; }
-            else { width = Math.round(width * (max / height)); height = max; }
-          }
-          canvas.width = width;
-          canvas.height = height;
-          const ctx = canvas.getContext('2d');
-          if (ctx) {
-            ctx.drawImage(img, 0, 0, width, height);
-            const base64Url = canvas.toDataURL('image/jpeg', 0.7);
-            const name = file.name.replace(/\.[^.]+$/, '');
-            const tempId = `_t_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
-
-            // Step 1: show immediately — use setImages (not commit) so no DB save is
-            // triggered for the large base64 blob. The save fires only after Drive URL
-            // replaces it in Step 2, keeping the upload to a single small PUT.
-            // _key = tempId so the React key stays stable even after Drive URL replaces base64
-            setImages(prev => [...prev, { url: base64Url, name, _tempId: tempId, _key: tempId }]);
-            resolve();
-
-            // Step 2: upload to Drive in background, replace base64 with Drive URL
-            window.fetch('/api/upload', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ imageBase64: base64Url, name: `${name}.jpg` })
-            })
-            .then(res => res.json())
-            .then(data => {
-              if (data.url) {
-                setImages(prev => prev.map(e => e._tempId === tempId ? { name: e.name, url: data.url, _key: e._key } : e));
-              } else {
-                setImages(prev => prev.map(e => e._tempId === tempId ? { name: e.name, url: e.url, _key: e._key } : e));
-                onToast?.('Drive sync failed — image saved locally. ' + (data.error || ''), 'error');
-              }
-            })
-            .catch(err => {
-              console.error(err);
-              setImages(prev => prev.map(e => e._tempId === tempId ? { name: e.name, url: e.url, _key: e._key } : e));
-              onToast?.('Drive upload error — image saved locally.', 'error');
-            })
-            .finally(() => {
-              setUploadCount(prev => prev - 1);
-            });
-          } else {
-            resolve();
-            setUploadCount(prev => prev - 1);
-          }
-        };
-        img.onerror = () => { resolve(); setUploadCount(prev => prev - 1); };
-        img.src = event.target?.result as string;
-      };
-      reader.onerror = () => { resolve(); setUploadCount(prev => prev - 1); };
-      reader.readAsDataURL(file);
-      });
-    };
-
-    // Wait for all local processing to finish before unblocking save
-    Promise.all(files.map(processOne)).then(() => {
-      setIsUploading(false);
-    });
-  };
-
-  const handleRemove = (i: number) => {
-    setImages(prev => prev.filter((_, idx) => idx !== i));
-  };
-
-  const handleDownload = (entry: ImgEntry, i: number) => {
-    const a = document.createElement('a');
-    a.href = entry.url.replace('export=view', 'export=download');
-    a.download = entry.name || `led_image_${i + 1}`;
-    a.style.cssText = 'position:fixed;left:-9999px';
-    document.body.appendChild(a);
-    a.click();
-    setTimeout(() => { try { document.body.removeChild(a); } catch (_) {} }, 300);
-  };
-
-  const commitRename = (i: number) => {
-    setImages(prev => prev.map((e, idx) => idx === i ? { ...e, name: renameVal.trim() } : e));
-    setRenamingIdx(null);
-  };
-
-  // ── Drag-and-drop reorder (desktop HTML5 + mobile touch) ──────────────
-  const [draggingIdx, setDraggingIdx] = useState<number | null>(null);
-  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
-  const draggingIdxRef = useRef<number | null>(null);
-
-  const doReorder = (from: number | null, to: number | null) => {
-    if (from === null || to === null || from === to) return;
-    setImages(prev => {
-      const next = [...prev];
-      const [moved] = next.splice(from, 1);
-      next.splice(to, 0, moved);
-      return next;
-    });
-  };
-
-  // Touch handlers for mobile
-  const handleTouchStart = (i: number) => {
-    draggingIdxRef.current = i;
-    setDraggingIdx(i);
-  };
-
-  const handleTouchMove = (e: React.TouchEvent) => {
-    e.preventDefault();
-    const touch = e.touches[0];
-    const el = document.elementFromPoint(touch.clientX, touch.clientY);
-    const card = el?.closest('[data-card-idx]');
-    if (card) {
-      const idx = parseInt(card.getAttribute('data-card-idx') || '-1');
-      if (!isNaN(idx) && idx >= 0) setDragOverIdx(idx);
-    }
-  };
-
-  const handleTouchEnd = () => {
-    doReorder(draggingIdxRef.current, dragOverIdx);
-    draggingIdxRef.current = null;
-    setDraggingIdx(null);
-    setDragOverIdx(null);
-  };
-
-  if (!manager?.isOpen) return null;
-  const isSyncing = isUploading || uploadCount > 0 || images.some(img => !!img._tempId);
-
-  return (
-    <div
-      className="fixed inset-0 z-[600] flex items-end sm:items-center justify-center"
-      style={{ backgroundColor: 'rgba(0,0,0,0.45)', backdropFilter: 'blur(2px)' }}
-      onClick={isSyncing ? undefined : onClose}
-    >
-      <div
-        className="w-full sm:w-[600px] bg-white rounded-t-2xl sm:rounded-xl flex flex-col shadow-2xl max-h-[92vh] sm:max-h-[90vh] overflow-hidden border border-slate-200"
-        onClick={e => e.stopPropagation()}
-      >
-        {/* Mobile drag handle */}
-        <div className="sm:hidden flex justify-center pt-3 pb-1 shrink-0">
-          <div className="w-10 h-1 bg-slate-300 rounded-full" />
-        </div>
-
-        {/* HEADER — Airtable style */}
-        <div className="flex items-center justify-between px-3.5 pt-3 pb-2 shrink-0">
-          <div className="flex items-center gap-2">
-            <span className="text-[13px] font-semibold text-slate-800">{manager?.column || 'Images'}</span>
-            {images.length > 0 && (
-              <span className="text-[11px] text-slate-400">{images.length} file{images.length !== 1 ? 's' : ''}</span>
-            )}
-          </div>
-          <button
-            onClick={isSyncing ? undefined : onClose}
-            disabled={isSyncing}
-            className="p-1 rounded text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          >
-            <X className="h-4 w-4" />
-          </button>
-        </div>
-
-        {/* Attach file button row — <label> wraps the input directly so the browser
-            always opens the file picker on click (programmatic .click() on hidden
-            inputs is unreliable and blocked in many browsers). */}
-        <div className="px-3.5 pb-2 shrink-0">
-          <label className="inline-flex items-center gap-1.5 text-[12px] font-medium text-slate-600 hover:text-slate-900 hover:bg-slate-100 px-2.5 py-1.5 rounded-md transition-colors border border-slate-200 cursor-pointer w-full justify-center sm:w-auto sm:justify-start select-none">
-            <Paperclip className="h-3.5 w-3.5" />
-            Attach file
-            <input type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml" multiple className="sr-only" onChange={handleUpload} />
-          </label>
-        </div>
-
-        {/* Divider */}
-        <div className="h-px bg-slate-200 shrink-0" />
-
-        {/* IMAGE GRID */}
-        <div className="flex-1 overflow-y-auto min-h-0">
-          <div className="p-3">
-            {images.length === 0 && !isUploading ? (
-              <div className="py-12 text-center space-y-2">
-                <Paperclip className="h-8 w-8 text-slate-200 mx-auto" />
-                <p className="text-[12px] text-slate-400">No attachments yet</p>
-                <label className="text-[12px] font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer select-none">
-                  Attach a file
-                  <input type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml" multiple className="sr-only" onChange={handleUpload} />
-                </label>
-              </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {images.map((entry, i) => (
-                  <div
-                    key={entry._key}
-                    data-card-idx={i}
-                    draggable={renamingIdx !== i}
-                    onDragStart={(e) => { if (renamingIdx === i) { e.preventDefault(); return; } draggingIdxRef.current = i; setDraggingIdx(i); }}
-                    onDragOver={e => { e.preventDefault(); if (dragOverIdx !== i) setDragOverIdx(i); }}
-                    onDragLeave={() => setDragOverIdx(null)}
-                    onDrop={e => { e.preventDefault(); doReorder(draggingIdxRef.current, i); draggingIdxRef.current = null; setDraggingIdx(null); setDragOverIdx(null); }}
-                    onDragEnd={() => { draggingIdxRef.current = null; setDraggingIdx(null); setDragOverIdx(null); }}
-                    onTouchStart={() => { if (renamingIdx === i) return; handleTouchStart(i); }}
-                    onTouchMove={(e) => { if (renamingIdx === i) return; handleTouchMove(e); }}
-                    onTouchEnd={handleTouchEnd}
-                    className={`group/card flex flex-col ${renamingIdx !== i ? 'touch-none select-none' : ''} ${
-                      draggingIdx === i ? 'opacity-40' : ''
-                    } ${dragOverIdx === i && draggingIdx !== i ? 'ring-2 ring-blue-500 ring-offset-1 rounded-lg' : ''}`}
-                  >
-                    {/* Thumbnail */}
-                    <div className="relative rounded-lg overflow-hidden bg-slate-100 shadow-md cursor-grab active:cursor-grabbing" style={{ aspectRatio: '4/3' }}>
-                      <img
-                        src={entry.url}
-                        loading="eager"
-                        className="w-full h-full object-cover"
-                        alt={entry.name || `Image ${i + 1}`}
-                      />
-
-                      {/* Syncing overlay */}
-                      {entry._tempId && (
-                        <div className="absolute inset-0 bg-black/25 flex items-center justify-center pointer-events-none">
-                          <div className="h-5 w-5 rounded-full border-2 border-white border-t-transparent animate-spin" />
-                        </div>
-                      )}
-
-                      {/* Hover action icons — bottom-right, Airtable-style */}
-                      {!entry._tempId && (
-                        <div className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover/card:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => { setRenamingIdx(i); setRenameVal(entry.name || `Image ${i + 1}`); }}
-                            title="Rename"
-                            className="p-1 bg-white/95 rounded text-slate-500 hover:text-slate-900 shadow-sm transition-colors"
-                          ><Pencil className="h-3 w-3" /></button>
-                          <button
-                            onClick={() => handleDownload(entry, i)}
-                            title="Download"
-                            className="p-1 bg-white/95 rounded text-slate-500 hover:text-slate-900 shadow-sm transition-colors"
-                          ><Download className="h-3 w-3" /></button>
-                          <button
-                            onClick={() => handleRemove(i)}
-                            title="Remove"
-                            className="p-1 bg-white/95 rounded text-slate-500 hover:text-red-600 shadow-sm transition-colors"
-                          ><Trash2 className="h-3 w-3" /></button>
-                        </div>
-                      )}
-                    </div>
-
-                    {/* Filename / inline rename */}
-                    {renamingIdx === i ? (
-                      <div className="flex items-center gap-1 mt-1.5">
-                        <input
-                          autoFocus
-                          value={renameVal}
-                          onChange={e => setRenameVal(e.target.value)}
-                          onKeyDown={e => { if (e.key === 'Enter') commitRename(i); if (e.key === 'Escape') setRenamingIdx(null); }}
-                          className="flex-1 min-w-0 text-[11px] text-slate-700 bg-white border border-blue-500 rounded px-2 py-1 outline-none shadow-sm"
-                        />
-                        <button onClick={() => commitRename(i)} className="shrink-0 p-1 text-green-600 hover:text-green-800 transition-colors">
-                          <Check className="h-3.5 w-3.5" strokeWidth={3} />
-                        </button>
-                        <button onClick={() => setRenamingIdx(null)} className="shrink-0 p-1 text-slate-400 hover:text-slate-600 transition-colors">
-                          <X className="h-3.5 w-3.5" strokeWidth={2} />
-                        </button>
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => { setRenamingIdx(i); setRenameVal(entry.name || `Image ${i + 1}`); }}
-                        className="mt-1.5 w-full text-left text-[11px] text-slate-500 hover:text-slate-800 truncate px-0.5 transition-colors leading-snug"
-                        title={entry.name || `Image ${i + 1}`}
-                      >
-                        {entry.name || `Image ${i + 1}`}
-                      </button>
-                    )}
-                  </div>
-                ))}
-
-                {/* Processing placeholder card */}
-                {isUploading && (
-                  <div className="rounded-lg bg-slate-100 flex items-center justify-center" style={{ aspectRatio: '4/3' }}>
-                    <div className="h-4 w-4 rounded-full border-2 border-slate-400 border-t-transparent animate-spin" />
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-
-        {/* Footer — syncing indicator + safe area */}
-        {isSyncing && (
-          <div className="px-3.5 py-2 border-t border-slate-100 flex items-center gap-2 shrink-0" style={{ paddingBottom: 'max(8px, env(safe-area-inset-bottom))' }}>
-            <div className="h-3 w-3 rounded-full border-2 border-brand-primary border-t-transparent animate-spin shrink-0" />
-            <span className="text-[11px] text-slate-400">Saving to cloud…</span>
-          </div>
-        )}
-        {!isSyncing && (
-          <div className="shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} />
-        )}
-      </div>
-    </div>
-  );
-});
 const saveSettings = async (
   cols: Record<string, string[]>,
   types: Record<string, Record<string, FieldType>>,
@@ -4300,7 +4153,7 @@ const renderRow = (item: any) => {
           let m;
           const re = new RegExp(urlRegex.source, 'g');
           while ((m = re.exec(imageString)) !== null) matches.push(m[1]);
-          const openMgr = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setImageManager({ item: { ...item }, column: col, isOpen: true }); };
+          const openMgr = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setImageManager({ item: { ...item }, column: col, collection: getImageCollection(), isOpen: true }); };
           return (
             <td key={col} className={`${cellCls} relative group/cell ${isColFrozen ? stickyBg : ''}`} style={{ ...style, minWidth: '180px' }}>
               <div className="flex items-center gap-1.5 overflow-hidden w-full relative h-full">
@@ -4499,13 +4352,6 @@ const fetchAllData = async () => {
     setIsLoading(false);
   }
 };
-// Keep stable close ref in sync.
-// Do NOT call fetchAllData() here — handleImageUpdate already updates the data
-// arrays optimistically after each PUT. Calling fetchAllData races with the
-// cleanup's pending PUT: if fetchAllData resolves last it overwrites the saved
-// image with stale DB data, making the image appear not to have been added.
-_imgCloseRef.current = () => { setImageManager(null); };
-
 // Fetch only the active table's collection (plus sessions for linked-record tables) concurrently
 const fetchActiveTable = async (table = activeTableRef.current) => {
   type E = { key: string; setter: (d: any[]) => void };
@@ -7859,7 +7705,7 @@ if (!health?.mongodb) {
               if (activeTable === 'MusicLog' && clickedCol === 'Relevance') return;
               // Images/Attachments column — don't enter inline edit mode (manager handles it)
               if (clickedCol === 'Images' || clickedCol === 'Attachments' || clickedCol === 'Attachment') {
-                 setImageManager({ item: { ...row.data }, column: clickedCol, isOpen: true });
+                 setImageManager({ item: { ...row.data }, column: clickedCol, collection: getImageCollection(), isOpen: true });
                  return;
               }
             }
@@ -9451,11 +9297,10 @@ if (!health?.mongodb) {
       })()}
 
       <AttachmentManagerDialog
-    manager={imageManager}
-    onClose={stableOnImgClose}
-    onUpdate={stableOnImgUpdate}
-    onToast={stableOnImgToast}
-  />
+        manager={imageManager}
+        onClose={stableOnImageClose}
+        onSaved={stableOnImageSaved}
+      />
 
       {expandedRecord && (
         <RecordExpandModal
@@ -9489,7 +9334,7 @@ if (!health?.mongodb) {
           onAddCustomTag={handleAddCustomTag}
           onRemoveTag={handleRemoveTagGlobally}
           onImageManage={(col, currentItem) => {
-            setImageManager({ item: currentItem, column: col, isOpen: true });
+            setImageManager({ item: currentItem, column: col, collection: getImageCollection(), isOpen: true });
           }}
           setLinkedRecordPopup={setLinkedRecordPopup}
         />
