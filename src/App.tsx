@@ -63,6 +63,7 @@ import {
   ArrowUpRight,
   Send,
   MessageCircle,
+  Filter,
   Check,
   Maximize2,
   Eye,
@@ -2898,6 +2899,122 @@ const EmptyState = React.memo(function EmptyState({
   );
 });
 
+type FilterOperator = 'contains' | 'not_contains' | 'equals' | 'not_equals' | 'is_empty' | 'is_not_empty' | 'greater_than' | 'less_than';
+
+interface FilterCondition {
+  id: string;
+  type: 'condition';
+  field: string;
+  operator: FilterOperator;
+  value: string;
+}
+
+interface FilterGroup {
+  id: string;
+  type: 'group';
+  logic: 'AND' | 'OR';
+  conditions: (FilterCondition | FilterGroup)[];
+}
+
+const evaluateCondition = (item: any, cond: FilterCondition): boolean => {
+  const val = String(item[cond.field] ?? '').toLowerCase();
+  const target = String(cond.value ?? '').toLowerCase();
+  switch (cond.operator) {
+    case 'contains': return val.includes(target);
+    case 'not_contains': return !val.includes(target);
+    case 'equals': return val === target;
+    case 'not_equals': return val !== target;
+    case 'is_empty': return val === '';
+    case 'is_not_empty': return val !== '';
+    case 'greater_than': return Number(item[cond.field]) > Number(cond.value);
+    case 'less_than': return Number(item[cond.field]) < Number(cond.value);
+    default: return true;
+  }
+};
+
+const evaluateGroup = (item: any, group: FilterGroup): boolean => {
+  if (group.conditions.length === 0) return true;
+  if (group.logic === 'AND') {
+    return group.conditions.every(c => c.type === 'group' ? evaluateGroup(item, c) : evaluateCondition(item, c));
+  } else {
+    return group.conditions.some(c => c.type === 'group' ? evaluateGroup(item, c) : evaluateCondition(item, c));
+  }
+};
+
+const FilterNodeUI = ({ node, onChange, onDelete, columns, getOptions }: { node: FilterGroup | FilterCondition, onChange: (node: FilterGroup | FilterCondition) => void, onDelete: () => void, columns: string[], getOptions: (col: string) => string[] }) => {
+  if (node.type === 'group') {
+    return (
+      <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 space-y-3 w-full">
+        <div className="flex items-center justify-between gap-2">
+          <select value={node.logic} onChange={e => onChange({ ...node, logic: e.target.value as 'AND' | 'OR' })} className="h-8 bg-white border border-slate-300 rounded-lg px-2 text-xs font-bold text-brand-primary outline-none focus:border-brand-primary">
+            <option value="AND">And</option>
+            <option value="OR">Or</option>
+          </select>
+          {node.id !== 'root' && (
+            <button onClick={onDelete} className="ml-auto p-1.5 text-slate-400 hover:text-red-500 rounded-md transition-colors"><X className="h-3.5 w-3.5" /></button>
+          )}
+        </div>
+        <div className="pl-3 sm:pl-4 border-l-2 border-slate-200 space-y-2">
+          {node.conditions.map((child, i) => (
+            <FilterNodeUI 
+              key={child.id} 
+              node={child} 
+              onChange={newChild => {
+                const newConds = [...node.conditions];
+                newConds[i] = newChild;
+                onChange({ ...node, conditions: newConds });
+              }} 
+              onDelete={() => {
+                const newConds = node.conditions.filter((_, idx) => idx !== i);
+                onChange({ ...node, conditions: newConds });
+              }} 
+              columns={columns} 
+              getOptions={getOptions}
+            />
+          ))}
+          <div className="flex flex-wrap gap-2 pt-1">
+            <button onClick={() => onChange({ ...node, conditions: [...node.conditions, { id: Math.random().toString(36).substring(2,9), type: 'condition', field: columns[0] || '', operator: 'contains', value: '' }] })} className="text-[11px] font-bold text-slate-500 hover:text-brand-primary flex items-center gap-1 bg-white border border-slate-200 px-2 py-1.5 rounded-md transition-colors shadow-sm"><Plus className="h-3 w-3" /> Add Rule</button>
+            <button onClick={() => onChange({ ...node, conditions: [...node.conditions, { id: Math.random().toString(36).substring(2,9), type: 'group', logic: 'AND', conditions: [{ id: Math.random().toString(36).substring(2,9), type: 'condition', field: columns[0] || '', operator: 'contains', value: '' }] }] })} className="text-[11px] font-bold text-slate-500 hover:text-brand-primary flex items-center gap-1 bg-white border border-slate-200 px-2 py-1.5 rounded-md transition-colors shadow-sm"><Layers className="h-3 w-3" /> Add Group</button>
+          </div>
+        </div>
+      </div>
+    );
+  } else {
+    return (
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 bg-white p-2.5 sm:p-2 rounded-lg border border-slate-200 shadow-sm">
+        <div className="flex items-center gap-2">
+          <select value={node.field} onChange={e => onChange({ ...node, field: e.target.value, value: '' })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-2 text-[11px] text-slate-700 outline-none flex-1 sm:flex-none sm:w-40 truncate focus:border-brand-primary">
+            <option value="">Select field...</option>
+            {columns.map(c => <option key={c} value={c}>{c}</option>)}
+          </select>
+          <button onClick={onDelete} className="sm:hidden p-1.5 text-slate-400 hover:text-red-500 rounded-md transition-colors shrink-0"><X className="h-3.5 w-3.5" /></button>
+        </div>
+        <select value={node.operator} onChange={e => onChange({ ...node, operator: e.target.value as FilterOperator })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-2 text-[11px] text-slate-700 outline-none w-full sm:w-32 focus:border-brand-primary">
+          <option value="contains">Contains</option>
+          <option value="not_contains">Does not contain</option>
+          <option value="equals">Equals</option>
+          <option value="not_equals">Does not equal</option>
+          <option value="is_empty">Is empty</option>
+          <option value="is_not_empty">Is not empty</option>
+          <option value="greater_than">Greater than</option>
+          <option value="less_than">Less than</option>
+        </select>
+        {!['is_empty', 'is_not_empty'].includes(node.operator) && (
+          getOptions(node.field).length > 0 ? (
+            <select value={node.value} onChange={e => onChange({ ...node, value: e.target.value })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-2 text-[11px] text-slate-700 outline-none w-full sm:flex-1 sm:min-w-[100px] focus:border-brand-primary">
+              <option value="">Select value...</option>
+              {getOptions(node.field).map(opt => <option key={opt} value={opt}>{opt}</option>)}
+            </select>
+          ) : (
+            <input value={node.value} onChange={e => onChange({ ...node, value: e.target.value })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-3 text-[11px] text-slate-700 outline-none w-full sm:flex-1 sm:min-w-[100px] focus:border-brand-primary" placeholder="Value..." />
+          )
+        )}
+        <button onClick={onDelete} className="hidden sm:block p-1.5 text-slate-400 hover:text-red-500 rounded-md transition-colors shrink-0"><X className="h-3.5 w-3.5" /></button>
+      </div>
+    );
+  }
+};
+
 export default function App() {
   const gridContainerRef = useRef<HTMLDivElement>(null);
   const [user, setUser] = useState<any>(null);
@@ -2933,6 +3050,9 @@ const [cellPreview, setCellPreview] = useState<{ label: string; value: string; r
   const dragColRef = useRef<string | null>(null);
   const [groupByField, setGroupByField] = useState<string | null>(null);
   const [customTags, setCustomTags] = useState<Record<string, Record<string, string[]>>>({});
+  const [advancedFilter, setAdvancedFilter] = useState<FilterGroup>({ id: 'root', type: 'group', logic: 'AND', conditions: [] });
+  const [pendingFilter, setPendingFilter] = useState<FilterGroup>({ id: 'root', type: 'group', logic: 'AND', conditions: [] });
+  const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
 const [sortBy, setSortBy] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
   // AI Chat State
   const [chatInput, setChatInput] = useState('');
@@ -3584,11 +3704,18 @@ const filteredData: any[] = getActiveData().filter((item: any) => {
   }
 
   const searchStr = searchQuery.toLowerCase();
-  if (!searchStr) return true;
-  
-  return Object.values(item).some(val =>
-    val !== null && val !== undefined && String(val).toLowerCase().includes(searchStr)
-  );
+  if (searchStr) {
+    const matchesSearch = Object.values(item).some(val =>
+      val !== null && val !== undefined && String(val).toLowerCase().includes(searchStr)
+    );
+    if (!matchesSearch) return false;
+  }
+
+  if (advancedFilter.conditions.length > 0) {
+    if (!evaluateGroup(item, advancedFilter)) return false;
+  }
+
+  return true;
 });
 // Sorted + grouped data for visual/card view (respects sortBy and groupByField)
 const sortedVisualData: any[] = (() => {
@@ -3654,6 +3781,38 @@ if (['Status', 'status'].includes(col)) return 'status';
        'CntrPitch', 'CntrWdth', 'CntrHt', 'CntrRiser', 'SidePitch', 'SideWdth', 'SideHt',
        'OtherPitch', 'OtherWdth', 'OtherHt', 'Other2Wdth', 'Other2Ht', 'DGUseedKva', 'BackupPower'].includes(col)) return 'number';
   return 'text';
+};
+
+const getFilterOptions = (col: string): string[] => {
+  const type = getColumnType(col);
+  const isMulti = type === 'badge_multi' || col === 'Occasion' || col === 'City' || col === 'Tags';
+  const isDropdown = ['select', 'badge', 'badge_multi', 'status', 'yes_no'].includes(type)
+    || (activeTable === 'Events' && ['Occasion', 'City', 'Year'].includes(col))
+    || (activeTable === 'Session' && ['City', 'Occasion', 'Time Of Day', 'SessionType', 'Parent Event'].includes(col))
+    || (activeTable === 'Tracks' && ['Source', 'Plays'].includes(col))
+    || ((activeTable === 'VideoSetup' || activeTable === 'AudioSetup') && ['Status', 'Assignee'].includes(col))
+    || (activeTable === 'DataSharing' && col === 'Dept')
+    || (activeTable === 'LED' && ['Indoor/Outdoor LED?', 'CntrPitch', 'SidePitch', 'OtherLed1', 'OtherLed2', 'Vendor'].includes(col))
+    || (activeTable === 'Guidance & Learning' && ['City', 'GuidanceFrom', 'Category'].includes(col))
+    || (activeTable === 'DyatraChecklist' && ['Typical Timeline', 'Category', 'Period', 'People Involved'].includes(col))
+    || (activeTable === 'MusicLog' && col === 'PlayedAt')
+    || (col === 'Session')
+    || col.endsWith('?');
+
+  if (!isDropdown) return [];
+  if (type === 'yes_no' || col.endsWith('?')) return ['Yes', 'No'];
+  
+  const allData = getActiveData();
+  const uniqueVals = new Set<string>();
+  allData.forEach(item => {
+    const val = item[col];
+    if (val !== undefined && val !== null && val !== '') {
+      if (isMulti) String(val).split(',').forEach(v => { if (v.trim()) uniqueVals.add(v.trim()); });
+      else uniqueVals.add(String(val).trim());
+    }
+  });
+  if (customTags[activeTable]?.[col]) customTags[activeTable][col].forEach(t => uniqueVals.add(t));
+  return Array.from(uniqueVals).sort();
 };
 
 const renderCell = (col: string, item: any): React.ReactNode => {
@@ -4575,12 +4734,14 @@ const toggleGroup = (groupId: string) => {
         setViewMode(parsed.viewMode || 'grid');
         setCollapsedGroups(parsed.collapsedGroups || []);
         setSearchQuery(parsed.searchQuery || '');
+        setAdvancedFilter(parsed.advancedFilter || { id: 'root', type: 'group', logic: 'AND', conditions: [] });
       } catch (e) {
         setGroupByField(null);
         setSortBy(null);
         setCollapsedGroups([]);
         setSearchQuery('');
         setViewMode('grid');
+        setAdvancedFilter({ id: 'root', type: 'group', logic: 'AND', conditions: [] });
       }
     } else {
       setGroupByField(null);
@@ -4588,6 +4749,7 @@ const toggleGroup = (groupId: string) => {
       setCollapsedGroups([]);
       setSearchQuery('');
       setViewMode('grid');
+      setAdvancedFilter({ id: 'root', type: 'group', logic: 'AND', conditions: [] });
     }
     setExpandedGroups([]);
     setNewRecord({});
@@ -4600,11 +4762,12 @@ const toggleGroup = (groupId: string) => {
         sortBy,
         viewMode,
         collapsedGroups,
-        searchQuery
+        searchQuery,
+        advancedFilter
       };
       localStorage.setItem(`dyatra_table_settings_${activeTable}`, JSON.stringify(settings));
     }
-  }, [groupByField, sortBy, viewMode, collapsedGroups, searchQuery, activeTable]);
+  }, [groupByField, sortBy, viewMode, collapsedGroups, searchQuery, advancedFilter, activeTable]);
 
 useEffect(() => {
   if (!editingId) setEditingCell(null);
@@ -5907,6 +6070,61 @@ if (!health?.mongodb) {
 </Button>
   </div>}
 
+{activeTable !== 'Home' && activeTable !== 'UserManagement' && (
+  <div className="relative hidden sm:block">
+    <button
+      onClick={() => {
+        if (!isAdvancedFilterOpen) setPendingFilter(advancedFilter);
+        setIsAdvancedFilterOpen(!isAdvancedFilterOpen);
+      }}
+      className={`flex items-center gap-2 h-11 px-4 rounded-xl border transition-all ${
+        advancedFilter.conditions.length > 0 
+          ? 'bg-brand-primary/10 border-brand-primary/50 text-brand-primary shadow-sm'
+          : 'bg-white border-slate-300 text-slate-600 hover:border-brand-primary/50 shadow-sm'
+      }`}
+      title="Advanced Filter"
+    >
+      <Filter className="h-4 w-4 shrink-0" />
+      <span className="text-xs font-bold uppercase tracking-wide hidden sm:inline">
+        {advancedFilter.conditions.length > 0 ? 'Filtered' : 'Filter'}
+      </span>
+      {advancedFilter.conditions.length > 0 && (
+        <span className="h-5 w-5 bg-brand-primary text-white rounded-full flex items-center justify-center text-[10px] font-black ml-1 sm:ml-0">
+          {advancedFilter.conditions.length}
+        </span>
+      )}
+    </button>
+    <AnimatePresence>
+      {isAdvancedFilterOpen && !isMobileView && (
+        <>
+          <div className="fixed inset-0 z-40" onClick={() => setIsAdvancedFilterOpen(false)} />
+          <motion.div
+            initial={{ opacity: 0, y: 5 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 5 }}
+            className="absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-[500px] max-w-[500px] bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-[80vh] p-4"
+          >
+            <div className="flex justify-between items-center mb-4">
+              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Advanced Filter</h3>
+              <button onClick={() => setPendingFilter({ id: 'root', type: 'group', logic: 'AND', conditions: [] })} className="text-[10px] font-bold text-red-500 hover:text-red-600 hover:underline uppercase tracking-wider transition-colors">Clear All</button>
+            </div>
+            <FilterNodeUI 
+              node={pendingFilter} 
+              onChange={(node) => setPendingFilter(node as FilterGroup)} 
+              onDelete={() => setPendingFilter({ id: 'root', type: 'group', logic: 'AND', conditions: [] })} 
+              columns={getTableColumns(true)} 
+              getOptions={getFilterOptions}
+            />
+            <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
+              <button onClick={() => setIsAdvancedFilterOpen(false)} className="px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
+              <button onClick={() => { setAdvancedFilter(pendingFilter); setIsAdvancedFilterOpen(false); }} className="px-4 py-2 text-[11px] font-black uppercase tracking-widest text-white bg-brand-primary hover:bg-brand-primary/90 rounded-lg shadow-md transition-all">Apply</button>
+            </div>
+          </motion.div>
+        </>
+      )}
+    </AnimatePresence>
+  </div>
+)}
 
   {/* 1. GROUP BY + SORT BY */}
   {activeTable !== 'Home' && activeTable !== 'UserManagement' && (viewMode === 'grid' || viewMode === 'visual') && <>
@@ -6029,7 +6247,7 @@ if (!health?.mongodb) {
 
   {/* Mobile Group By + Sort By buttons */}
   {activeTable !== 'Home' && activeTable !== 'UserManagement' && (viewMode === 'grid' || viewMode === 'visual') && (
-    <div className="sm:hidden flex items-center gap-1.5">
+    <div className="sm:hidden flex flex-wrap items-center gap-1.5">
       <button
         onClick={() => setMobileGroupOpen(true)}
         className={`relative p-2 rounded-lg border bg-white transition-colors ${groupByField ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500 hover:text-brand-primary hover:border-brand-primary/30'}`}
@@ -6053,6 +6271,17 @@ if (!health?.mongodb) {
       >
         <Eye className="h-4 w-4" />
         {(hiddenColumns[activeTable]?.length || 0) > 0 && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
+      </button>
+      <button
+        onClick={() => {
+          if (!isAdvancedFilterOpen) setPendingFilter(advancedFilter);
+          setIsAdvancedFilterOpen(true);
+        }}
+        className={`relative p-2 rounded-lg border bg-white transition-colors ${advancedFilter.conditions.length > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500 hover:text-brand-primary hover:border-brand-primary/30'}`}
+        title="Filter"
+      >
+        <Filter className="h-4 w-4" />
+        {advancedFilter.conditions.length > 0 && <span className="absolute -top-1 -right-1 h-3 min-w-[12px] px-0.5 bg-brand-primary text-white rounded-full flex items-center justify-center text-[8px] font-black">{advancedFilter.conditions.length}</span>}
       </button>
 
     </div>
@@ -6279,6 +6508,44 @@ if (!health?.mongodb) {
             </div>
             <div className="px-5 py-4 border-t border-slate-100 shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
               <button onClick={() => setMobileFieldsOpen(false)} className="w-full py-3.5 bg-brand-primary text-white rounded-2xl text-[13px] font-black uppercase tracking-widest shadow-lg shadow-brand-primary/25 active:scale-95 transition-all">Done</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* FILTER bottom sheet */}
+      {isAdvancedFilterOpen && isMobileView && (
+        <div className="fixed inset-0 z-[600] flex items-end" style={{ backgroundColor: 'rgba(0,0,0,0.5)', backdropFilter: 'blur(2px)' }} onClick={() => setIsAdvancedFilterOpen(false)}>
+          <div className="w-full bg-white rounded-t-3xl shadow-2xl flex flex-col" onClick={e => e.stopPropagation()} style={{ maxHeight: '90vh' }}>
+            <div className="flex justify-center pt-3 pb-1 shrink-0"><div className="w-10 h-1 bg-slate-200 rounded-full" /></div>
+            <div className="px-5 pt-2 pb-3 flex items-center justify-between border-b border-slate-100 shrink-0">
+              <div className="flex items-center gap-2.5">
+                <div className="h-8 w-8 bg-brand-primary/10 rounded-lg flex items-center justify-center text-brand-primary">
+                  <Filter className="h-4 w-4" />
+                </div>
+                <div>
+                  <h2 className="text-[15px] font-black text-slate-900 tracking-tight">Filter</h2>
+                  <p className="text-[10px] text-slate-400 font-medium uppercase tracking-widest">{activeTable}</p>
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <button onClick={() => setPendingFilter({ id: 'root', type: 'group', logic: 'AND', conditions: [] })} className="text-[10px] font-bold text-red-500 hover:bg-red-50 px-2 py-1 rounded-lg uppercase tracking-wider transition-colors">Clear All</button>
+                <button onClick={() => setIsAdvancedFilterOpen(false)} className="h-9 w-9 flex items-center justify-center rounded-xl bg-slate-100 hover:bg-slate-200 transition-colors">
+                  <X className="h-4 w-4 text-slate-500" />
+                </button>
+              </div>
+            </div>
+            <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-4">
+              <FilterNodeUI 
+                node={pendingFilter} 
+                onChange={(node) => setPendingFilter(node as FilterGroup)} 
+                onDelete={() => setPendingFilter({ id: 'root', type: 'group', logic: 'AND', conditions: [] })} 
+                columns={getTableColumns(true)} 
+                getOptions={getFilterOptions}
+              />
+            </div>
+            <div className="px-5 py-4 border-t border-slate-100 shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+              <button onClick={() => { setAdvancedFilter(pendingFilter); setIsAdvancedFilterOpen(false); }} className="w-full py-3.5 bg-brand-primary text-white rounded-2xl text-[13px] font-black uppercase tracking-widest shadow-lg shadow-brand-primary/25 active:scale-95 transition-all">Apply Filter</button>
             </div>
           </div>
         </div>
