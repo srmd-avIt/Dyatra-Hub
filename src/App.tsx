@@ -6002,324 +6002,351 @@ if (!health?.mongodb) {
 
       {/* Main Content */}
       <main className="flex-1 flex flex-col relative bg-brand-bg overflow-hidden">
-      <header className="sticky top-0 z-40 w-full h-auto min-h-[80px] bg-white border-b border-slate-200 flex flex-col md:flex-row items-center justify-between px-4 py-4 md:py-0 md:px-8 gap-4 shrink-0 shadow-sm">
-  <div className="flex items-center justify-between w-full md:w-auto gap-4">
-    {/* Hamburger for Mobile */}
-    <Button
-      variant="ghost"
-      size="icon"
-      className="lg:hidden text-brand-text-muted h-11 w-11"
-      onClick={() => setIsSidebarOpen(true)}
-    >
-      <Menu className="h-6 w-6" />
-    </Button>
-
-    {/* Search Input — desktop always visible, mobile toggle */}
-    {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
-      <>
-        {/* Desktop search */}
-        <div className="relative hidden sm:block">
-          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
-          <Input
-            placeholder="Search..."
-            value={searchQuery}
-            onChange={(e) => setSearchQuery(e.target.value)}
-            className="bg-brand-bg w-[120px] md:w-[180px] pl-8 h-9 text-xs text-black dark:text-white"
-          />
-        </div>
-        {/* Mobile search icon toggle */}
-        <button
-          className="sm:hidden p-2 rounded-lg text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10 transition-colors"
-          onClick={() => setMobileSearchOpen(v => !v)}
-        >
-          {mobileSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
-        </button>
-      </>
-    )}
-  </div>
-
-<div className="flex items-center justify-between w-full md:w-auto gap-1.5 md:gap-2">
-
-    {/* 3. VIEW SWITCHER */}
-  {activeTable !== 'Home' && activeTable !== 'UserManagement' && <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-11 items-center">
-   <Button
-  size="sm"
-  variant="ghost"
-  onClick={() => setViewMode('visual')}
-  className={`h-10 px-3 flex items-center gap-1.5 rounded-lg transition-all ${
-    viewMode === 'visual'
-      ? 'bg-white text-brand-primary shadow-sm'
-      : 'text-slate-400'
-  }`}
->
-  <LayoutGrid className="h-4 w-4" />
-  <span className="text-xs font-semibold hidden sm:inline">Visual</span>
-</Button>
-    <Button
-  size="sm"
-  variant="ghost"
-  onClick={() => setViewMode('grid')}
-  className={`h-10 px-3 flex items-center gap-1.5 rounded-lg transition-all ${
-    viewMode === 'grid'
-      ? 'bg-white text-brand-primary shadow-sm'
-      : 'text-slate-400'
-  }`}
->
-  <Grid className="h-4 w-4" />
-  <span className="text-xs font-semibold hidden sm:inline">Grid</span>
-</Button>
-  </div>}
-
-{activeTable !== 'Home' && activeTable !== 'UserManagement' && (
-  <div className="relative hidden sm:block">
-    <button
-      onClick={() => {
-        if (!isAdvancedFilterOpen) setPendingFilter(advancedFilter);
-        setIsAdvancedFilterOpen(!isAdvancedFilterOpen);
-      }}
-      className={`flex items-center gap-2 h-11 px-4 rounded-xl border transition-all ${
-        advancedFilter.conditions.length > 0 
-          ? 'bg-brand-primary/10 border-brand-primary/50 text-brand-primary shadow-sm'
-          : 'bg-white border-slate-300 text-slate-600 hover:border-brand-primary/50 shadow-sm'
-      }`}
-      title="Advanced Filter"
-    >
-      <Filter className="h-4 w-4 shrink-0" />
-      <span className="text-xs font-bold uppercase tracking-wide hidden sm:inline">
-        {advancedFilter.conditions.length > 0 ? 'Filtered' : 'Filter'}
-      </span>
-      {advancedFilter.conditions.length > 0 && (
-        <span className="h-5 w-5 bg-brand-primary text-white rounded-full flex items-center justify-center text-[10px] font-black ml-1 sm:ml-0">
-          {advancedFilter.conditions.length}
-        </span>
-      )}
-    </button>
-    <AnimatePresence>
-      {isAdvancedFilterOpen && !isMobileView && (
+      <header className="sticky top-0 z-40 w-full bg-white border-b border-slate-200 flex flex-col px-4 md:px-8 shrink-0 shadow-sm">
+  {/* ── TOP ROW: single flex-row on all screen sizes ── */}
+  <div className="flex items-center justify-between w-full h-14 gap-2">
+    {/* Left: hamburger + search */}
+    <div className="flex items-center gap-2">
+      <Button
+        variant="ghost"
+        size="icon"
+        className="lg:hidden text-brand-text-muted h-11 w-11 shrink-0"
+        onClick={() => setIsSidebarOpen(true)}
+      >
+        <Menu className="h-6 w-6" />
+      </Button>
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
         <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsAdvancedFilterOpen(false)} />
-          <motion.div
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 5 }}
-            className="absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-[500px] max-w-[500px] bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-[80vh] p-4"
-          >
-            <div className="flex justify-between items-center mb-4">
-              <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Advanced Filter</h3>
-              <button onClick={() => setPendingFilter({ id: 'root', type: 'group', logic: 'AND', conditions: [] })} className="text-[10px] font-bold text-red-500 hover:text-red-600 hover:underline uppercase tracking-wider transition-colors">Clear All</button>
-            </div>
-            <FilterNodeUI 
-              node={pendingFilter} 
-              onChange={(node) => setPendingFilter(node as FilterGroup)} 
-              onDelete={() => setPendingFilter({ id: 'root', type: 'group', logic: 'AND', conditions: [] })} 
-              columns={getTableColumns(true)} 
-              getOptions={getFilterOptions}
+          {/* Desktop search */}
+          <div className="relative hidden sm:block">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
+            <Input
+              placeholder="Search..."
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              className="bg-brand-bg w-[120px] md:w-[180px] pl-8 h-9 text-xs text-black dark:text-white"
             />
-            <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
-              <button onClick={() => setIsAdvancedFilterOpen(false)} className="px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
-              <button onClick={() => { setAdvancedFilter(pendingFilter); setIsAdvancedFilterOpen(false); }} className="px-4 py-2 text-[11px] font-black uppercase tracking-widest text-white bg-brand-primary hover:bg-brand-primary/90 rounded-lg shadow-md transition-all">Apply</button>
-            </div>
-          </motion.div>
-        </>
-      )}
-    </AnimatePresence>
-  </div>
-)}
-
-  {/* 1. GROUP BY + SORT BY */}
-  {activeTable !== 'Home' && activeTable !== 'UserManagement' && (viewMode === 'grid' || viewMode === 'visual') && <>
-  <div className="relative hidden sm:block">
-  <button
-    onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
-    className="flex items-center bg-white border border-slate-300 rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[180px]"
-  >
-    <Layers className="h-4 w-4 text-slate-500 mr-2 shrink-0" />
-    <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-6">
-      {groupByField ? colLabel(groupByField) : "No Grouping"}
-    </span>
-    <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isGroupOpen ? 'rotate-180' : ''}`} />
-  </button>
-  <AnimatePresence>
-    {isGroupOpen && (
-      <>
-        <div className="fixed inset-0 z-40" onClick={() => setIsGroupOpen(false)} />
-        <motion.div
-          initial={{ opacity: 0, y: 5 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 5 }}
-          className="absolute top-full left-0 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
-        >
-          <button onClick={() => { setGroupByField(null); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Grouping</button>
-          {getTableColumns().map(col => (
-            <button key={col} onClick={() => { setGroupByField(col); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{colLabel(col)}</button>
-          ))}
-        </motion.div>
-      </>
-    )}
-  </AnimatePresence>
-</div>
-
-<div className="relative hidden sm:block">
-  <button
-    onClick={() => { setIsSortOpen(!isSortOpen); setIsGroupOpen(false); }}
-    className="flex items-center bg-white border border-slate-300 rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[180px]"
-  >
-    <ArrowUpDown className="h-4 w-4 text-slate-500 mr-2 shrink-0" />
-    <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-10">
-      {sortBy ? `By ${colLabel(sortBy.field)}` : "No Sort"}
-    </span>
-    {sortBy && (
-      <button
-        onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSortBy({ ...sortBy, direction: sortBy.direction === 'asc' ? 'desc' : 'asc' }); }}
-        className="absolute right-10 h-6 w-6 hover:bg-slate-100 rounded-md transition-colors flex items-center justify-center bg-white border border-slate-200 shadow-sm z-10"
-      >
-        <span className="text-xs text-brand-primary font-bold leading-none">{sortBy.direction === 'asc' ? '↑' : '↓'}</span>
-      </button>
-    )}
-    <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isSortOpen ? 'rotate-180' : ''}`} />
-  </button>
-  <AnimatePresence>
-    {isSortOpen && (
-      <>
-        <div className="fixed inset-0 z-40" onClick={() => setIsSortOpen(false)} />
-        <motion.div
-          initial={{ opacity: 0, y: 5 }}
-          animate={{ opacity: 1, y: 0 }}
-          exit={{ opacity: 0, y: 5 }}
-          className="absolute top-full left-0 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
-        >
-          <button onClick={() => { setSortBy(null); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Sort</button>
-          {getTableColumns().map(col => (
-            <button key={col} onClick={() => { setSortBy({ field: col, direction: 'asc' }); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{colLabel(col)}</button>
-          ))}
-        </motion.div>
-      </>
-    )}
-  </AnimatePresence>
-</div>
-  </>}
-
-  {/* HIDE FIELDS */}
-  {activeTable !== 'Home' && activeTable !== 'UserManagement' && viewMode === 'grid' && (
-  <div className="relative hidden sm:block">
-    <button
-      onClick={() => { setIsFieldsOpen(!isFieldsOpen); setIsGroupOpen(false); setIsSortOpen(false); }}
-      className={`flex items-center bg-white border rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[140px] relative ${(hiddenColumns[activeTable]?.length || 0) > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-300'}`}
-    >
-      <Eye className="h-4 w-4 mr-2 shrink-0" />
-      <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-6">
-        {(hiddenColumns[activeTable]?.length || 0) > 0 ? `${hiddenColumns[activeTable].length} hidden` : 'Fields'}
-      </span>
-      <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isFieldsOpen ? 'rotate-180' : ''}`} />
-    </button>
-    <AnimatePresence>
-      {isFieldsOpen && (
-        <>
-          <div className="fixed inset-0 z-40" onClick={() => setIsFieldsOpen(false)} />
-          <motion.div
-            initial={{ opacity: 0, y: 5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: 5 }}
-            className="absolute top-full left-0 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 py-2"
+          </div>
+          {/* Mobile search icon toggle */}
+          <button
+            className="sm:hidden p-2 rounded-lg text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10 transition-colors"
+            onClick={() => setMobileSearchOpen(v => !v)}
           >
-            <p className="px-4 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Toggle visibility</p>
-            {getTableColumns(true).map(col => {
-              const isHidden = (hiddenColumns[activeTable] || []).includes(col);
-              return (
-                <button
-                  key={col}
-                  onClick={() => toggleHideColumn(col)}
-                  className="w-full flex items-center justify-between px-4 py-2 hover:bg-slate-50 transition-colors"
-                >
-                  <span className={`text-[12px] font-semibold truncate ${isHidden ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{colLabel(col)}</span>
-                  {isHidden
-                    ? <EyeOff className="h-3.5 w-3.5 text-slate-400 shrink-0 ml-2" />
-                    : <Eye className="h-3.5 w-3.5 text-brand-primary shrink-0 ml-2" />}
-                </button>
-              );
-            })}
-          </motion.div>
+            {mobileSearchOpen ? <X className="h-5 w-5" /> : <Search className="h-5 w-5" />}
+          </button>
         </>
       )}
-    </AnimatePresence>
+    </div>
+
+    {/* Right: desktop toolbar items + inbox (inbox always visible here) */}
+    <div className="flex items-center gap-1.5 md:gap-2">
+      {/* Desktop view switcher */}
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
+        <div className="hidden sm:flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-11 items-center">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setViewMode('visual')}
+            className={`h-10 px-3 flex items-center gap-1.5 rounded-lg transition-all ${viewMode === 'visual' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-400'}`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+            <span className="text-xs font-semibold">Visual</span>
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setViewMode('grid')}
+            className={`h-10 px-3 flex items-center gap-1.5 rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-400'}`}
+          >
+            <Grid className="h-4 w-4" />
+            <span className="text-xs font-semibold">Grid</span>
+          </Button>
+        </div>
+      )}
+
+      {/* Desktop Filter button */}
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
+        <div className="relative hidden sm:block">
+          <button
+            onClick={() => {
+              if (!isAdvancedFilterOpen) setPendingFilter(advancedFilter);
+              setIsAdvancedFilterOpen(!isAdvancedFilterOpen);
+            }}
+            className={`flex items-center gap-2 h-11 px-4 rounded-xl border transition-all ${
+              advancedFilter.conditions.length > 0
+                ? 'bg-brand-primary/10 border-brand-primary/50 text-brand-primary shadow-sm'
+                : 'bg-white border-slate-300 text-slate-600 hover:border-brand-primary/50 shadow-sm'
+            }`}
+            title="Advanced Filter"
+          >
+            <Filter className="h-4 w-4 shrink-0" />
+            <span className="text-xs font-bold uppercase tracking-wide">
+              {advancedFilter.conditions.length > 0 ? 'Filtered' : 'Filter'}
+            </span>
+            {advancedFilter.conditions.length > 0 && (
+              <span className="h-5 w-5 bg-brand-primary text-white rounded-full flex items-center justify-center text-[10px] font-black">
+                {advancedFilter.conditions.length}
+              </span>
+            )}
+          </button>
+          <AnimatePresence>
+            {isAdvancedFilterOpen && !isMobileView && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsAdvancedFilterOpen(false)} />
+                <motion.div
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 5 }}
+                  className="absolute top-full right-0 mt-2 w-[calc(100vw-2rem)] sm:w-[500px] max-w-[500px] bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-[80vh] p-4"
+                >
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="text-sm font-black text-slate-800 uppercase tracking-widest">Advanced Filter</h3>
+                    <button onClick={() => setPendingFilter({ id: 'root', type: 'group', logic: 'AND', conditions: [] })} className="text-[10px] font-bold text-red-500 hover:text-red-600 hover:underline uppercase tracking-wider transition-colors">Clear All</button>
+                  </div>
+                  <FilterNodeUI
+                    node={pendingFilter}
+                    onChange={(node) => setPendingFilter(node as FilterGroup)}
+                    onDelete={() => setPendingFilter({ id: 'root', type: 'group', logic: 'AND', conditions: [] })}
+                    columns={getTableColumns(true)}
+                    getOptions={getFilterOptions}
+                  />
+                  <div className="flex justify-end gap-2 mt-4 pt-4 border-t border-slate-100">
+                    <button onClick={() => setIsAdvancedFilterOpen(false)} className="px-4 py-2 text-[11px] font-bold uppercase tracking-widest text-slate-500 hover:bg-slate-100 rounded-lg transition-colors">Cancel</button>
+                    <button onClick={() => { setAdvancedFilter(pendingFilter); setIsAdvancedFilterOpen(false); }} className="px-4 py-2 text-[11px] font-black uppercase tracking-widest text-white bg-brand-primary hover:bg-brand-primary/90 rounded-lg shadow-md transition-all">Apply</button>
+                  </div>
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Desktop Group By + Sort By */}
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && (viewMode === 'grid' || viewMode === 'visual') && <>
+        <div className="relative hidden sm:block">
+          <button
+            onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
+            className="flex items-center bg-white border border-slate-300 rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[180px]"
+          >
+            <Layers className="h-4 w-4 text-slate-500 mr-2 shrink-0" />
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-6">
+              {groupByField ? colLabel(groupByField) : "No Grouping"}
+            </span>
+            <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isGroupOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <AnimatePresence>
+            {isGroupOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsGroupOpen(false)} />
+                <motion.div
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 5 }}
+                  className="absolute top-full left-0 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
+                >
+                  <button onClick={() => { setGroupByField(null); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Grouping</button>
+                  {getTableColumns().map(col => (
+                    <button key={col} onClick={() => { setGroupByField(col); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{colLabel(col)}</button>
+                  ))}
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
+
+        <div className="relative hidden sm:block">
+          <button
+            onClick={() => { setIsSortOpen(!isSortOpen); setIsGroupOpen(false); }}
+            className="flex items-center bg-white border border-slate-300 rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[180px]"
+          >
+            <ArrowUpDown className="h-4 w-4 text-slate-500 mr-2 shrink-0" />
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-10">
+              {sortBy ? `By ${colLabel(sortBy.field)}` : "No Sort"}
+            </span>
+            {sortBy && (
+              <button
+                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSortBy({ ...sortBy, direction: sortBy.direction === 'asc' ? 'desc' : 'asc' }); }}
+                className="absolute right-10 h-6 w-6 hover:bg-slate-100 rounded-md transition-colors flex items-center justify-center bg-white border border-slate-200 shadow-sm z-10"
+              >
+                <span className="text-xs text-brand-primary font-bold leading-none">{sortBy.direction === 'asc' ? '↑' : '↓'}</span>
+              </button>
+            )}
+            <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isSortOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <AnimatePresence>
+            {isSortOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsSortOpen(false)} />
+                <motion.div
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 5 }}
+                  className="absolute top-full left-0 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
+                >
+                  <button onClick={() => { setSortBy(null); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Sort</button>
+                  {getTableColumns().map(col => (
+                    <button key={col} onClick={() => { setSortBy({ field: col, direction: 'asc' }); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{colLabel(col)}</button>
+                  ))}
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
+      </>}
+
+      {/* Desktop Hide Fields */}
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && viewMode === 'grid' && (
+        <div className="relative hidden sm:block">
+          <button
+            onClick={() => { setIsFieldsOpen(!isFieldsOpen); setIsGroupOpen(false); setIsSortOpen(false); }}
+            className={`flex items-center bg-white border rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[140px] relative ${(hiddenColumns[activeTable]?.length || 0) > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-300'}`}
+          >
+            <Eye className="h-4 w-4 mr-2 shrink-0" />
+            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-6">
+              {(hiddenColumns[activeTable]?.length || 0) > 0 ? `${hiddenColumns[activeTable].length} hidden` : 'Fields'}
+            </span>
+            <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isFieldsOpen ? 'rotate-180' : ''}`} />
+          </button>
+          <AnimatePresence>
+            {isFieldsOpen && (
+              <>
+                <div className="fixed inset-0 z-40" onClick={() => setIsFieldsOpen(false)} />
+                <motion.div
+                  initial={{ opacity: 0, y: 5 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: 5 }}
+                  className="absolute top-full left-0 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 py-2"
+                >
+                  <p className="px-4 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Toggle visibility</p>
+                  {getTableColumns(true).map(col => {
+                    const isHidden = (hiddenColumns[activeTable] || []).includes(col);
+                    return (
+                      <button
+                        key={col}
+                        onClick={() => toggleHideColumn(col)}
+                        className="w-full flex items-center justify-between px-4 py-2 hover:bg-slate-50 transition-colors"
+                      >
+                        <span className={`text-[12px] font-semibold truncate ${isHidden ? 'text-slate-400 line-through' : 'text-slate-700'}`}>{colLabel(col)}</span>
+                        {isHidden
+                          ? <EyeOff className="h-3.5 w-3.5 text-slate-400 shrink-0 ml-2" />
+                          : <Eye className="h-3.5 w-3.5 text-brand-primary shrink-0 ml-2" />}
+                      </button>
+                    );
+                  })}
+                </motion.div>
+              </>
+            )}
+          </AnimatePresence>
+        </div>
+      )}
+
+      {/* Add Record — desktop only in top row */}
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && hasPerm(user, activeTable, 'add') && (
+        <Button
+          onClick={openAddModal}
+          className="hidden sm:flex bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-4 shadow-md items-center gap-2 transition-transform active:scale-95 ml-1"
+        >
+          <Plus className="h-4 w-4" />
+          <span className="hidden md:inline uppercase text-xs font-bold tracking-wide">Add Record</span>
+        </Button>
+      )}
+
+      {/* Inbox — always in top row so it lines up with hamburger on all pages */}
+      {user && (
+        <>
+          <div className="w-px h-6 bg-slate-200 mx-0.5 shrink-0" />
+          <button
+            onClick={() => setInboxOpen(v => !v)}
+            className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all shrink-0 ${inboxOpen ? 'text-brand-primary bg-brand-primary/10' : 'text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10'}`}
+            title="Inbox"
+          >
+            <Inbox className="h-5 w-5" />
+            {inboxUnread > 0 && !inboxOpen && (
+              <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-0.5 bg-brand-primary text-white text-[9px] font-black rounded-full flex items-center justify-center leading-none">
+                {inboxUnread > 9 ? '9+' : inboxUnread}
+              </span>
+            )}
+          </button>
+        </>
+      )}
+    </div>
   </div>
-  )}
 
-  {/* Mobile Group By + Sort By buttons */}
-  {activeTable !== 'Home' && activeTable !== 'UserManagement' && (viewMode === 'grid' || viewMode === 'visual') && (
-    <div className="sm:hidden flex flex-wrap items-center gap-1.5">
-      <button
-        onClick={() => setMobileGroupOpen(true)}
-        className={`relative p-2 rounded-lg border bg-white transition-colors ${groupByField ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500 hover:text-brand-primary hover:border-brand-primary/30'}`}
-        title="Group By"
-      >
-        <Layers className="h-4 w-4" />
-        {groupByField && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
-      </button>
-      <button
-        onClick={() => setMobileSortOpen(true)}
-        className={`relative p-2 rounded-lg border bg-white transition-colors ${sortBy ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500 hover:text-brand-primary hover:border-brand-primary/30'}`}
-        title="Sort By"
-      >
-        <ArrowUpDown className="h-4 w-4" />
-        {sortBy && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
-      </button>
-      <button
-        onClick={() => setMobileFieldsOpen(true)}
-        className={`relative p-2 rounded-lg border bg-white transition-colors ${(hiddenColumns[activeTable]?.length || 0) > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500 hover:text-brand-primary hover:border-brand-primary/30'}`}
-        title="Hide Fields"
-      >
-        <Eye className="h-4 w-4" />
-        {(hiddenColumns[activeTable]?.length || 0) > 0 && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
-      </button>
-      <button
-        onClick={() => {
-          if (!isAdvancedFilterOpen) setPendingFilter(advancedFilter);
-          setIsAdvancedFilterOpen(true);
-        }}
-        className={`relative p-2 rounded-lg border bg-white transition-colors ${advancedFilter.conditions.length > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500 hover:text-brand-primary hover:border-brand-primary/30'}`}
-        title="Filter"
-      >
-        <Filter className="h-4 w-4" />
-        {advancedFilter.conditions.length > 0 && <span className="absolute -top-1 -right-1 h-3 min-w-[12px] px-0.5 bg-brand-primary text-white rounded-full flex items-center justify-center text-[8px] font-black">{advancedFilter.conditions.length}</span>}
-      </button>
+  {/* ── MOBILE TOOLBAR ROW (sm:hidden, non-home pages only) ── */}
+  {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
+    <div className="sm:hidden flex items-center gap-1.5 pb-2.5 w-full">
+      {/* View switcher */}
+      {(viewMode === 'grid' || viewMode === 'visual') && (
+        <div className="flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-10 items-center shrink-0">
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setViewMode('visual')}
+            className={`h-9 px-2.5 flex items-center rounded-lg transition-all ${viewMode === 'visual' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-400'}`}
+          >
+            <LayoutGrid className="h-4 w-4" />
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            onClick={() => setViewMode('grid')}
+            className={`h-9 px-2.5 flex items-center rounded-lg transition-all ${viewMode === 'grid' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-400'}`}
+          >
+            <Grid className="h-4 w-4" />
+          </Button>
+        </div>
+      )}
 
+      {/* Mobile icon buttons: Group, Sort, Fields, Filter — no flex-wrap so they stay on one line */}
+      {(viewMode === 'grid' || viewMode === 'visual') && (
+        <>
+          <button
+            onClick={() => setMobileGroupOpen(true)}
+            className={`relative p-2 rounded-lg border bg-white transition-colors shrink-0 ${groupByField ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500'}`}
+            title="Group By"
+          >
+            <Layers className="h-4 w-4" />
+            {groupByField && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
+          </button>
+          <button
+            onClick={() => setMobileSortOpen(true)}
+            className={`relative p-2 rounded-lg border bg-white transition-colors shrink-0 ${sortBy ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500'}`}
+            title="Sort By"
+          >
+            <ArrowUpDown className="h-4 w-4" />
+            {sortBy && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
+          </button>
+          <button
+            onClick={() => setMobileFieldsOpen(true)}
+            className={`relative p-2 rounded-lg border bg-white transition-colors shrink-0 ${(hiddenColumns[activeTable]?.length || 0) > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500'}`}
+            title="Hide Fields"
+          >
+            <Eye className="h-4 w-4" />
+            {(hiddenColumns[activeTable]?.length || 0) > 0 && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
+          </button>
+          <button
+            onClick={() => { if (!isAdvancedFilterOpen) setPendingFilter(advancedFilter); setIsAdvancedFilterOpen(true); }}
+            className={`relative p-2 rounded-lg border bg-white transition-colors shrink-0 ${advancedFilter.conditions.length > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500'}`}
+            title="Filter"
+          >
+            <Filter className="h-4 w-4" />
+            {advancedFilter.conditions.length > 0 && <span className="absolute -top-1 -right-1 h-3 min-w-[12px] px-0.5 bg-brand-primary text-white rounded-full flex items-center justify-center text-[8px] font-black">{advancedFilter.conditions.length}</span>}
+          </button>
+        </>
+      )}
+
+      {/* Add Record — mobile, pushed to the right */}
+      {hasPerm(user, activeTable, 'add') && (
+        <Button
+          onClick={openAddModal}
+          className="ml-auto bg-brand-primary hover:bg-brand-primary/90 text-white h-9 px-3 shadow-md flex items-center gap-1.5 transition-transform active:scale-95 shrink-0"
+        >
+          <Plus className="h-4 w-4" />
+          <span className="text-xs font-bold uppercase tracking-wide">Add</span>
+        </Button>
+      )}
     </div>
   )}
-
-  {/* 4. NEW RECORD BUTTON */}
-  {activeTable !== 'Home' && activeTable !== 'UserManagement' && hasPerm(user, activeTable, 'add') && (
-  <Button
-    onClick={openAddModal}
-    className="bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-4 shadow-md flex items-center gap-2 transition-transform active:scale-95 ml-1"
-  >
-    <Plus className="h-4 w-4" />
-    <span className="hidden md:inline uppercase text-xs font-bold tracking-wide">
-      Add Record
-    </span>
-  </Button>
-  )}
-
-  {/* Inbox button — after primary actions */}
-  {user && (
-    <>
-      <div className="w-px h-6 bg-slate-200 mx-0.5 shrink-0" />
-      <button
-        onClick={() => setInboxOpen(v => !v)}
-        className={`relative flex h-10 w-10 items-center justify-center rounded-xl transition-all shrink-0 ${inboxOpen ? 'text-brand-primary bg-brand-primary/10' : 'text-slate-500 hover:text-brand-primary hover:bg-brand-primary/10'}`}
-        title="Inbox"
-      >
-        <Inbox className="h-5 w-5" />
-        {inboxUnread > 0 && !inboxOpen && (
-          <span className="absolute -top-0.5 -right-0.5 h-4 min-w-[16px] px-0.5 bg-brand-primary text-white text-[9px] font-black rounded-full flex items-center justify-center leading-none">
-            {inboxUnread > 9 ? '9+' : inboxUnread}
-          </span>
-        )}
-      </button>
-    </>
-  )}
-
-</div>
 </header>
 
       {/* Mobile search bar (expands below header when toggled) */}
