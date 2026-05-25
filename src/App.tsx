@@ -955,13 +955,15 @@ const parseImages = (raw: string): ImgEntry[] => {
 const CellDropdown = React.memo(function CellDropdown({
   value, options, onCommit, onCancel, onOutsideClick, 
   placeholder = 'Select...', tagClass, isMinimal = false,
-  autoOpen = false, isMulti = false, onAddOption, removableOptions = [], onRemoveOption
+  autoOpen = false, isMulti = false, onAddOption, removableOptions = [], onRemoveOption,
+  isUserPicker = false
 }: {
   value: string | string[]; options: string[]; onCommit: (v: string) => void; 
   onCancel: () => void; onOutsideClick?: () => void;
   placeholder?: string; tagClass?: string; isMinimal?: boolean;
   autoOpen?: boolean; isMulti?: boolean; onAddOption?: (newOption: string) => void;
   removableOptions?: string[]; onRemoveOption?: (option: string) => any;
+  isUserPicker?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [search, setSearch] = useState('');
@@ -1064,9 +1066,14 @@ const CellDropdown = React.memo(function CellDropdown({
       {isMulti ? (
         <div className="w-full h-full flex items-center flex-wrap gap-1.5 px-2 py-1 cursor-text" onClick={() => { if (!open) openDropdown(); }}>
           {selectedValues.map((v, i) => (
-            <span key={i} className={`${getTagStyle(v)} flex items-center gap-1 shadow-none border-slate-200`}>
+            <span key={i} className={`${isUserPicker ? 'bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded-md font-bold text-[12px] whitespace-nowrap' : getTagStyle(v)} flex items-center gap-1 shadow-none border-slate-200`}>
+              {isUserPicker && (
+                <div className="h-4 w-4 rounded-full bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[9px] font-black shrink-0 leading-none">
+                  {v[0]?.toUpperCase() || '?'}
+                </div>
+              )}
               {v}
-              <button onMouseDown={(e) => { e.stopPropagation(); pick(v); }} className="hover:bg-black/10 rounded-full p-0.5">
+              <button onMouseDown={(e) => { e.stopPropagation(); pick(v); }} className="hover:bg-black/10 rounded-full p-0.5 shrink-0">
                 <X className="h-2.5 w-2.5" />
               </button>
             </span>
@@ -1144,7 +1151,14 @@ const CellDropdown = React.memo(function CellDropdown({
                          {isSelected && <Check className="h-2.5 w-2.5 text-white" strokeWidth={4} />}
                        </div>
                     )}
-                    <span className={getTagStyle(opt)}>{opt}</span>
+                    <span className={isUserPicker ? 'flex items-center gap-1.5 text-[12px] font-bold text-slate-700' : getTagStyle(opt)}>
+                      {isUserPicker && (
+                        <div className="h-5 w-5 rounded-full bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[10px] font-black shrink-0 leading-none">
+                          {opt[0]?.toUpperCase() || '?'}
+                        </div>
+                      )}
+                      {opt}
+                    </span>
                   </div>
                   {isRemovable && onRemoveOption && (
                     <button
@@ -2041,7 +2055,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     else if ((isVSetup || isASetup) && col === 'Status')
       opts = ['To Do', 'In Progress', 'Done'];
     else if ((isVSetup || isASetup) && col === 'Assignee')
-      opts = [...new Set([currentUser?.name, ...(allData['VideoSetup'] || []).map((item: any) => item["Assignee"]), ...(allData['AudioSetup'] || []).map((item: any) => item["Assignee"])].filter(Boolean).map(String))].sort() as string[];
+      opts = allUsers.map((u: any) => u.name || u.email).filter(Boolean).sort();
     else if (isML && col === 'Theme')
       opts = [...new Set(sessions.flatMap((s: any) => (s.Theme || '').split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
     else if (isGuide && col === 'City')
@@ -2061,7 +2075,7 @@ const hasDropdown = opts.length > 0
   || ((isVSetup || isASetup) && (col === 'Status' || col === 'Assignee'))
   || (isGuide && (col === 'City' || col === 'Category' || col === 'Event'));
 if (hasDropdown) {
-  const isMulti = col === 'Occasion' || col === 'City' || col === 'Tags' || columnTypes[tableName]?.[col] === 'badge_multi';
+  const isMulti = col === 'Occasion' || col === 'City' || col === 'Tags' || columnTypes[tableName]?.[col] === 'badge_multi' || col === 'Assignee';
   return (
     <CellDropdown
       value={draft[col] || ''}
@@ -2074,6 +2088,7 @@ if (hasDropdown) {
       onRemoveOption={val => onRemoveTag(tableName, col, val)}
       placeholder={`Select ${col}…`}
       tagClass={tagClass}
+      isUserPicker={col === 'Assignee'}
     />
   );
 }
@@ -2610,16 +2625,17 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
         onClick={onClose}
       />
       {/* Panel — bottom sheet on mobile, right side-panel on desktop */}
-      <motion.div
-        initial={isMobileView ? { y: '100%' } : { x: '100%' }}
-        animate={isMobileView ? { y: 0 } : { x: 0 }}
-        exit={isMobileView ? { y: '100%' } : { x: '100%' }}
-        transition={{ type: 'spring', damping: 30, stiffness: 280 }}
-        className="fixed z-[660] bg-white shadow-2xl flex flex-col
-        inset-x-0 bottom-0 rounded-t-3xl max-h-[92vh]
-        sm:inset-y-0 sm:right-0 sm:left-auto sm:bottom-auto sm:rounded-none sm:max-h-none sm:w-[400px] sm:border-l sm:border-slate-200"
-        style={{ paddingBottom: 'max(0px, env(safe-area-inset-bottom))' }}
-      >
+     <motion.div
+  initial={isMobileView ? { y: '100%' } : { x: '100%' }}
+  animate={isMobileView ? { y: 0 } : { x: 0 }}
+  exit={isMobileView ? { y: '100%' } : { x: '100%' }}
+  transition={{ type: 'spring', damping: 30, stiffness: 280 }}
+  className="fixed z-[660] bg-white shadow-2xl flex flex-col
+  inset-x-0 bottom-0 rounded-t-3xl max-h-[92vh]
+  sm:inset-y-0 sm:right-0 sm:left-auto sm:bottom-auto sm:rounded-none sm:h-screen sm:w-[400px] sm:border-l sm:border-slate-200" 
+  /* ^^^ Changed sm:max-h-none to sm:h-screen ^^^ */
+  style={{ paddingBottom: 'max(0px, env(safe-area-inset-bottom))' }}
+>
         {/* Mobile drag handle */}
         <div className="sm:hidden flex justify-center pt-3 pb-1 shrink-0">
           <div className="w-10 h-1 bg-slate-300 rounded-full" />
@@ -2652,10 +2668,10 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
         </div>
 
         {/* List */}
-        <div className="flex-1 overflow-y-auto scrollbar-hide">
-          {loading && (
-            <div className="flex items-center justify-center h-32 text-[12px] text-slate-400">Loading…</div>
-          )}
+      <div className="flex-1 overflow-y-auto inbox-scroll-container min-h-0 relative">
+  {loading && (
+    <div className="flex items-center justify-center h-32 text-[12px] text-slate-400">Loading…</div>
+  )}
           {!loading && visibleItems.length === 0 && (
             <div className="flex flex-col items-center justify-center h-48 gap-3 text-center px-8">
               <div className="h-12 w-12 rounded-2xl bg-slate-100 flex items-center justify-center">
@@ -2892,6 +2908,21 @@ if (sessionFieldNames.includes(col) && typeof val === 'string') {
     </div>
   );
 }
+    
+    if (col === 'Assignee' && typeof val === 'string') {
+      return (
+        <div className="flex flex-wrap gap-1.5 mt-1">
+          {val.split(',').map((tag, i) => (
+            <span key={i} className="bg-slate-100 border border-slate-200 text-slate-700 px-2 py-1 rounded-md font-bold text-[12px] whitespace-nowrap inline-flex items-center gap-1.5">
+              <div className="h-4 w-4 rounded-full bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[9px] font-black shrink-0 leading-none">
+                {tag.trim()[0]?.toUpperCase() || '?'}
+              </div>
+              {tag.trim()}
+            </span>
+          ))}
+        </div>
+      );
+    }
 
                         // Default rendering
                         if (!val || val === 'undefined') return <span className="text-slate-300 italic font-normal">—</span>;
@@ -3134,6 +3165,7 @@ const [cellPreview, setCellPreview] = useState<{ label: string; value: string; r
   const [locations, setLocations] = useState<any[]>([]);
   const [videoSetup, setVideoSetup] = useState<any[]>([]);
   const [audioSetup, setAudioSetup] = useState<any[]>([]);
+  const [appUsers, setAppUsers] = useState<any[]>([]);
   const [columnOrder, setColumnOrder] = useState<Record<string, string[]>>({});
   const [frozenUpTo, setFrozenUpTo] = useState<Record<string, number>>({});
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
@@ -3851,14 +3883,14 @@ const getColumnType = (col: string): FieldType => {
   if (['PlayID', 'VideoPlayId', 'LedId', 'LearningId'].includes(col) || (col.toLowerCase().endsWith('id') && !col.includes(' '))) return 'id';
   if (['DateFrom', 'DateTo', 'Date', 'PlayedAt', 'LastUpdated'].includes(col) || col.startsWith('Date (') || col.startsWith('DateFrom (') || col.startsWith('DateTo (')) return 'date';
  if (['Year', 'Year (from Event)'].includes(col)) return 'year';
-  if (['Occasion', 'Occasion (from Session)', 'Tags'].includes(col)) return 'badge_multi';
+  if (['Occasion', 'Occasion (from Session)', 'Tags', 'Assignee'].includes(col)) return 'badge_multi';
   if (['City', 'City (from Session)', 'City (from 🕘 Session)', 'Dept', 'TaskGroup', 'Indoor/Outdoor LED?'].includes(col)) return 'badge';
   if (['SessionType', 'SessionType (from Session)', 'Category', 'Time Of Day', 'TimeOfDay', 'TimeOfDay (from Session)'].includes(col)) return 'badge';
  if ([
     'SessionType', 'Category', 'Time Of Day', 'TimeOfDay', 
     'Typical Timeline', 'Period', 'PlayedAt', 'GuidanceFrom', 'City','People Involved',
     'Indoor/Outdoor LED?', 'CntrPitch', 'SidePitch', 'OtherLed1', 'OtherLed2', 'Vendor',
-    'Dept', 'Status', 'Assignee',
+    'Dept', 'Status', 
     'Source', 'Plays' // <--- Added Tracks fields
   ].includes(col)) return 'badge';
 if (['Status', 'status'].includes(col)) return 'status';
@@ -3939,11 +3971,20 @@ case 'text':
     case 'badge_multi':
       return val ? (
         <div className="flex flex-wrap gap-1.5 justify-start">
-          {String(val).split(',').map((t: string, i: number) => (
-            <span key={i} className={getTagStyle(t.trim())} style={{ maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'left' }}>
-              {t.trim()}
-            </span>
-          ))}
+          {String(val).split(',').map((t: string, i: number) => {
+            return col === 'Assignee' ? (
+              <span key={i} className="bg-slate-100 border border-slate-200 text-slate-700 px-1.5 py-0.5 rounded-md font-bold text-[11px] whitespace-nowrap inline-flex items-center gap-1.5" style={{ maxWidth: '100%', wordBreak: 'break-word', textAlign: 'left' }}>
+                <div className="h-3.5 w-3.5 rounded-full bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[8px] font-black shrink-0 leading-none">
+                  {t.trim()[0]?.toUpperCase() || '?'}
+                </div>
+                {t.trim()}
+              </span>
+            ) : (
+              <span key={i} className={getTagStyle(t.trim())} style={{ maxWidth: '100%', whiteSpace: 'normal', wordBreak: 'break-word', textAlign: 'left' }}>
+                {t.trim()}
+              </span>
+            );
+          })}
         </div>
       ) : empty;
     // ----------------------------------------------
@@ -4496,7 +4537,10 @@ const renderRow = (item: any) => {
 
 const handleAddBlankRow = async (initialData: Record<string, any> = {}) => {
   let collection = '';
-  const dataToSave = { ...initialData };
+  const dataToSave: Record<string, any> = {
+  ...initialData,
+  _modifiedBy: user?.name || user?.email || 'Someone'
+};
   switch (activeTable) {
     case 'Events': collection = 'events'; break;
     case 'Session': collection = 'sessions'; break;
@@ -4591,6 +4635,7 @@ const fetchAllData = async () => {
       { key: 'videosetup', setter: setVideoSetup },
       { key: 'audiosetup', setter: setAudioSetup },
       { key: 'media', setter: setMedia },
+      { key: 'users', setter: setAppUsers },
     ];
 
     // Fetch all endpoints concurrently instead of sequentially for much faster initial load
@@ -4707,7 +4752,7 @@ useEffect(() => {
 
  const handleAddRecord = async () => {
   let collection = '';
-  const data: Record<string, any> = { ...newRecord };
+  const data: Record<string, any> = { ...newRecord, _modifiedBy: user?.name || user?.email || 'Someone' };
 
   // Remap camelCase form keys → exact MongoDB field names per table
   const remap = (from: string, to: string) => { if (from in data) { data[to] = data[from]; delete data[from]; } };
@@ -4763,10 +4808,12 @@ useEffect(() => {
     case 'VideoSetup':
       collection = 'videosetup';
       remap('name', 'Name'); remap('notes', 'Notes'); remap('attachments', 'Attachments');
+      remap('assignee', 'Assignee'); remap('status', 'Status'); remap('attachmentSummary', 'Attachment Summary');
       break;
     case 'AudioSetup':
       collection = 'audiosetup';
       remap('name', 'Name'); remap('notes', 'Notes'); remap('attachments', 'Attachments');
+      remap('assignee', 'Assignee'); remap('status', 'Status'); remap('attachmentSummary', 'Attachment Summary');
       break;
   }
 
@@ -5267,7 +5314,7 @@ const handleUpdateRecord = async (draftOverride?: any) => {
     const response = await window.fetch(`/api/${collection}/${id}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(draft)
+      body: JSON.stringify({ ...draft, _modifiedBy: user?.name || user?.email || 'Someone' })
     });
 
     if (response.ok) {
@@ -5309,7 +5356,7 @@ const handleExpandedSave = async (newDraft: any) => {
     case 'AudioSetup': collection = 'audiosetup'; break;
     default: collection = activeTable.toLowerCase();
   }
-  const updateData = { ...newDraft };
+  const updateData = { ...newDraft, _modifiedBy: user?.name || user?.email || 'Someone' };
   delete updateData._id;
   try {
     const res = await window.fetch(`/api/${collection}/${id}`, {
@@ -5587,7 +5634,7 @@ const updateDraftOnly = (col: string, val: string) => {
                 opts = ['To Do', 'In Progress', 'Done'];
               }
               else if ((activeTable === 'VideoSetup' || activeTable === 'AudioSetup') && col === 'Assignee') {
-                opts = [...new Set(locations.map((item: any) => item["Sevak"]).filter(Boolean).map(String))].sort();
+                opts = appUsers.map((u: any) => u.name || u.email).filter(Boolean).sort();
               }
               else if (activeTable === 'DataSharing' && col === 'Dept') {
                 opts = [...new Set(locations.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
@@ -5640,6 +5687,7 @@ const updateDraftOnly = (col: string, val: string) => {
                     onOutsideClick={() => handleUpdateRecord()}
                     placeholder={`Select ${col}…`}
                     isMinimal={true}
+                    isUserPicker={col === 'Assignee'}
                   />
                 );
               }
@@ -5693,7 +5741,7 @@ const startInlineAdd = () => {
 
 const handleInlineSave = async () => {
   let collection = '';
-  const data = { ...inlineRecord };
+  const data = { ...inlineRecord, _modifiedBy: user?.name || user?.email || 'Someone' };
   // Mapping table to MongoDB collection
   switch (activeTable) {
     case 'Events': collection = 'events'; break;
@@ -5887,6 +5935,64 @@ if (!health?.mongodb) {
 
 
 <style dangerouslySetInnerHTML={{ __html: `
+  /* Main App / Grid Scrollbar */
+  .thin-scrollbar::-webkit-scrollbar {
+    height: 8px; 
+    width: 8px;  
+  }
+  .thin-scrollbar::-webkit-scrollbar-track {
+    background: #f8fafc; 
+    border-radius: 10px;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb {
+    background: #cbd5e1; 
+    border-radius: 10px;
+    border: 2px solid #f8fafc;
+  }
+  .thin-scrollbar::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8; 
+  }
+
+  /* Specific Inbox Scrollbar - More Visible */
+.inbox-scroll-container {
+    overflow-y: auto !important;
+    height: 100%;
+  }
+
+  .inbox-scroll-container::-webkit-scrollbar {
+    width: 6px !important;
+    display: block !important;
+  }
+
+  .inbox-scroll-container::-webkit-scrollbar-track {
+    background: #f1f5f9 !important;
+  }
+
+  .inbox-scroll-container::-webkit-scrollbar-thumb {
+    background: #cbd5e1 !important;
+    border-radius: 10px !important;
+  }
+
+  .inbox-scroll-container::-webkit-scrollbar-thumb:hover {
+    background: #94a3b8 !important;
+  }
+
+.inbox-scroll-container {
+    overflow-y: scroll !important; /* Force the scroll area */
+    scrollbar-gutter: stable; /* Prevents layout jump when scrollbar appears */
+}
+
+/* Ensure the sticky header in the table stays on top of frozen columns */
+thead.sticky th {
+    z-index: 40 !important;
+}
+
+/* Fix for frozen columns to ensure they don't disappear behind the sidebar shift */
+[style*="position: sticky"] {
+    will-change: transform;
+}
+
+  /* Sidebar Scrollbar */
   .custom-sidebar-scrollbar::-webkit-scrollbar {
     width: 4px;
   }
@@ -5894,30 +6000,18 @@ if (!health?.mongodb) {
     background: transparent;
   }
   .custom-sidebar-scrollbar::-webkit-scrollbar-thumb {
-    background: #1e293b; /* Slate-800 */
+    background: #1e293b; 
     border-radius: 10px;
   }
-  .custom-sidebar-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #3b82f6; /* Brand Blue */
+
+  .scrollbar-hide::-webkit-scrollbar {
+    display: none;
   }
-    .thin-scrollbar::-webkit-scrollbar {
-    height: 6px; /* Horizontal height */
-    width: 6px;  /* Vertical width */
+  .scrollbar-hide {
+    -ms-overflow-style: none;
+    scrollbar-width: none;
   }
-  .thin-scrollbar::-webkit-scrollbar-track {
-    background: #f8fafc; /* Very light slate */
-    border-radius: 10px;
-  }
-  .thin-scrollbar::-webkit-scrollbar-thumb {
-    background: #cbd5e1; /* Slate-300 */
-    border-radius: 10px;
-    border: 1px solid #f8fafc; /* Adds padding look */
-  }
-  .thin-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #94a3b8; /* Slate-400 */
-  }
-`
-}} />
+`}} />
 
 <aside
   className={`fixed inset-y-0 left-0 z-50 bg-[#0f111a] flex flex-col shrink-0 border-r border-slate-800/60 transition-all duration-300 ease-in-out lg:relative ${
@@ -6103,12 +6197,12 @@ if (!health?.mongodb) {
 )}
 
       {/* Main Content */}
-      <main className="flex-1 flex flex-col relative bg-brand-bg overflow-hidden">
+     <main className="flex-1 flex flex-col min-w-0 relative bg-brand-bg overflow-hidden">
       <header className="sticky top-0 z-40 w-full bg-white border-b border-slate-200 flex flex-col px-4 md:px-8 shrink-0 shadow-sm">
   {/* ── TOP ROW: single flex-row on all screen sizes ── */}
   <div className="flex items-center justify-between w-full h-14 gap-2">
     {/* Left: hamburger + search */}
-    <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 shrink min-w-0">
       <Button
         variant="ghost"
         size="icon"
@@ -6120,13 +6214,13 @@ if (!health?.mongodb) {
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
         <>
           {/* Desktop search */}
-          <div className="relative hidden sm:block">
+              <div className="relative hidden sm:block shrink min-w-0">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
             <Input
               placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-              className="bg-brand-bg w-[120px] md:w-[180px] pl-8 h-9 text-xs text-black dark:text-white"
+                  className="bg-brand-bg w-full md:w-[120px] xl:w-[180px] pl-8 h-9 text-xs text-black dark:text-white transition-all"
             />
           </div>
           {/* Mobile search icon toggle */}
@@ -6141,7 +6235,7 @@ if (!health?.mongodb) {
     </div>
 
     {/* Right: desktop toolbar items + inbox (inbox always visible here) */}
-    <div className="flex items-center gap-1.5 md:gap-2">
+        <div className="flex items-center justify-end gap-1.5 md:gap-2 flex-1 min-w-0">
       {/* Desktop view switcher */}
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
         <div className="hidden sm:flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-11 items-center">
@@ -6168,13 +6262,13 @@ if (!health?.mongodb) {
 
       {/* Desktop Filter button */}
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
-        <div className="relative hidden sm:block">
+            <div className="relative hidden sm:block shrink min-w-0">
           <button
             onClick={() => {
               if (!isAdvancedFilterOpen) setPendingFilter(advancedFilter);
               setIsAdvancedFilterOpen(!isAdvancedFilterOpen);
             }}
-            className={`flex items-center gap-2 h-11 px-4 rounded-xl border transition-all ${
+                className={`flex items-center gap-1.5 xl:gap-2 h-10 px-3 xl:px-4 rounded-xl border transition-all shrink min-w-0 ${
               advancedFilter.conditions.length > 0
                 ? 'bg-brand-primary/10 border-brand-primary/50 text-brand-primary shadow-sm'
                 : 'bg-white border-slate-300 text-slate-600 hover:border-brand-primary/50 shadow-sm'
@@ -6182,11 +6276,11 @@ if (!health?.mongodb) {
             title="Advanced Filter"
           >
             <Filter className="h-4 w-4 shrink-0" />
-            <span className="text-xs font-bold uppercase tracking-wide">
+                <span className="text-xs font-bold uppercase tracking-wide truncate hidden xl:inline">
               {advancedFilter.conditions.length > 0 ? 'Filtered' : 'Filter'}
             </span>
             {advancedFilter.conditions.length > 0 && (
-              <span className="h-5 w-5 bg-brand-primary text-white rounded-full flex items-center justify-center text-[10px] font-black">
+                  <span className="h-5 w-5 bg-brand-primary text-white rounded-full flex items-center justify-center text-[10px] font-black shrink-0">
                 {advancedFilter.conditions.length}
               </span>
             )}
@@ -6225,16 +6319,18 @@ if (!health?.mongodb) {
 
       {/* Desktop Group By + Sort By */}
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && (viewMode === 'grid' || viewMode === 'visual') && <>
-        <div className="relative hidden sm:block">
+            <div className="relative hidden sm:block shrink min-w-0 w-[100px] lg:w-[140px] xl:w-[180px]">
           <button
             onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
-            className="flex items-center bg-white border border-slate-300 rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[180px]"
+                className="flex items-center justify-between bg-white border border-slate-300 rounded-xl px-2.5 xl:px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group w-full"
           >
-            <Layers className="h-4 w-4 text-slate-500 mr-2 shrink-0" />
-            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-6">
-              {groupByField ? colLabel(groupByField) : "No Grouping"}
-            </span>
-            <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isGroupOpen ? 'rotate-180' : ''}`} />
+                <div className="flex items-center truncate min-w-0">
+                  <Layers className="h-4 w-4 text-slate-500 mr-1.5 xl:mr-2 shrink-0" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate">
+                    {groupByField ? colLabel(groupByField) : "No Grouping"}
+                  </span>
+                </div>
+                <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform shrink-0 ml-1 ${isGroupOpen ? 'rotate-180' : ''}`} />
           </button>
           <AnimatePresence>
             {isGroupOpen && (
@@ -6244,7 +6340,7 @@ if (!health?.mongodb) {
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 5 }}
-                  className="absolute top-full left-0 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
+                      className="absolute top-full right-0 mt-2 w-full min-w-[180px] bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
                 >
                   <button onClick={() => { setGroupByField(null); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Grouping</button>
                   {getTableColumns().map(col => (
@@ -6256,24 +6352,28 @@ if (!health?.mongodb) {
           </AnimatePresence>
         </div>
 
-        <div className="relative hidden sm:block">
+        <div className="relative hidden sm:block shrink min-w-0 w-[120px] xl:w-[180px]">
           <button
             onClick={() => { setIsSortOpen(!isSortOpen); setIsGroupOpen(false); }}
-            className="flex items-center bg-white border border-slate-300 rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[180px]"
+            className="flex items-center justify-between bg-white border border-slate-300 rounded-xl px-2.5 xl:px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group w-full"
           >
-            <ArrowUpDown className="h-4 w-4 text-slate-500 mr-2 shrink-0" />
-            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-10">
-              {sortBy ? `By ${colLabel(sortBy.field)}` : "No Sort"}
-            </span>
-            {sortBy && (
-              <button
-                onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSortBy({ ...sortBy, direction: sortBy.direction === 'asc' ? 'desc' : 'asc' }); }}
-                className="absolute right-10 h-6 w-6 hover:bg-slate-100 rounded-md transition-colors flex items-center justify-center bg-white border border-slate-200 shadow-sm z-10"
-              >
-                <span className="text-xs text-brand-primary font-bold leading-none">{sortBy.direction === 'asc' ? '↑' : '↓'}</span>
-              </button>
-            )}
-            <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isSortOpen ? 'rotate-180' : ''}`} />
+            <div className="flex items-center truncate min-w-0">
+              <ArrowUpDown className="h-4 w-4 text-slate-500 mr-1.5 xl:mr-2 shrink-0" />
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate">
+                {sortBy ? colLabel(sortBy.field) : "No Sort"}
+              </span>
+            </div>
+            <div className="flex items-center shrink-0 ml-1">
+              {sortBy && (
+                <button
+                  onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSortBy({ ...sortBy, direction: sortBy.direction === 'asc' ? 'desc' : 'asc' }); }}
+                  className="h-5 w-5 hover:bg-slate-100 rounded transition-colors flex items-center justify-center mr-0.5 border border-slate-200 shadow-sm z-10"
+                >
+                  <span className="text-[10px] text-brand-primary font-bold leading-none">{sortBy.direction === 'asc' ? '↑' : '↓'}</span>
+                </button>
+              )}
+              <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${isSortOpen ? 'rotate-180' : ''}`} />
+            </div>
           </button>
           <AnimatePresence>
             {isSortOpen && (
@@ -6283,7 +6383,7 @@ if (!health?.mongodb) {
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 5 }}
-                  className="absolute top-full left-0 mt-2 w-full bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
+                      className="absolute top-full right-0 mt-2 w-full min-w-[180px] bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
                 >
                   <button onClick={() => { setSortBy(null); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Sort</button>
                   {getTableColumns().map(col => (
@@ -6298,16 +6398,18 @@ if (!health?.mongodb) {
 
       {/* Desktop Hide Fields */}
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && viewMode === 'grid' && (
-        <div className="relative hidden sm:block">
+            <div className="relative hidden sm:block shrink min-w-0 w-[100px] xl:w-[140px]">
           <button
             onClick={() => { setIsFieldsOpen(!isFieldsOpen); setIsGroupOpen(false); setIsSortOpen(false); }}
-            className={`flex items-center bg-white border rounded-xl px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group min-w-[140px] relative ${(hiddenColumns[activeTable]?.length || 0) > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-300'}`}
+                className={`flex items-center justify-between bg-white border rounded-xl px-2.5 xl:px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group w-full ${(hiddenColumns[activeTable]?.length || 0) > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-300'}`}
           >
-            <Eye className="h-4 w-4 mr-2 shrink-0" />
-            <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate mr-6">
-              {(hiddenColumns[activeTable]?.length || 0) > 0 ? `${hiddenColumns[activeTable].length} hidden` : 'Fields'}
-            </span>
-            <ChevronDown className={`absolute right-3 h-4 w-4 text-slate-400 transition-transform ${isFieldsOpen ? 'rotate-180' : ''}`} />
+                <div className="flex items-center truncate min-w-0">
+                  <Eye className="h-4 w-4 mr-1.5 xl:mr-2 shrink-0" />
+                  <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate">
+                    {(hiddenColumns[activeTable]?.length || 0) > 0 ? `${hiddenColumns[activeTable].length} hidden` : 'Fields'}
+                  </span>
+                </div>
+                <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform shrink-0 ml-1 ${isFieldsOpen ? 'rotate-180' : ''}`} />
           </button>
           <AnimatePresence>
             {isFieldsOpen && (
@@ -6317,7 +6419,7 @@ if (!health?.mongodb) {
                   initial={{ opacity: 0, y: 5 }}
                   animate={{ opacity: 1, y: 0 }}
                   exit={{ opacity: 0, y: 5 }}
-                  className="absolute top-full left-0 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 py-2"
+                    className="absolute top-full right-0 mt-2 w-56 bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 py-2"
                 >
                   <p className="px-4 py-1.5 text-[10px] font-black text-slate-400 uppercase tracking-widest">Toggle visibility</p>
                   {getTableColumns(true).map(col => {
@@ -6346,10 +6448,10 @@ if (!health?.mongodb) {
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && hasPerm(user, activeTable, 'add') && (
         <Button
           onClick={openAddModal}
-          className="hidden sm:flex bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-4 shadow-md items-center gap-2 transition-transform active:scale-95 ml-1"
+                className="hidden sm:flex bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-3 xl:px-4 shadow-md items-center gap-1.5 xl:gap-2 transition-transform active:scale-95 ml-0.5 xl:ml-1 shrink-0"
         >
-          <Plus className="h-4 w-4" />
-          <span className="hidden md:inline uppercase text-xs font-bold tracking-wide">Add Record</span>
+                <Plus className="h-4 w-4 shrink-0" />
+          <span className="hidden xl:inline uppercase text-xs font-bold tracking-wide">Add Record</span>
         </Button>
       )}
 
@@ -7732,7 +7834,20 @@ if (!health?.mongodb) {
                           <div className="grid grid-cols-2 gap-3 pt-2">
                             <div className="space-y-1">
                               <p className="text-[8px] font-black text-slate-400 uppercase">Assignee</p>
-                              <p className="text-[11px] font-bold text-slate-700 truncate">{item["Assignee"] || item.assignee || "Unassigned"}</p>
+                              {item["Assignee"] || item.assignee ? (
+                                <div className="flex flex-wrap gap-1 pt-0.5">
+                                  {String(item["Assignee"] || item.assignee).split(',').map((a, idx) => (
+                                    <span key={idx} className="bg-slate-100 border border-slate-200 text-slate-700 px-1.5 py-0.5 rounded flex items-center gap-1 text-[9px] font-bold max-w-full">
+                                      <div className="h-3 w-3 rounded-full bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[6px] font-black shrink-0 leading-none">
+                                        {a.trim()[0]?.toUpperCase() || '?'}
+                                      </div>
+                                      <span className="truncate">{a.trim()}</span>
+                                    </span>
+                                  ))}
+                                </div>
+                              ) : (
+                                <p className="text-[11px] font-bold text-slate-700 truncate">Unassigned</p>
+                              )}
                             </div>
                             <div className="space-y-1">
                               <p className="text-[8px] font-black text-slate-400 uppercase">Status</p>
@@ -7804,9 +7919,10 @@ if (!health?.mongodb) {
                   <div className="md:hidden bg-blue-50 text-[10px] text-center py-1 text-blue-600 font-bold uppercase">
                     ← Scroll horizontally to see all columns →
                   </div>
-                 <div 
-  ref={gridContainerRef} // Add this line
-  className="overflow-auto thin-scrollbar flex-1 bg-white"
+      <div 
+  ref={gridContainerRef} 
+  className="overflow-auto thin-scrollbar flex-1 bg-white min-w-0 relative" 
+  style={{ height: '100%' }}
 >
                     <table 
                       className="border-collapse text-left text-[11px] table-fixed" 
@@ -8869,7 +8985,7 @@ if (!health?.mongodb) {
 
     {/* VIDEO SETUP & AUDIO SETUP */}
     {(activeTable === 'VideoSetup' || activeTable === 'AudioSetup') && (() => {
-      const assigneeOpts = [...new Set(locations.map((item: any) => item["Sevak"]).filter(Boolean).map(String))].sort();
+      const assigneeOpts = appUsers.map((u: any) => u.name || u.email).filter(Boolean).sort();
       return (
       <>
         <div className="space-y-2">
@@ -8883,14 +8999,18 @@ if (!health?.mongodb) {
         <div className="grid grid-cols-2 gap-4">
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Assignee</label>
-            <select
-              className="w-full h-9 bg-brand-bg border border-brand-border rounded-md px-3 text-sm text-brand-text focus:ring-2 focus:ring-brand-primary outline-none"
+            <CellDropdown
               value={newRecord.assignee || ''}
-              onChange={(e) => setNewRecord({...newRecord, assignee: e.target.value})}
-            >
-              <option value="">Select Assignee...</option>
-              {assigneeOpts.map(o => <option key={o} value={o}>{o}</option>)}
-            </select>
+              options={[...new Set([...assigneeOpts, ...(customTags[activeTable]?.['Assignee'] || [])])]}
+              isMulti={true}
+              onAddOption={val => handleAddCustomTag(activeTable, 'Assignee', val)}
+              removableOptions={[...new Set([...assigneeOpts, ...(customTags[activeTable]?.['Assignee'] || [])])]}
+              onRemoveOption={val => handleRemoveTagGlobally(activeTable, 'Assignee', val)}
+              onCommit={val => setNewRecord({...newRecord, assignee: val})}
+              onCancel={() => {}}
+              placeholder="Select Assignees…"
+              isUserPicker={true}
+            />
           </div>
           <div className="space-y-2">
             <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Status</label>
@@ -9580,7 +9700,7 @@ if (!health?.mongodb) {
           ];
         } else if (activeTable === 'VideoSetup' || activeTable === 'AudioSetup') {
           const statusOpts = ['To Do', 'In Progress', 'Done'];
-          const assigneeOpts = [...new Set(locations.map((item: any) => item["Sevak"]).filter(Boolean).map(String))].sort();
+          const assigneeOpts = appUsers.map((u: any) => u.name || u.email).filter(Boolean).sort();
           const setupLabel = activeTable === 'VideoSetup' ? 'Video' : 'Audio';
           wizardSteps = [
             {
@@ -9590,7 +9710,7 @@ if (!health?.mongodb) {
                   <div><label className={labelCls}>Name</label><input className={inputCls} value={newRecord.name || ''} onChange={e => setNewRecord({...newRecord, name: e.target.value})} placeholder="Equipment / setup name…" /></div>
                   <div>
                     <label className={labelCls}>Assignee</label>
-                    <CellDropdown value={newRecord.assignee || ''} options={[...new Set([...assigneeOpts, ...(customTags[activeTable]?.['Assignee'] || [])])]} onAddOption={val => handleAddCustomTag(activeTable, 'Assignee', val)} removableOptions={[...new Set([...assigneeOpts, ...(customTags[activeTable]?.['Assignee'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally(activeTable, 'Assignee', val)} onCommit={val => setNewRecord({...newRecord, assignee: val})} onCancel={() => {}} placeholder="Select Assignee…" />
+                    <CellDropdown value={newRecord.assignee || ''} options={[...new Set([...assigneeOpts, ...(customTags[activeTable]?.['Assignee'] || [])])]} isMulti={true} onAddOption={val => handleAddCustomTag(activeTable, 'Assignee', val)} removableOptions={[...new Set([...assigneeOpts, ...(customTags[activeTable]?.['Assignee'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally(activeTable, 'Assignee', val)} onCommit={val => setNewRecord({...newRecord, assignee: val})} onCancel={() => {}} placeholder="Select Assignees…" isUserPicker={true} />
                   </div>
                   <div>
                     <label className={labelCls}>Status</label>

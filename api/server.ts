@@ -344,6 +344,48 @@ app.get('/api/drive-proxy/:id', async (req, res) => {
   }
 });
 /**
+ * HELPER FUNCTIONS
+ */
+async function createAssignmentNotifications(db: any, collection: string, recordId: any, recordData: any, assignees: string, modifiedBy: string) {
+  try {
+    const assigneeList = assignees.split(',').map((s: string) => s.trim()).filter(Boolean);
+    const allUsers = await db.collection('users').find({}).toArray();
+    const notifs: any[] = [];
+    
+    for (const assignee of assigneeList) {
+      const match = allUsers.find((u: any) => {
+        const nameSlug = (u.name || '').replace(/\s+/g, '').toLowerCase();
+        const emailSlug = (u.email || '').split('@')[0].toLowerCase();
+        const assigneeLower = assignee.toLowerCase();
+        return nameSlug === assigneeLower || emailSlug === assigneeLower;
+      });
+      
+      if (match?.email) {
+        notifs.push({
+          recipientEmail: match.email,
+          recipientName: match.name || assignee,
+          type: 'assignment',
+          text: `You were assigned to a record in ${collection}`,
+          authorName: modifiedBy,
+          recordId: recordId.toString(),
+          recordTitle: recordData.title || recordData.name || 'a record',
+          tableName: collection,
+          collection,
+          read: false,
+          createdAt: new Date(),
+        });
+      }
+    }
+    
+    if (notifs.length > 0) {
+      await db.collection('notifications').insertMany(notifs);
+    }
+  } catch (err) {
+    console.error('Error creating assignment notifications:', err);
+  }
+}
+
+/**
  * DYNAMIC CRUD ROUTES
  */
 const collections = ['events', 'sessions', 'musiclog', 'videolog', 'checklist', 'locations', 'led_details', 'rentals', 'guidance', 'media', 'videosetup', 'audiosetup'];
@@ -372,8 +414,16 @@ collections.forEach(col => {
   app.post(`/api/${col}`, async (req, res) => {
     try {
       const db = await getDb();
+      const modifiedBy = req.body._modifiedBy || 'Someone';
       const newItem = { ...req.body, created_at: new Date() };
+      delete newItem._modifiedBy;
       const result = await db.collection(col).insertOne(newItem);
+      
+      const assignees = newItem.Assignee || newItem.assignee || newItem['People Involved'];
+      if (assignees) {
+        await createAssignmentNotifications(db, col, result.insertedId, newItem, assignees, modifiedBy);
+      }
+
       res.status(201).json({ ...newItem, _id: result.insertedId });
     } catch (e) { res.status(500).json({ error: 'Create failed' }); }
   });
@@ -384,8 +434,25 @@ collections.forEach(col => {
       const db = await getDb();
       const { id } = req.params;
       const updateData = { ...req.body };
+      const modifiedBy = updateData._modifiedBy || 'Someone';
       delete updateData._id;
+      delete updateData._modifiedBy;
+      
+      const oldItem = await db.collection(col).findOne({ _id: new ObjectId(id) });
       await db.collection(col).updateOne({ _id: new ObjectId(id) }, { $set: updateData });
+
+      const oldAssignees = oldItem?.Assignee || oldItem?.assignee || oldItem?.['People Involved'] || '';
+      const newAssignees = updateData.Assignee !== undefined ? updateData.Assignee : updateData.assignee !== undefined ? updateData.assignee : updateData['People Involved'] !== undefined ? updateData['People Involved'] : oldAssignees;
+
+      if (newAssignees !== oldAssignees) {
+        const oldList = oldAssignees.split(',').map((s: string)=>s.trim()).filter(Boolean);
+        const newList = newAssignees.split(',').map((s: string)=>s.trim()).filter(Boolean);
+        const added = newList.filter((a: string) => !oldList.includes(a));
+        if (added.length > 0) {
+          await createAssignmentNotifications(db, col, id, updateData, added.join(','), modifiedBy);
+        }
+      }
+
       res.json({ success: true });
     } catch (e) { res.status(500).json({ error: 'Update failed' }); }
   });
