@@ -633,6 +633,7 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({
   const [uploadError, setUploadError] = useState<string | null>(null);
   const imagesRef = useRef<ImgEntry[]>([]);
   const uploadingRef = useRef(false); // guard against double-trigger
+  const [previewImage, setPreviewImage] = useState<string | null>(null);
 
 // Inside AttachmentManagerDialog component
 const parseImages = (raw: string): ImgEntry[] => {
@@ -871,12 +872,13 @@ const parseImages = (raw: string): ImgEntry[] => {
                       </div>
                     ) : (
                       <>
-                       <img
-  src={getDirectUrl(entry.url)} // This now calls your proxy
-  loading="lazy"                // Add lazy loading to save bandwidth
-  className="w-full h-full object-cover"
-  alt={entry.name}
-/>
+                        <img
+                          src={getDirectUrl(entry.url)}
+                          loading="lazy"
+                          className="w-full h-full object-cover cursor-pointer hover:scale-105 transition-transform duration-300"
+                          alt={entry.name}
+                          onClick={(e) => { e.stopPropagation(); setPreviewImage(getDirectUrl(entry.url)); }}
+                        />
                         <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover/card:opacity-100 transition-opacity">
                           <a
                             href={getDriveFileId(entry.url) ? makeDriveDownloadUrl(getDriveFileId(entry.url)!) : entry.url}
@@ -918,6 +920,28 @@ const parseImages = (raw: string): ImgEntry[] => {
           <div className="shrink-0" style={{ paddingBottom: 'env(safe-area-inset-bottom)' }} />
         )}
       </div>
+
+      {/* Full Screen Image Preview Overlay */}
+      {previewImage && (
+        <div 
+          className="fixed inset-0 z-[700] flex items-center justify-center bg-black/90 backdrop-blur-md p-4 sm:p-8"
+          onClick={(e) => { e.stopPropagation(); setPreviewImage(null); }}
+        >
+          <button 
+            onClick={(e) => { e.stopPropagation(); setPreviewImage(null); }}
+            className="absolute top-4 right-4 sm:top-6 sm:right-6 p-2 text-white/70 hover:text-white bg-white/10 hover:bg-white/20 rounded-full transition-colors z-[710]"
+            title="Close Preview"
+          >
+            <X className="h-6 w-6" />
+          </button>
+          <img 
+            src={previewImage} 
+            className="max-w-full max-h-full object-contain select-none drop-shadow-2xl" 
+            alt="Expanded preview" 
+            onClick={(e) => e.stopPropagation()}
+          />
+        </div>
+      )}
     </div>
   );
 });
@@ -2249,9 +2273,18 @@ if (hasDropdown) {
             <div className="text-[9px] font-black text-brand-primary uppercase tracking-[0.2em] mb-0.5">{tableName}</div>
             <h2 className="text-[17px] font-black text-slate-900 tracking-tight leading-snug truncate">{recordTitle}</h2>
           </div>
-          <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-slate-100 mt-0.5 shrink-0">
-            <X className="h-5 w-5 text-slate-400" />
-          </button>
+          <div className="flex items-center gap-1 mt-0.5 shrink-0">
+            <button 
+              onClick={() => setStep(totalSteps - 1)}
+              className="relative p-1.5 rounded-xl hover:bg-slate-100 text-slate-400 hover:text-brand-primary transition-colors"
+            >
+              <MessageCircle className="h-5 w-5" />
+              {comments.length > 0 && <span className="absolute top-1 right-1 h-2.5 w-2.5 bg-brand-primary border-2 border-white rounded-full"></span>}
+            </button>
+            <button onClick={onClose} className="p-1.5 rounded-xl hover:bg-slate-100 shrink-0">
+              <X className="h-5 w-5 text-slate-400" />
+            </button>
+          </div>
         </div>
 
         {/* Step progress bar */}
