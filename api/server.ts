@@ -284,6 +284,65 @@ app.post('/api/upload', async (req, res) => {
   }
 });
 
+// crypto is imported earlier in the file; remove duplicate require to avoid conflict
+// Add this to your backend file
+app.get('/api/drive-proxy/:id', async (req, res) => {
+  try {
+    const fileId = req.params.id;
+
+    let auth;
+    if (process.env.GOOGLE_REFRESH_TOKEN) {
+      auth = new google.auth.OAuth2(
+        process.env.GOOGLE_CLIENT_ID, 
+        process.env.GOOGLE_CLIENT_SECRET
+      );
+      auth.setCredentials({ refresh_token: process.env.GOOGLE_REFRESH_TOKEN });
+    } else {
+      // THE FIX: Use your robust key parsing logic from the upload route
+      let pk = process.env.GOOGLE_PRIVATE_KEY || '';
+      pk = pk.replace(/^["']|["']$/g, '').replace(/\\n/g, '\n').replace(/\r/g, '').trim();
+
+      try {
+        // This re-formats the key into a clean PKCS#8 PEM that Node 18/20 accepts
+        pk = crypto.createPrivateKey(pk).export({ type: 'pkcs8', format: 'pem' }).toString();
+      } catch (keyErr) {
+        console.error('Private key parse failed in proxy:', (keyErr as Error).message);
+        return res.status(500).send('Invalid Google Private Key formatting');
+      }
+
+      auth = new google.auth.GoogleAuth({
+        credentials: {
+          client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
+          private_key: pk,
+        },
+        scopes: ['https://www.googleapis.com/auth/drive.readonly'],
+      });
+    }
+
+    const drive = google.drive({ version: 'v3', auth });
+
+    // Fetch metadata for mimeType
+    const metadata = await drive.files.get({ 
+      fileId, 
+      fields: 'mimeType',
+      supportsAllDrives: true 
+    });
+    
+    // Fetch image content
+    const response = await drive.files.get(
+      { fileId, alt: 'media', supportsAllDrives: true },
+      { responseType: 'stream' }
+    );
+
+    res.setHeader('Content-Type', metadata.data.mimeType || 'application/octet-stream');
+    res.setHeader('Cache-Control', 'public, max-age=86400'); 
+    response.data.pipe(res);
+
+  } catch (error) {
+    console.error('Drive Proxy Error:', (error as Error).message);
+    res.status(500).send('Error loading image');
+  }
+});
 /**
  * DYNAMIC CRUD ROUTES
  */

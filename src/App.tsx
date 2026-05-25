@@ -108,6 +108,47 @@ const TAG_COLORS = [
   "bg-violet-500/20 text-violet-800 border-violet-500/30 dark:text-violet-200",
   "bg-stone-500/20 text-stone-800 border-stone-500/30 dark:text-stone-200",
 ];
+
+const getDriveFileId = (raw: string) => {
+  const pathMatch = raw.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
+  if (pathMatch) return pathMatch[1];
+  try {
+    const parsed = new URL(raw);
+    return parsed.searchParams.get('id');
+  } catch {
+    return null;
+  }
+};
+
+const makeDriveDownloadUrl = (id: string) => `https://drive.google.com/uc?export=download&id=${id}`;
+const makeDriveViewUrl = (id: string) => `https://drive.google.com/uc?export=view&id=${id}`;
+// sz=w1200 allows for high quality while still being a "web-safe" preview link
+const makeDriveThumbnailUrl = (id: string) => `https://lh3.googleusercontent.com/u/0/d/${id}=w1200`;
+
+// Replace your existing getDirectUrl function (around line 98)
+const getDirectUrl = (url?: string) => {
+  if (!url) return '';
+  const id = getDriveFileId(url);
+  // Use the proxy to avoid 429 errors and bypass Google's strict browser headers
+  if (id) return `/api/drive-proxy/${id}`;
+  return url.replace('export=download', 'export=view');
+};
+
+const getDriveImageErrorHandler = (url: string) => (event: React.SyntheticEvent<HTMLImageElement>) => {
+  const img = event.currentTarget;
+  const fallbackStage = Number(img.dataset.driveFallback || '0');
+  if (fallbackStage >= 1) return; // Only try once
+
+  const id = getDriveFileId(url);
+  if (!id) return;
+
+  img.dataset.driveFallback = "1";
+  // Force retry through the proxy
+  img.src = `/api/drive-proxy/${id}?retry=${Date.now()}`;
+};
+
+// Robust standardized Regex for [name](url)
+const IMAGE_REGEX = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
 // Helper to consistently assign a color to a string
 const STATUS_STYLE: Record<string, string> = {
   'Ready':       'bg-green-100 text-green-700 border-green-200',
@@ -479,10 +520,11 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
   const [dir, setDir] = useState(1);
   const touchStartX = useRef<number | null>(null);
 
-  const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
+   const urlRegex = /(?:\[(?:[^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
   const images: string[] = [];
   let match;
-  while ((match = urlRegex.exec(imageString)) !== null) images.push(match[1]);
+  const re = new RegExp(IMAGE_REGEX);
+  while ((match = re.exec(imageString)) !== null) images.push(match[2]); 
 
   if (images.length === 0) {
     return (
@@ -522,7 +564,8 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
       <AnimatePresence mode="wait" initial={false}>
         <motion.img
           key={currentIndex}
-          src={images[currentIndex].replace('export=download', 'export=view')}
+          src={getDirectUrl(images[currentIndex])}
+          onError={getDriveImageErrorHandler(images[currentIndex])}
           initial={{ opacity: 0, x: dir * 24 }}
           animate={{ opacity: 1, x: 0 }}
           exit={{ opacity: 0, x: dir * -24 }}
@@ -591,14 +634,17 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({
   const imagesRef = useRef<ImgEntry[]>([]);
   const uploadingRef = useRef(false); // guard against double-trigger
 
-  const parseImages = (raw: string): ImgEntry[] => {
-    const result: ImgEntry[] = [];
-    // Match both http(s) URLs and data: URIs so existing base64-stored images are shown
-    const re = /(?:\[([^\]]*)\])?\(((?:https?:\/\/|data:image\/)[^)]+)\)/g;
-    let m;
-    while ((m = re.exec(raw)) !== null) result.push({ name: m[1] || '', url: m[2], tempKey: m[2] });
-    return result;
-  };
+// Inside AttachmentManagerDialog component
+const parseImages = (raw: string): ImgEntry[] => {
+  const result: ImgEntry[] = [];
+  // Standardizing the regex to match [name](url) or just (url)
+  const re = /\[?([^\]]*)\]?\((https?:\/\/[^)]+)\)/g;
+  let m;
+  while ((m = re.exec(raw)) !== null) {
+    result.push({ name: m[1] || '', url: m[2], tempKey: m[2] });
+  }
+  return result;
+};
 
   const serialize = (entries: ImgEntry[]): string =>
     entries
@@ -825,19 +871,29 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({
                       </div>
                     ) : (
                       <>
-                        <img
-                          src={entry.url.replace('export=download', 'export=view')}
-                          loading="eager"
-                          className="w-full h-full object-cover"
-                          alt={entry.name || `Image ${i + 1}`}
-                        />
-                        <div className="absolute bottom-1.5 right-1.5 flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover/card:opacity-100 transition-opacity">
+                       <img
+  src={getDirectUrl(entry.url)} // This now calls your proxy
+  loading="lazy"                // Add lazy loading to save bandwidth
+  className="w-full h-full object-cover"
+  alt={entry.name}
+/>
+                        <div className="absolute bottom-1.5 right-1.5 flex items-center gap-1 opacity-100 sm:opacity-0 sm:group-hover/card:opacity-100 transition-opacity">
+                          <a
+                            href={getDriveFileId(entry.url) ? makeDriveDownloadUrl(getDriveFileId(entry.url)!) : entry.url}
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            className="p-1.5 sm:p-1 bg-white/95 rounded-lg text-slate-500 hover:text-brand-primary shadow-sm transition-colors"
+                            title="Download"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <Download className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                          </a>
                           <button
-                            onClick={() => handleRemove(i)}
-                            className="p-1 bg-white/95 rounded text-slate-500 hover:text-red-600 shadow-sm transition-colors"
+                            onClick={(e) => { e.stopPropagation(); handleRemove(i); }}
+                            className="p-1.5 sm:p-1 bg-white/95 rounded-lg text-slate-500 hover:text-red-600 shadow-sm transition-colors"
                             title="Remove"
                           >
-                            <Trash2 className="h-3 w-3" />
+                            <Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                           </button>
                         </div>
                       </>
@@ -2011,7 +2067,7 @@ if (hasDropdown) {
           {thumbs.length > 0 && (
             <div className="flex flex-wrap gap-2">
               {thumbs.map((url, idx) => (
-                <img key={idx} src={url.replace('export=view', 'export=download')} loading="lazy" className="h-14 w-20 object-cover rounded-xl border border-slate-200 shadow-sm drop-shadow-sm" alt="" />
+                <img key={idx} src={getDirectUrl(url)} loading="lazy" className="h-14 w-20 object-cover rounded-xl border border-slate-200 shadow-sm drop-shadow-sm" alt="" />
               ))}
             </div>
           )}
@@ -2816,18 +2872,19 @@ if (sessionFieldNames.includes(col) && typeof val === 'string') {
           </Card>
 
           {/* Media Section */}
-          {(item["Images"] || item["Attachments"] || item["Attachment"]) && (
-             <Card className="bg-slate-900 border-none rounded-[32px] overflow-hidden shadow-xl">
-                <CardHeader className="border-b border-white/5">
-                  <CardTitle className="text-xs font-black text-white uppercase tracking-widest">Media Attachments</CardTitle>
-                </CardHeader>
-                <CardContent className="p-6">
-                   <div className="max-w-md mx-auto">
-                <CardImageGallery imageString={item["Images"] || item["Attachments"] || item["Attachment"]} />
-                   </div>
-                </CardContent>
-             </Card>
-          )}
+        {(item["Images"] || item["Attachments"] || item["Attachment"]) && (
+   <Card className="bg-slate-900 border-none rounded-[32px] overflow-hidden shadow-xl">
+      <CardHeader className="border-b border-white/5">
+        <CardTitle className="text-xs font-black text-white uppercase tracking-widest">Media Attachments</CardTitle>
+      </CardHeader>
+      <CardContent className="p-6">
+         <div className="max-w-md mx-auto">
+            {/* The CardImageGallery now uses the fixed regex internally */}
+            <CardImageGallery imageString={item["Images"] || item["Attachments"] || item["Attachment"]} />
+         </div>
+      </CardContent>
+   </Card>
+)}
           
         </div>
       </div>
@@ -4305,21 +4362,33 @@ const renderRow = (item: any) => {
         }
 
         // Images/Attachments — thumbnail gallery cell
-        if (col === 'Images' || col === 'Attachments' || col === 'Attachment') {
-          const imageString = item[col] || "";
-          const urlRegex = /\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
-          const matches: string[] = [];
-          let m;
-          const re = new RegExp(urlRegex.source, 'g');
-          while ((m = re.exec(imageString)) !== null) matches.push(m[1]);
-          const openMgr = (e: React.MouseEvent) => { e.preventDefault(); e.stopPropagation(); setImageManager({ item: { ...item }, column: col, collection: getImageCollection(), isOpen: true }); };
+      if (col === 'Images' || col === 'Attachments' || col === 'Attachment') {
+  const imageString = item[col] || "";
+  const matches: string[] = [];
+  let m;
+  const re = new RegExp(IMAGE_REGEX); // Use standardized regex
+  while ((m = re.exec(imageString)) !== null) matches.push(m[2]);
+    
+    const openMgr = (e: React.MouseEvent) => { 
+        e.preventDefault(); 
+        e.stopPropagation(); 
+        setImageManager({ item: { ...item }, column: col, collection: getImageCollection(), isOpen: true }); 
+    };
           return (
             <td key={col} className={`${cellCls} relative group/cell ${isColFrozen ? stickyBg : ''}`} style={{ ...style, minWidth: '180px' }}>
               <div className="flex items-center gap-1.5 overflow-hidden w-full relative h-full">
                 {matches.length > 0 ? (
                   <>
                     {matches.slice(0, 4).map((url, idx) => (
-                      <img key={idx} src={url} loading="lazy" className="h-8 w-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer shadow-sm drop-shadow-sm" onClick={openMgr} alt="" />
+                        <img 
+                key={idx} 
+                src={getDirectUrl(url)}
+                onError={getDriveImageErrorHandler(url)}
+                loading="lazy" 
+                className="h-8 w-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer shadow-sm" 
+                onClick={openMgr} 
+                alt="" 
+              />
                     ))}
                     {matches.length > 4 && (
                       <span className="text-[10px] font-semibold text-slate-400 shrink-0 cursor-pointer" onClick={openMgr}>
@@ -7046,7 +7115,7 @@ if (!health?.mongodb) {
       return (
         <motion.div key={item.id || item._id} onClick={() => setViewingRecord(item)} whileHover={{ y: -2 }} className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm hover:shadow-md transition-all cursor-pointer flex flex-col min-h-[240px] sm:min-h-[380px]">
           <div className="h-28 sm:h-48 w-full bg-slate-50 border-b border-slate-100 flex items-center justify-center overflow-hidden">
-            {imageUrl ? <img src={imageUrl} loading="lazy" decoding="async" className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" alt="Attachment" /> : <div className="flex flex-col items-center gap-2 opacity-20"><Monitor className="h-12 w-12 text-slate-400" /></div>}
+            {imageUrl ? <img src={getDirectUrl(imageUrl)} onError={getDriveImageErrorHandler(imageUrl)} loading="lazy" decoding="async" className="w-full h-full object-cover transition-transform duration-500 hover:scale-105" alt="Attachment" /> : <div className="flex flex-col items-center gap-2 opacity-20"><Monitor className="h-12 w-12 text-slate-400" /></div>}
           </div>
           <div className="p-5 flex-1 flex flex-col gap-3">
             <div className="flex items-center justify-between gap-2">
@@ -7157,8 +7226,13 @@ if (!health?.mongodb) {
                           <div className="mt-4 flex overflow-x-auto gap-2 md:gap-3 scrollbar-hide pb-1">
                             {images.map((imgSrc, imgIdx) => (
                               <div key={imgIdx} className="relative h-20 md:h-24 w-28 md:w-36 shrink-0 rounded-xl overflow-hidden border border-slate-200 group/sessionimg hover:ring-2 hover:ring-brand-primary transition-all shadow-md" onClick={(e) => e.stopPropagation()}>
-                                <img src={imgSrc.replace('export=view', 'export=download')} loading="lazy" decoding="async" className="h-full w-full object-cover" alt="Upload" />
-                                <button onClick={(e) => { e.stopPropagation(); if (!window.confirm("Remove this image?")) return; const entries: string[] = []; const re2 = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g; let mr; while ((mr = re2.exec(item["Images"] || "")) !== null) entries.push(mr[0]); entries.splice(imgIdx, 1); const updated = { ...realItem, ["Images"]: entries.join(' ') }; setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r)); window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) }); }} className="absolute top-1 right-1 p-1.5 bg-black/60 text-white rounded-lg opacity-100 sm:opacity-0 sm:group-hover/sessionimg:opacity-100 hover:bg-red-600 transition-all shadow-sm" title="Remove Image"><Trash2 className="h-3 w-3" /></button>
+                                <img src={getDirectUrl(imgSrc)} onError={getDriveImageErrorHandler(imgSrc)} loading="lazy" decoding="async" className="h-full w-full object-cover" alt="Upload" />
+                                <div className="absolute top-1 right-1 flex gap-1 opacity-100 sm:opacity-0 sm:group-hover/sessionimg:opacity-100 transition-all">
+                                  <a href={getDriveFileId(imgSrc) ? makeDriveDownloadUrl(getDriveFileId(imgSrc)!) : imgSrc} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-black/60 text-white rounded-lg hover:bg-brand-primary shadow-sm" title="Download Image" onClick={(e) => e.stopPropagation()}>
+                                    <Download className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
+                                  </a>
+                                  <button onClick={(e) => { e.stopPropagation(); if (!window.confirm("Remove this image?")) return; const entries: string[] = []; const re2 = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g; let mr; while ((mr = re2.exec(item["Images"] || "")) !== null) entries.push(mr[0]); entries.splice(imgIdx, 1); const updated = { ...realItem, ["Images"]: entries.join(' ') }; setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r)); window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) }); }} className="p-1.5 bg-black/60 text-white rounded-lg hover:bg-red-600 transition-all shadow-sm" title="Remove Image"><Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" /></button>
+                                </div>
                               </div>
                             ))}
                             <div onClick={(e) => { e.stopPropagation(); const fi = e.currentTarget.querySelector('input[type="file"]') as HTMLInputElement; if (fi) fi.click(); }} className="h-20 md:h-24 w-20 md:w-24 shrink-0 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary/50 transition-colors cursor-pointer bg-slate-50 hover:bg-white">
