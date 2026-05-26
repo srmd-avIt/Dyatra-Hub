@@ -231,6 +231,10 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
       onToast('Please fill out all required fields', 'error');
       return;
     }
+    if (editDraft.email && !/^\S+@\S+\.\S+$/.test(editDraft.email)) {
+      onToast('Invalid email format', 'error');
+      return;
+    }
     setIsSubmitting(true);
     const isNew = !editDraft._id;
     try {
@@ -781,6 +785,7 @@ const parseImages = (raw: string): ImgEntry[] => {
       onClick={anyLoading ? undefined : onClose}
     >
       <div
+        data-floating-panel
         className="w-full sm:w-[580px] bg-white rounded-t-2xl sm:rounded-xl flex flex-col shadow-2xl max-h-[92vh] sm:max-h-[88vh] overflow-hidden border border-slate-200"
         onClick={e => e.stopPropagation()}
       >
@@ -1057,7 +1062,7 @@ const CellDropdown = React.memo(function CellDropdown({
 
   const safeOptions = Array.from(new Set([...options.filter(o => o != null), ...selectedValues, ...localAddedOptions]));
   const filtered = safeOptions.filter(o => o.toLowerCase().includes(search.toLowerCase()));
-  const canCreate = search.trim() !== '' && !safeOptions.some(o => o.toLowerCase() === search.toLowerCase().trim());
+  const canCreate = !!onAddOption && search.trim() !== '' && !safeOptions.some(o => o.toLowerCase() === search.toLowerCase().trim());
 
   return (
     <div ref={ref} className="relative w-full h-full flex items-center min-h-[36px]">
@@ -1832,7 +1837,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
         linkedTable="MusicLog"
         onCommit={val => commit(col, val)}
         onCancel={onClose}
-        onAddLookup={onAddLookup}
+        onAddLookup={hasPerm(currentUser, tableName, 'edit') ? onAddLookup : undefined}
       />
     );
   }
@@ -1923,7 +1928,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
             onSave(nd);
           }}
           onCancel={onClose}
-          onAddLookup={onAddLookup}
+          onAddLookup={hasPerm(currentUser, tableName, 'edit') ? onAddLookup : undefined}
         />
       );
     }
@@ -2083,9 +2088,9 @@ if (hasDropdown) {
       isMulti={isMulti}
       onCommit={val => commit(col, val)}
       onCancel={onClose}
-      onAddOption={val => onAddCustomTag(tableName, col, val)}
-      removableOptions={opts}
-      onRemoveOption={val => onRemoveTag(tableName, col, val)}
+      onAddOption={(hasPerm(currentUser, tableName, 'edit') || hasPerm(currentUser, tableName, 'add')) ? val => onAddCustomTag(tableName, col, val) : undefined}
+      removableOptions={(hasPerm(currentUser, tableName, 'edit') || hasPerm(currentUser, tableName, 'add')) ? opts : []}
+      onRemoveOption={(hasPerm(currentUser, tableName, 'edit') || hasPerm(currentUser, tableName, 'add')) ? val => onRemoveTag(tableName, col, val) : undefined}
       placeholder={`Select ${col}…`}
       tagClass={tagClass}
       isUserPicker={col === 'Assignee'}
@@ -2110,6 +2115,7 @@ if (hasDropdown) {
               ))}
             </div>
           )}
+          {hasPerm(currentUser, tableName, 'edit') && (
           <button
             type="button"
             onClick={() => onImageManage(col, draftRef.current)}
@@ -2118,6 +2124,7 @@ if (hasDropdown) {
             <Plus className="h-4 w-4" />
             {thumbs.length > 0 ? `Manage Images (${thumbs.length})` : 'Add Images'}
           </button>
+          )}
         </div>
       );
     }
@@ -2146,10 +2153,18 @@ if (hasDropdown) {
         />
       );
     }
+    const colType = columnTypes[tableName]?.[col] || ((['PlayID', 'VideoPlayId', 'LedId', 'LearningId'].includes(col) || (col.toLowerCase().endsWith('id') && !col.includes(' '))) ? 'id' : 'text');
     return (
       <input className={inputCls}
+        type={colType === 'email' ? 'email' : colType === 'phone' ? 'tel' : 'text'}
+        style={colType === 'id' ? { color: '#2563eb', fontFamily: 'monospace', fontWeight: 'bold' } : undefined}
         value={draft[col] || ''}
-        onChange={e => { const nd = { ...draftRef.current, [col]: e.target.value }; setDraft(nd); }}
+        onChange={e => { 
+          let val = e.target.value;
+          if (colType === 'phone') val = val.replace(/[^\d\s()+-]/g, '');
+          const nd = { ...draftRef.current, [col]: val }; 
+          setDraft(nd); 
+        }}
         onBlur={() => onSave(draftRef.current)}
         placeholder={`Enter ${col}…`}
       />
@@ -2775,7 +2790,7 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
   );
 });
 
-const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], musicLogs = [], onSessionClick, onEdit, onDelete, getPrimaryField, setLinkedRecordPopup }: { item: any, columns: string[], onBack: () => void, tableName: string, sessions?: any[], musicLogs?: any[], onSessionClick?: (s: any) => void, onEdit?: () => void, onDelete?: () => void, getPrimaryField: (table: string) => string, setLinkedRecordPopup: (p: any) => void }) => {
+const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], musicLogs = [], onSessionClick, onEdit, onDelete, getPrimaryField, setLinkedRecordPopup, getColumnType }: { item: any, columns: string[], onBack: () => void, tableName: string, sessions?: any[], musicLogs?: any[], onSessionClick?: (s: any) => void, onEdit?: () => void, onDelete?: () => void, getPrimaryField: (table: string) => string, setLinkedRecordPopup: (p: any) => void, getColumnType: (col: string) => string }) => {
   return (
     <motion.div
       initial={{ opacity: 0, y: 10 }}
@@ -2839,6 +2854,7 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], mus
                     <div className="text-[15px] font-bold text-slate-900 break-words leading-relaxed">
                       {(() => {
                        const val = item[col];
+                      const colType = getColumnType(col);
 
                        if (tableName === 'Tracks' && (col === 'Plays' || col === 'PlayID')) {
                          if (!val) return <span className="text-slate-300 italic font-normal">—</span>;
@@ -2926,6 +2942,7 @@ if (sessionFieldNames.includes(col) && typeof val === 'string') {
 
                         // Default rendering
                         if (!val || val === 'undefined') return <span className="text-slate-300 italic font-normal">—</span>;
+                      if (colType === 'id') return <span className="font-mono font-bold text-brand-primary">{String(val)}</span>;
                         return typeof val === 'object' ? JSON.stringify(val) : String(val);
                       })()}
                     </div>
@@ -3062,20 +3079,21 @@ const evaluateGroup = (item: any, group: FilterGroup): boolean => {
   }
 };
 
-const FilterNodeUI = ({ node, onChange, onDelete, columns, getOptions }: { node: FilterGroup | FilterCondition, onChange: (node: FilterGroup | FilterCondition) => void, onDelete: () => void, columns: string[], getOptions: (col: string) => string[] }) => {
+const FilterNodeUI = ({ node, onChange, onDelete, columns, getOptions, depth = 0 }: { node: FilterGroup | FilterCondition, onChange: (node: FilterGroup | FilterCondition) => void, onDelete: () => void, columns: string[], getOptions: (col: string) => string[], depth?: number }) => {
   if (node.type === 'group') {
+    const isRoot = node.id === 'root';
     return (
-      <div className="border border-slate-200 rounded-xl p-3 bg-slate-50/50 space-y-3 w-full">
+      <div className={`w-full ${isRoot ? 'space-y-3' : 'border border-brand-primary/20 rounded-xl p-3 bg-brand-primary/5 space-y-3 mt-2 shadow-sm'}`}>
         <div className="flex items-center justify-between gap-2">
-          <select value={node.logic} onChange={e => onChange({ ...node, logic: e.target.value as 'AND' | 'OR' })} className="h-8 bg-white border border-slate-300 rounded-lg px-2 text-xs font-bold text-brand-primary outline-none focus:border-brand-primary">
-            <option value="AND">And</option>
-            <option value="OR">Or</option>
+          <select value={node.logic} onChange={e => onChange({ ...node, logic: e.target.value as 'AND' | 'OR' })} className={`h-8 bg-white border border-slate-300 rounded-lg px-2 text-xs font-bold text-brand-primary outline-none focus:border-brand-primary shadow-sm ${isRoot ? 'w-24' : 'w-20'}`}>
+            <option value="AND">{isRoot ? 'Where (AND)' : 'And'}</option>
+            <option value="OR">{isRoot ? 'Where (OR)' : 'Or'}</option>
           </select>
-          {node.id !== 'root' && (
-            <button onClick={onDelete} className="ml-auto p-1.5 text-slate-400 hover:text-red-500 rounded-md transition-colors"><X className="h-3.5 w-3.5" /></button>
+          {!isRoot && (
+            <button onClick={onDelete} className="ml-auto p-1.5 text-slate-400 hover:text-red-500 hover:bg-red-50 rounded-md transition-colors" title="Remove group"><X className="h-4 w-4" /></button>
           )}
         </div>
-        <div className="pl-3 sm:pl-4 border-l-2 border-slate-200 space-y-2">
+        <div className={`space-y-2 ${isRoot ? '' : 'pl-3 sm:pl-4 border-l-2 border-brand-primary/20'}`}>
           {node.conditions.map((child, i) => (
             <FilterNodeUI 
               key={child.id} 
@@ -3091,26 +3109,27 @@ const FilterNodeUI = ({ node, onChange, onDelete, columns, getOptions }: { node:
               }} 
               columns={columns} 
               getOptions={getOptions}
+              depth={depth + 1}
             />
           ))}
           <div className="flex flex-wrap gap-2 pt-1">
-            <button onClick={() => onChange({ ...node, conditions: [...node.conditions, { id: Math.random().toString(36).substring(2,9), type: 'condition', field: columns[0] || '', operator: 'contains', value: '' }] })} className="text-[11px] font-bold text-slate-500 hover:text-brand-primary flex items-center gap-1 bg-white border border-slate-200 px-2 py-1.5 rounded-md transition-colors shadow-sm"><Plus className="h-3 w-3" /> Add Rule</button>
-            <button onClick={() => onChange({ ...node, conditions: [...node.conditions, { id: Math.random().toString(36).substring(2,9), type: 'group', logic: 'AND', conditions: [{ id: Math.random().toString(36).substring(2,9), type: 'condition', field: columns[0] || '', operator: 'contains', value: '' }] }] })} className="text-[11px] font-bold text-slate-500 hover:text-brand-primary flex items-center gap-1 bg-white border border-slate-200 px-2 py-1.5 rounded-md transition-colors shadow-sm"><Layers className="h-3 w-3" /> Add Group</button>
+            <button onClick={() => onChange({ ...node, conditions: [...node.conditions, { id: Math.random().toString(36).substring(2,9), type: 'condition', field: columns[0] || '', operator: 'contains', value: '' }] })} className="text-[11px] font-bold text-slate-600 hover:text-brand-primary flex items-center gap-1 bg-white border border-slate-200 px-3 py-1.5 rounded-lg transition-colors shadow-sm"><Plus className="h-3 w-3" /> Add Rule</button>
+            <button onClick={() => onChange({ ...node, conditions: [...node.conditions, { id: Math.random().toString(36).substring(2,9), type: 'group', logic: 'AND', conditions: [{ id: Math.random().toString(36).substring(2,9), type: 'condition', field: columns[0] || '', operator: 'contains', value: '' }] }] })} className="text-[11px] font-bold text-slate-600 hover:text-brand-primary flex items-center gap-1 bg-white border border-slate-200 px-3 py-1.5 rounded-lg transition-colors shadow-sm"><Layers className="h-3 w-3" /> Add Group</button>
           </div>
         </div>
       </div>
     );
   } else {
     return (
-      <div className="flex flex-col sm:flex-row sm:items-center gap-2 bg-white p-2.5 sm:p-2 rounded-lg border border-slate-200 shadow-sm">
+      <div className="flex flex-col sm:flex-row sm:items-center gap-2 bg-white p-2.5 sm:p-2 rounded-lg border border-slate-200 shadow-sm relative group/filter-cond">
         <div className="flex items-center gap-2">
-          <select value={node.field} onChange={e => onChange({ ...node, field: e.target.value, value: '' })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-2 text-[11px] text-slate-700 outline-none flex-1 sm:flex-none sm:w-40 truncate focus:border-brand-primary">
+          <select value={node.field} onChange={e => onChange({ ...node, field: e.target.value, value: '' })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-2 text-[11px] text-slate-700 font-semibold outline-none flex-1 sm:flex-none sm:w-40 truncate focus:border-brand-primary focus:bg-white">
             <option value="">Select field...</option>
-            {columns.map(c => <option key={c} value={c}>{c}</option>)}
+            {columns.map(c => <option key={c} value={c}>{colLabel(c)}</option>)}
           </select>
-          <button onClick={onDelete} className="sm:hidden p-1.5 text-slate-400 hover:text-red-500 rounded-md transition-colors shrink-0"><X className="h-3.5 w-3.5" /></button>
+          <button onClick={onDelete} className="sm:hidden p-1.5 text-slate-400 hover:text-red-500 bg-slate-50 hover:bg-red-50 rounded-md transition-colors shrink-0"><X className="h-3.5 w-3.5" /></button>
         </div>
-        <select value={node.operator} onChange={e => onChange({ ...node, operator: e.target.value as FilterOperator })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-2 text-[11px] text-slate-700 outline-none w-full sm:w-32 focus:border-brand-primary">
+        <select value={node.operator} onChange={e => onChange({ ...node, operator: e.target.value as FilterOperator })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-2 text-[11px] text-slate-700 outline-none w-full sm:w-32 focus:border-brand-primary focus:bg-white">
           <option value="contains">Contains</option>
           <option value="not_contains">Does not contain</option>
           <option value="equals">Equals</option>
@@ -3122,15 +3141,15 @@ const FilterNodeUI = ({ node, onChange, onDelete, columns, getOptions }: { node:
         </select>
         {!['is_empty', 'is_not_empty'].includes(node.operator) && (
           getOptions(node.field).length > 0 ? (
-            <select value={node.value} onChange={e => onChange({ ...node, value: e.target.value })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-2 text-[11px] text-slate-700 outline-none w-full sm:flex-1 sm:min-w-[100px] focus:border-brand-primary">
+            <select value={node.value} onChange={e => onChange({ ...node, value: e.target.value })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-2 text-[11px] font-semibold text-slate-700 outline-none w-full sm:flex-1 sm:min-w-[100px] focus:border-brand-primary focus:bg-white">
               <option value="">Select value...</option>
               {getOptions(node.field).map(opt => <option key={opt} value={opt}>{opt}</option>)}
             </select>
           ) : (
-            <input value={node.value} onChange={e => onChange({ ...node, value: e.target.value })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-3 text-[11px] text-slate-700 outline-none w-full sm:flex-1 sm:min-w-[100px] focus:border-brand-primary" placeholder="Value..." />
+            <input value={node.value} onChange={e => onChange({ ...node, value: e.target.value })} className="h-8 bg-slate-50 border border-slate-200 rounded-md px-3 text-[11px] text-slate-700 outline-none w-full sm:flex-1 sm:min-w-[100px] focus:border-brand-primary focus:bg-white" placeholder="Value..." />
           )
         )}
-        <button onClick={onDelete} className="hidden sm:block p-1.5 text-slate-400 hover:text-red-500 rounded-md transition-colors shrink-0"><X className="h-3.5 w-3.5" /></button>
+        <button onClick={onDelete} className="hidden sm:block opacity-0 group-hover/filter-cond:opacity-100 p-1.5 text-slate-400 hover:text-red-500 rounded-md transition-all shrink-0 ml-1"><X className="h-3.5 w-3.5" /></button>
       </div>
     );
   }
@@ -3946,7 +3965,7 @@ const renderCell = (col: string, item: any): React.ReactNode => {
 
   switch (type) {
     case 'id':
-      return <span className={`font-mono text-[13px] ${activeTable === 'VideoLog' ? 'text-indigo-500' : 'text-brand-primary'}`}>{val || empty}</span>;
+      return <span className="font-mono text-[13px] font-bold text-brand-primary">{val || empty}</span>;
     
     case 'date':
       return <span className="font-mono text-slate-700 text-[13px]">{val || empty}</span>;
@@ -4461,17 +4480,18 @@ const renderRow = (item: any) => {
                 src={getDirectUrl(url)}
                 onError={getDriveImageErrorHandler(url)}
                 loading="lazy" 
-                className="h-8 w-10 object-cover rounded-md border border-slate-200 shrink-0 cursor-pointer shadow-sm" 
-                onClick={openMgr} 
+                className={`h-8 w-10 object-cover rounded-md border border-slate-200 shrink-0 shadow-sm ${hasPerm(user, activeTable, 'edit') ? 'cursor-pointer' : ''}`} 
+                onClick={hasPerm(user, activeTable, 'edit') ? openMgr : undefined} 
                 alt="" 
               />
                     ))}
                     {matches.length > 4 && (
-                      <span className="text-[10px] font-semibold text-slate-400 shrink-0 cursor-pointer" onClick={openMgr}>
+                      <span className={`text-[10px] font-semibold text-slate-400 shrink-0 ${hasPerm(user, activeTable, 'edit') ? 'cursor-pointer' : ''}`} onClick={hasPerm(user, activeTable, 'edit') ? openMgr : undefined}>
                         +{matches.length - 4}
                       </span>
                     )}
                     {/* Manage button — appears on hover */}
+                    {hasPerm(user, activeTable, 'edit') && (
                     <button
                       onClick={openMgr}
                       className="h-7 w-7 shrink-0 rounded-md border border-slate-200 flex items-center justify-center text-slate-400 hover:text-brand-primary hover:border-brand-primary hover:bg-white transition-colors bg-slate-50 opacity-100 sm:opacity-0 sm:group-hover/cell:opacity-100 absolute right-1 z-20 shadow-sm"
@@ -4479,8 +4499,10 @@ const renderRow = (item: any) => {
                     >
                       <Paperclip className="h-3 w-3" />
                     </button>
+                    )}
                   </>
                 ) : (
+                  hasPerm(user, activeTable, 'edit') ? (
                   <button
                     onClick={openMgr}
                     className="flex items-center gap-1.5 text-[11px] font-medium text-slate-400 hover:text-brand-primary transition-colors px-1"
@@ -4489,6 +4511,9 @@ const renderRow = (item: any) => {
                     <Paperclip className="h-3.5 w-3.5" />
                     <span>Attach file</span>
                   </button>
+                  ) : (
+                    <span className="text-slate-300 italic text-[12px]">—</span>
+                  )
                 )}
               </div>
             </td>
@@ -4509,9 +4534,10 @@ const renderRow = (item: any) => {
         // ── PRIMARY COLUMN ────────────────────────────────────────────────
        if (isPrimary) {
           const primaryVal = item[col] || item[col.toLowerCase()] || '';
+          const colType = getColumnType(col);
           return (
             <td key={col} className={`${primaryCls} ${isColFrozen ? stickyBg : ''}`} style={style}>
-              <div className="truncate">{primaryVal || primaryFallback}</div>
+              <div className={`truncate ${colType === 'id' ? 'font-mono text-brand-primary font-bold' : ''}`}>{primaryVal || primaryFallback}</div>
             </td>
           );
         }
@@ -4753,6 +4779,14 @@ useEffect(() => {
 }, [notifications]);
 
  const handleAddRecord = async () => {
+  for (const col of Object.keys(newRecord)) {
+    const actualColName = getTableColumns().find(c => c.toLowerCase() === col.toLowerCase()) || col;
+    if (getColumnType(actualColName) === 'email' && newRecord[col] && !/^\S+@\S+\.\S+$/.test(newRecord[col])) {
+      showToast(`Invalid email format for ${colLabel(actualColName)}`, 'error');
+      return;
+    }
+  }
+
   let collection = '';
   const data: Record<string, any> = { ...newRecord, _modifiedBy: user?.name || user?.email || 'Someone' };
 
@@ -5270,15 +5304,25 @@ const renderEditableRow = () => {
              <input
                   autoFocus={i === 0 && !isSessionLinkedTable && !isEventsTable}
                   className={inputCls}
+                  type={colType === 'email' ? 'email' : colType === 'phone' ? 'tel' : 'text'}
                   // APPLY STYLE HERE
                   style={colType === 'email' ? { 
                     color: '#2563eb', 
                     WebkitTextFillColor: '#2563eb', 
                     textDecoration: 'underline' 
+                  } : colType === 'id' ? {
+                    color: '#2563eb',
+                    WebkitTextFillColor: '#2563eb',
+                    fontFamily: 'monospace',
+                    fontWeight: 'bold'
                   } : {}}
                   placeholder={`Enter ${col}...`}
                   value={inlineRecord[col] || ''}
-                  onChange={(e) => setInlineRecord({ ...inlineRecord, [col]: e.target.value })}
+                  onChange={(e) => {
+                    let val = e.target.value;
+                    if (colType === 'phone') val = val.replace(/[^\d\s()+-]/g, '');
+                    setInlineRecord({ ...inlineRecord, [col]: val });
+                  }}
                   onKeyDown={(e) => {
                     if (e.key === 'Enter') handleInlineSave();
                     if (e.key === 'Escape') setIsInlineAdding(false);
@@ -5302,6 +5346,13 @@ const handleUpdateRecord = async (draftOverride?: any) => {
     if (!editingId || !draft) {
     setEditingId(null);
     return;
+  }
+
+  for (const col of Object.keys(draft)) {
+    if (getColumnType(col) === 'email' && draft[col] && !/^\S+@\S+\.\S+$/.test(draft[col])) {
+      showToast(`Invalid email format for ${colLabel(col)}`, 'error');
+      return;
+    }
   }
 
   let collection = '';
@@ -5365,6 +5416,13 @@ const openNotificationRecord = async (tableName: string, collection: string, rec
 };
 
 const handleExpandedSave = async (newDraft: any) => {
+  for (const col of Object.keys(newDraft)) {
+    if (getColumnType(col) === 'email' && newDraft[col] && !/^\S+@\S+\.\S+$/.test(newDraft[col])) {
+      showToast(`Invalid email format for ${colLabel(col)}`, 'error');
+      return;
+    }
+  }
+
   const id = newDraft._id || newDraft.id;
   if (!id) { showToast('Cannot save — record has no ID.'); return; }
   let collection = '';
@@ -5589,10 +5647,10 @@ const updateDraftOnly = (col: string, val: string) => {
                       handleUpdateRecord(nd);
                     }}
                     onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
-                    onAddLookup={lt => {
+                    onAddLookup={hasPerm(user, activeTable, 'edit') ? lt => {
                       const currentExtras = extraColumns[activeTable] || [];
                       setAddColumnModal({ name: '', type: 'lookup', linkedTable: lt, lookupField: '' });
-                    }}
+                    } : undefined}
                   />
                 );
               }
@@ -5706,9 +5764,9 @@ const updateDraftOnly = (col: string, val: string) => {
                       if (isMulti) updateDraftOnly(col, val);
                       else col === 'Session' ? commitSession(val) : commitField(col, val);
                     }}
-                    onAddOption={val => handleAddCustomTag(activeTable, col, val)}
-                    removableOptions={opts}
-                    onRemoveOption={val => handleRemoveTagGlobally(activeTable, col, val)}
+                    onAddOption={(hasPerm(user, activeTable, 'edit') || hasPerm(user, activeTable, 'add')) ? val => handleAddCustomTag(activeTable, col, val) : undefined}
+                    removableOptions={(hasPerm(user, activeTable, 'edit') || hasPerm(user, activeTable, 'add')) ? opts : []}
+                    onRemoveOption={(hasPerm(user, activeTable, 'edit') || hasPerm(user, activeTable, 'add')) ? val => handleRemoveTagGlobally(activeTable, col, val) : undefined}
                     onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
                     onOutsideClick={() => handleUpdateRecord()}
                     placeholder={`Select ${col}…`}
@@ -5733,7 +5791,7 @@ const updateDraftOnly = (col: string, val: string) => {
               return (
                 <input
     autoFocus
-    type="text"
+    type={colType === 'email' ? 'email' : colType === 'phone' ? 'tel' : 'text'}
     className={inputCls()}
     // This style ensures the blue format stays while typing in the cell
     style={colType === 'email' ? { 
@@ -5741,9 +5799,18 @@ const updateDraftOnly = (col: string, val: string) => {
       WebkitTextFillColor: '#2563eb', 
       textDecoration: 'underline',
       fontWeight: '500' // Matches your table's font weight
-    } : undefined}
+                  } : colType === 'id' ? {
+                    color: '#2563eb',
+                    WebkitTextFillColor: '#2563eb',
+                    fontFamily: 'monospace',
+                    fontWeight: 'bold'
+                  } : undefined}
     value={editDraft[col] || ''}
-    onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
+    onChange={e => {
+      let val = e.target.value;
+      if (colType === 'phone') val = val.replace(/[^\d\s()+-]/g, '');
+      setEditDraft({ ...editDraft, [col]: val });
+    }}
     onBlur={() => handleUpdateRecord()}
     onKeyDown={saveKeys}
   />
@@ -5766,6 +5833,13 @@ const startInlineAdd = () => {
 };
 
 const handleInlineSave = async () => {
+  for (const col of Object.keys(inlineRecord)) {
+    if (getColumnType(col) === 'email' && inlineRecord[col] && !/^\S+@\S+\.\S+$/.test(inlineRecord[col])) {
+      showToast(`Invalid email format for ${colLabel(col)}`, 'error');
+      return;
+    }
+  }
+
   let collection = '';
   const data = { ...inlineRecord, _modifiedBy: user?.name || user?.email || 'Someone' };
   // Mapping table to MongoDB collection
@@ -6008,8 +6082,13 @@ if (!health?.mongodb) {
     scrollbar-gutter: stable; /* Prevents layout jump when scrollbar appears */
 }
 
-/* Ensure the sticky header in the table stays on top of frozen columns */
+/* Ensure the sticky header in the table stays on top of frozen body columns */
 thead.sticky th {
+    z-index: 30;
+}
+/* Ensure frozen headers stay above non-frozen headers */
+thead.sticky th[style*="position: sticky"],
+thead.sticky th.sticky {
     z-index: 40 !important;
 }
 
@@ -6836,7 +6915,7 @@ thead.sticky th {
     const greeting = hr < 12 ? 'Good Morning' : hr < 17 ? 'Good Afternoon' : 'Good Evening';
     const recentEvents = [...events].sort((a: any, b: any) => new Date(b.DateFrom || 0).getTime() - new Date(a.DateFrom || 0).getTime()).slice(0, 4);
     const recentSessions = [...sessions].sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()).slice(0, 5);
-    const recentTasks = [...checklist].slice(0, 6);
+    const recentTasks = [...checklist].sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()).slice(0, 10);
     const navLinks = [
       { label: 'Events', table: 'Events', Icon: Calendar, count: events.length, color: 'bg-blue-500' },
       { label: 'Sessions', table: 'Session', Icon: MessageSquare, count: sessions.length, color: 'bg-violet-500' },
@@ -6916,22 +6995,17 @@ thead.sticky th {
             </div>
             {recentTasks.length === 0
               ? <div className="flex-1 flex items-center justify-center text-slate-300 text-xs font-bold uppercase">No tasks yet</div>
-              : <div className="space-y-2 flex-1">
+              : <div className="space-y-1 flex-1 overflow-y-auto max-h-[280px] thin-scrollbar pr-1 -mr-1">
                   {recentTasks.map((c: any, i: number) => {
                     const isDone = c.done === true || c.done === 'Yes';
                     return (
-                      <div key={i} className="flex items-start gap-2 p-2 rounded-lg hover:bg-slate-50">
-                        <button
-                          onClick={() => handleToggleChecklist(c)}
-                          className={`h-4 w-4 rounded border-2 mt-0.5 shrink-0 flex items-center justify-center transition-colors ${
-                            isDone ? 'bg-green-500 border-green-500' : 'border-slate-300 hover:border-brand-primary'
-                          }`}
-                        >
-                          {isDone && <svg className="h-2.5 w-2.5 text-white" viewBox="0 0 10 10" fill="none"><path d="M1.5 5l2.5 2.5 4.5-4.5" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round"/></svg>}
-                        </button>
-                        <div>
-                          <div className={`text-[12px] font-semibold leading-tight ${isDone ? 'line-through text-slate-400' : 'text-slate-800'}`}>{c["Task"] || '—'}</div>
-                          {c["TaskGroup"] && <div className="text-[10px] text-slate-400 uppercase">{c["TaskGroup"]}</div>}
+                      <div key={i} onClick={() => { setActiveTable('DyatraChecklist'); setViewingRecord(c); }} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer group transition-colors">
+                        <div className="h-9 w-9 rounded-xl bg-green-50 border border-green-100 flex items-center justify-center shrink-0">
+                          <CheckSquare className="h-4 w-4 text-green-500" />
+                        </div>
+                        <div className="flex-1 min-w-0">
+                          <div className={`text-[13px] font-bold leading-tight truncate ${isDone ? 'line-through text-slate-400' : 'text-slate-800 group-hover:text-brand-primary transition-colors'}`}>{c["Task"] || '—'}</div>
+                          {c["TaskGroup"] && <div className="text-[10px] text-slate-400 uppercase truncate">{c["TaskGroup"]}</div>}
                         </div>
                       </div>
                     );
@@ -7011,6 +7085,7 @@ thead.sticky th {
                 onDelete={hasPerm(user, activeTable, 'delete') ? () => { handleDeleteRecord(viewingRecord); setViewingRecord(null); } : undefined}
                 getPrimaryField={getPrimaryField}
                 setLinkedRecordPopup={setLinkedRecordPopup}
+                getColumnType={getColumnType}
               />
             ) : activeTable === 'UserManagement' ? (
               ['admin', 'owner'].includes(user?.role) ? <UserManagement currentUser={user} onToast={showToast} /> : null
@@ -7413,14 +7488,16 @@ thead.sticky th {
                                   <a href={getDriveFileId(imgSrc) ? makeDriveDownloadUrl(getDriveFileId(imgSrc)!) : imgSrc} target="_blank" rel="noopener noreferrer" className="p-1.5 bg-black/60 text-white rounded-lg hover:bg-brand-primary shadow-sm" title="Download Image" onClick={(e) => e.stopPropagation()}>
                                     <Download className="h-4 w-4 sm:h-3.5 sm:w-3.5" />
                                   </a>
-                                  <button onClick={(e) => { e.stopPropagation(); if (!window.confirm("Remove this image?")) return; const entries: string[] = []; const re2 = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g; let mr; while ((mr = re2.exec(item["Images"] || "")) !== null) entries.push(mr[0]); entries.splice(imgIdx, 1); const updated = { ...realItem, ["Images"]: entries.join(' ') }; setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r)); window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) }); }} className="p-1.5 bg-black/60 text-white rounded-lg hover:bg-red-600 transition-all shadow-sm" title="Remove Image"><Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" /></button>
+                                  {hasPerm(user, activeTable, 'edit') && <button onClick={(e) => { e.stopPropagation(); if (!window.confirm("Remove this image?")) return; const entries: string[] = []; const re2 = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g; let mr; while ((mr = re2.exec(item["Images"] || "")) !== null) entries.push(mr[0]); entries.splice(imgIdx, 1); const updated = { ...realItem, ["Images"]: entries.join(' ') }; setSessions(prev => prev.map(r => (r._id === sessionId || r.id === sessionId) ? updated : r)); window.fetch(`/api/sessions/${sessionId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(updated) }); }} className="p-1.5 bg-black/60 text-white rounded-lg hover:bg-red-600 transition-all shadow-sm" title="Remove Image"><Trash2 className="h-4 w-4 sm:h-3.5 sm:w-3.5" /></button>}
                                 </div>
                               </div>
                             ))}
+                            {hasPerm(user, activeTable, 'edit') && (
                             <div onClick={(e) => { e.stopPropagation(); const fi = e.currentTarget.querySelector('input[type="file"]') as HTMLInputElement; if (fi) fi.click(); }} className="h-20 md:h-24 w-20 md:w-24 shrink-0 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary/50 transition-colors cursor-pointer bg-slate-50 hover:bg-white">
                               <Plus className="h-4 w-4 pointer-events-none" /><span className="text-[7px] md:text-[8px] font-black uppercase pointer-events-none">Add Media</span>
                               <input type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml" className="hidden" onClick={(e) => e.stopPropagation()} onChange={(e) => handleDirectImageUpload(e, item, 'sessions', setSessions as any)} />
                             </div>
+                            )}
                           </div>
                         </div>
                       );
@@ -8008,7 +8085,7 @@ thead.sticky th {
   onDragLeave={() => setDragOverCol(null)}
   onDrop={() => { setDragOverCol(null); if (dragColRef.current) handleColDrop(dragColRef.current, col); dragColRef.current = null; }}
   onDragEnd={() => { setDragOverCol(null); dragColRef.current = null; }}
-  style={{ width: colWidths[col] || 200, minWidth: colWidths[col] || 200, ...(isSticky ? { position: 'sticky' as const, left: leftOffsets[i], zIndex: 30, ...FROZEN_STYLE } : {}) }}
+  style={{ width: colWidths[col] || 200, minWidth: colWidths[col] || 200, ...(isSticky ? { position: 'sticky' as const, left: leftOffsets[i], zIndex: 40, ...FROZEN_STYLE } : {}) }}
   className={`border-b p-0 font-semibold tracking-tight overflow-hidden select-none transition-colors group/header ${
     isFreezeEdge ? 'border-r-2 border-r-brand-primary/40' : 'border-r border-slate-200'
   } ${
@@ -8049,7 +8126,7 @@ thead.sticky th {
           {/* Main Sort/Label Area */}
           <div
             onClick={() => setSortBy({ field: col, direction: sortBy?.field === col && sortBy.direction === 'asc' ? 'desc' : 'asc' })}
-            onDoubleClick={() => isExtraColumn && setEditingHeader({ index: i, value: col })}
+            onDoubleClick={() => isExtraColumn && hasPerm(user, activeTable, 'edit') && setEditingHeader({ index: i, value: col })}
             className="flex items-center gap-2 px-4 py-3 h-full w-full cursor-grab active:cursor-grabbing hover:bg-black/5 transition-colors truncate pr-16"
           >
             <GripVertical className="h-3 w-3 shrink-0 text-slate-300 opacity-0 group-hover/header:opacity-100 transition-opacity -ml-1.5" />
@@ -8064,6 +8141,7 @@ thead.sticky th {
 
           {/* COLUMN ACTIONS — type picker, freeze, delete */}
           <div className="absolute right-2 flex items-center gap-0.5 opacity-0 group-hover/header:opacity-100 transition-all">
+            {hasPerm(user, activeTable, 'edit') && (
             <button
               onClick={(e) => { e.stopPropagation(); const existMeta = columnMeta[activeTable]?.[col] || {}; setEditColumnModal({ col, type: getColumnType(col), extraIndex, linkedTable: existMeta.linkedTable || '', lookupField: existMeta.lookupField || '' }); }}
               className="p-1 hover:bg-blue-100 text-slate-400 hover:text-brand-primary rounded transition-all"
@@ -8071,6 +8149,7 @@ thead.sticky th {
             >
               <Settings2 className="h-3 w-3" />
             </button>
+            )}
             <button
               onClick={(e) => {
                 e.stopPropagation();
@@ -8084,7 +8163,7 @@ thead.sticky th {
             >
               <Layers className="h-3 w-3" />
             </button>
-            {isExtraColumn && (
+            {isExtraColumn && hasPerm(user, activeTable, 'edit') && (
               <button
                 onClick={(e) => { e.stopPropagation(); handleDeleteColumn(col); }}
                 className="p-1 hover:bg-red-100 text-slate-400 hover:text-red-600 rounded transition-all"
@@ -8103,19 +8182,20 @@ thead.sticky th {
   });
   })()}
 
-    {/* The Dynamic Column PLUS button */}
-    <th className="w-12 border-b border-slate-200 bg-slate-50 hover:bg-slate-100 cursor-pointer">
+    {/* The Dynamic Column PLUS button (Only visible with edit permissions) */}
+    {hasPerm(user, activeTable, 'edit') && (
+    <th className="w-12 border-b border-slate-200 bg-slate-50 hover:bg-slate-100 cursor-pointer" title="Add Field">
       <button
         onClick={() => {
           const currentExtras = extraColumns[activeTable] || [];
           setAddColumnModal({ name: `Field ${currentExtras.length + 1}`, type: 'text', linkedTable: '', lookupField: '' });
         }}
         className="w-full h-full flex items-center justify-center text-slate-400 hover:text-brand-primary transition-colors"
-        title="Add field"
       >
         <Plus className="h-5 w-5" />
       </button>
     </th>
+    )}
   </tr>
 </thead>
                       
@@ -9126,7 +9206,7 @@ thead.sticky th {
     </div>
     <div className="space-y-1">
       <label className="text-[10px] font-bold uppercase text-slate-500">EmailId</label>
-      <Input value={newRecord["EmailId"] || ''} onChange={(e) => setNewRecord({...newRecord, "EmailId": e.target.value})} placeholder="Email Address" className="bg-brand-bg" />
+      <Input type="email" value={newRecord["EmailId"] || ''} onChange={(e) => setNewRecord({...newRecord, "EmailId": e.target.value})} placeholder="Email Address" className="bg-brand-bg" />
     </div>
     <div className="space-y-1">
       <label className="text-[10px] font-bold uppercase text-slate-500">Sharing Facts</label>
@@ -9791,12 +9871,18 @@ thead.sticky th {
               label: 'Details',
               content: (
                 <div className="space-y-5">
-                  {getTableColumns().map((col: string) => (
+                  {getTableColumns().map((col: string) => {
+                    const colType = getColumnType(col);
+                    return (
                     <div key={col}>
                       <label className={labelCls}>{colLabel(col)}</label>
-                      <input className={inputCls} value={newRecord[col] || ''} onChange={e => setNewRecord({...newRecord, [col]: e.target.value})} placeholder={`${colLabel(col)}…`} />
+                      <input type={colType === 'email' ? 'email' : colType === 'phone' ? 'tel' : 'text'} className={inputCls} style={colType === 'email' ? { color: '#2563eb', WebkitTextFillColor: '#2563eb', textDecoration: 'underline' } : colType === 'id' ? { color: '#2563eb', fontFamily: 'monospace', fontWeight: 'bold' } : undefined} value={newRecord[col] || ''} onChange={e => {
+                        let val = e.target.value;
+                        if (colType === 'phone') val = val.replace(/[^\d\s()+-]/g, '');
+                        setNewRecord({...newRecord, [col]: val});
+                      }} placeholder={`${colLabel(col)}…`} />
                     </div>
-                  ))}
+                  )})}
                 </div>
               )
             },
