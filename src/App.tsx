@@ -3170,7 +3170,7 @@ const [cellPreview, setCellPreview] = useState<{ label: string; value: string; r
   const [frozenUpTo, setFrozenUpTo] = useState<Record<string, number>>({});
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const dragColRef = useRef<string | null>(null);
-  const [groupByField, setGroupByField] = useState<string | null>(null);
+  const [groupByFields, setGroupByFields] = useState<string[]>([]);
   const [customTags, setCustomTags] = useState<Record<string, Record<string, string[]>>>({});
   const [advancedFilter, setAdvancedFilter] = useState<FilterGroup>({ id: 'root', type: 'group', logic: 'AND', conditions: [] });
   const [pendingFilter, setPendingFilter] = useState<FilterGroup>({ id: 'root', type: 'group', logic: 'AND', conditions: [] });
@@ -3843,11 +3843,13 @@ const filteredData: any[] = getActiveData().filter((item: any) => {
 const sortedVisualData: any[] = (() => {
   const d = [...filteredData];
   d.sort((a, b) => {
-    // Primary: group field
-    if (groupByField) {
-      const ga = String(a[groupByField] ?? '');
-      const gb = String(b[groupByField] ?? '');
-      if (ga !== gb) return ga.localeCompare(gb);
+    // Primary: group fields
+    if (groupByFields.length > 0) {
+      for (const field of groupByFields) {
+        const ga = String(a[field] ?? '');
+        const gb = String(b[field] ?? '');
+        if (ga !== gb) return ga.localeCompare(gb);
+      }
     }
     // Secondary: explicit sort
     if (sortBy) {
@@ -3856,7 +3858,7 @@ const sortedVisualData: any[] = (() => {
       return sortBy.direction === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
     }
     // Default for Events: chronological
-    if (!groupByField && !sortBy && activeTable === 'Events') {
+    if (groupByFields.length === 0 && !sortBy && activeTable === 'Events') {
       const ta = a.DateFrom ? new Date(a.DateFrom).getTime() : Number.MAX_SAFE_INTEGER;
       const tb = b.DateFrom ? new Date(b.DateFrom).getTime() : Number.MAX_SAFE_INTEGER;
       const valA = isNaN(ta) ? Number.MAX_SAFE_INTEGER : ta;
@@ -4878,14 +4880,14 @@ const toggleGroup = (groupId: string) => {
     if (saved) {
       try {
         const parsed = JSON.parse(saved);
-        setGroupByField(parsed.groupByField !== undefined ? parsed.groupByField : null);
+        setGroupByFields(parsed.groupByFields !== undefined ? parsed.groupByFields : (parsed.groupByField ? [parsed.groupByField] : []));
         setSortBy(parsed.sortBy !== undefined ? parsed.sortBy : null);
         setViewMode(parsed.viewMode || 'grid');
         setCollapsedGroups(parsed.collapsedGroups || []);
         setSearchQuery(parsed.searchQuery || '');
         setAdvancedFilter(parsed.advancedFilter || { id: 'root', type: 'group', logic: 'AND', conditions: [] });
       } catch (e) {
-        setGroupByField(null);
+        setGroupByFields([]);
         setSortBy(null);
         setCollapsedGroups([]);
         setSearchQuery('');
@@ -4893,7 +4895,7 @@ const toggleGroup = (groupId: string) => {
         setAdvancedFilter({ id: 'root', type: 'group', logic: 'AND', conditions: [] });
       }
     } else {
-      setGroupByField(null);
+      setGroupByFields([]);
       setSortBy(null);
       setCollapsedGroups([]);
       setSearchQuery('');
@@ -4907,7 +4909,7 @@ const toggleGroup = (groupId: string) => {
   useEffect(() => {
     if (activeTableRefForSave.current === activeTable) {
       const settings = {
-        groupByField,
+        groupByFields,
         sortBy,
         viewMode,
         collapsedGroups,
@@ -4916,7 +4918,7 @@ const toggleGroup = (groupId: string) => {
       };
       localStorage.setItem(`dyatra_table_settings_${activeTable}`, JSON.stringify(settings));
     }
-  }, [groupByField, sortBy, viewMode, collapsedGroups, searchQuery, advancedFilter, activeTable]);
+  }, [groupByFields, sortBy, viewMode, collapsedGroups, searchQuery, advancedFilter, activeTable]);
 
 useEffect(() => {
   if (!editingId) setEditingCell(null);
@@ -5075,26 +5077,50 @@ const getProcessedData = (): any[] => {
 
   let finalResult: any[] = [];
 
-  // 2. Standard Grouping
-  if (groupByField) {
-    const activeGroupField = groupByField;
-    const groups: Record<string, any[]> = {};
-    data.forEach(item => {
-      const key = String(item[activeGroupField] || 'Unspecified');
-      if (!groups[key]) groups[key] = [];
-      groups[key].push(item);
-    });
-
-    Object.entries(groups).sort((a, b) => b[0].localeCompare(a[0])).forEach(([name, items], gIdx) => {
-      const theme = groupColors[gIdx % groupColors.length];
-      const gid = `group-${name}`;
-      finalResult.push({ type: 'header', level: 1, id: gid, label: activeGroupField, value: name, count: items.length, color: theme.main });
-      items.forEach(item => finalResult.push({ type: 'row', data: item, parentId: gid, groupColor: theme.main }));
-    });
+  // 2. Nested Grouping
+  if (groupByFields.length > 0) {
+    const groupData = (items: any[], fieldIdx: number, ancestorIds: string[]) => {
+      if (fieldIdx >= groupByFields.length) {
+        const deepestThemeColor = groupColors[(fieldIdx - 1) % groupColors.length].main;
+        items.forEach(item => finalResult.push({ 
+          type: 'row', 
+          data: item, 
+          parentId: ancestorIds.length > 0 ? ancestorIds[ancestorIds.length - 1] : null, 
+          ancestorIds,
+          groupColor: deepestThemeColor 
+        }));
+        return;
+      }
+      const currentField = groupByFields[fieldIdx];
+      const groups: Record<string, any[]> = {};
+      items.forEach(item => {
+        const key = String(item[currentField] || 'Unspecified');
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(item);
+      });
+      Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0])).forEach(([name, groupItems], gIdx) => {
+        const theme = groupColors[fieldIdx % groupColors.length];
+        const gid = ancestorIds.length > 0 ? `${ancestorIds[ancestorIds.length - 1]}-${name}` : `group-${name}`;
+        const currentAncestors = [...ancestorIds, gid];
+        finalResult.push({ 
+          type: 'header', 
+          level: fieldIdx + 1, 
+          id: gid, 
+          parentId: ancestorIds.length > 0 ? ancestorIds[ancestorIds.length - 1] : null, 
+          ancestorIds: currentAncestors,
+          label: currentField, 
+          value: name, 
+          count: groupItems.length, 
+          color: theme.main 
+        });
+        groupData(groupItems, fieldIdx + 1, currentAncestors);
+      });
+    };
+    groupData(data, 0, []);
   } 
   // 4. No Grouping
   else {
-    finalResult = data.map(item => ({ type: 'row', data: item }));
+    finalResult = data.map(item => ({ type: 'row', data: item, ancestorIds: [] }));
   }
 
   // --- THE FIX: Add the edit-row to the VERY END of the list ---
@@ -5798,7 +5824,7 @@ const handleInlineSave = async () => {
 const memoizedData = useMemo(() => getProcessedData(), [
   filteredData, 
   sortBy, 
-  groupByField, 
+  groupByFields, 
   isInlineAdding,
   collapsedGroups
 ]);
@@ -6199,10 +6225,10 @@ thead.sticky th {
       {/* Main Content */}
      <main className="flex-1 flex flex-col min-w-0 relative bg-brand-bg overflow-hidden">
       <header className="sticky top-0 z-40 w-full bg-white border-b border-slate-200 flex flex-col px-4 md:px-8 shrink-0 shadow-sm">
-  {/* ── TOP ROW: single flex-row on all screen sizes ── */}
-  <div className="flex items-center justify-between w-full h-14 gap-2">
+  {/* ── TOP ROW: wraps on smaller screens to prevent squishing ── */}
+  <div className="flex flex-wrap sm:flex-nowrap items-center justify-between w-full min-h-[56px] py-1.5 gap-2">
     {/* Left: hamburger + search */}
-        <div className="flex items-center gap-2 shrink min-w-0">
+        <div className="flex items-center gap-2 shrink-0 min-w-[120px] flex-1 sm:flex-none sm:max-w-[300px]">
       <Button
         variant="ghost"
         size="icon"
@@ -6214,13 +6240,13 @@ thead.sticky th {
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
         <>
           {/* Desktop search */}
-              <div className="relative hidden sm:block shrink min-w-0">
+              <div className="relative hidden sm:block shrink min-w-[120px] flex-1 max-w-[240px]">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
             <Input
               placeholder="Search..."
               value={searchQuery}
               onChange={(e) => setSearchQuery(e.target.value)}
-                  className="bg-brand-bg w-full md:w-[120px] xl:w-[180px] pl-8 h-9 text-xs text-black dark:text-white transition-all"
+                  className="bg-brand-bg w-full pl-8 h-9 text-xs text-black dark:text-white transition-all"
             />
           </div>
           {/* Mobile search icon toggle */}
@@ -6235,7 +6261,7 @@ thead.sticky th {
     </div>
 
     {/* Right: desktop toolbar items + inbox (inbox always visible here) */}
-        <div className="flex items-center justify-end gap-1.5 md:gap-2 flex-1 min-w-0">
+        <div className="flex flex-wrap items-center justify-end gap-1.5 md:gap-2 flex-1 min-w-0">
       {/* Desktop view switcher */}
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
         <div className="hidden sm:flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-11 items-center">
@@ -6262,13 +6288,13 @@ thead.sticky th {
 
       {/* Desktop Filter button */}
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
-            <div className="relative hidden sm:block shrink min-w-0">
+            <div className="relative hidden sm:block shrink min-w-[80px] flex-1 max-w-[130px]">
           <button
             onClick={() => {
               if (!isAdvancedFilterOpen) setPendingFilter(advancedFilter);
               setIsAdvancedFilterOpen(!isAdvancedFilterOpen);
             }}
-                className={`flex items-center gap-1.5 xl:gap-2 h-10 px-3 xl:px-4 rounded-xl border transition-all shrink min-w-0 ${
+                className={`flex items-center justify-center sm:justify-start gap-1.5 xl:gap-2 h-10 px-3 xl:px-4 rounded-xl border transition-all w-full shrink-0 min-w-0 ${
               advancedFilter.conditions.length > 0
                 ? 'bg-brand-primary/10 border-brand-primary/50 text-brand-primary shadow-sm'
                 : 'bg-white border-slate-300 text-slate-600 hover:border-brand-primary/50 shadow-sm'
@@ -6319,15 +6345,15 @@ thead.sticky th {
 
       {/* Desktop Group By + Sort By */}
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && (viewMode === 'grid' || viewMode === 'visual') && <>
-            <div className="relative hidden sm:block shrink min-w-0 w-[100px] lg:w-[140px] xl:w-[180px]">
+            <div className="relative hidden sm:block shrink min-w-[100px] flex-1 max-w-[180px]">
           <button
             onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
                 className="flex items-center justify-between bg-white border border-slate-300 rounded-xl px-2.5 xl:px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group w-full"
           >
-                <div className="flex items-center truncate min-w-0">
+                <div className="flex items-center min-w-0 flex-1">
                   <Layers className="h-4 w-4 text-slate-500 mr-1.5 xl:mr-2 shrink-0" />
                   <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate">
-                    {groupByField ? colLabel(groupByField) : "No Grouping"}
+                    {groupByFields.length > 0 ? `Grouped by ${groupByFields.length} field(s)` : "No Grouping"}
                   </span>
                 </div>
                 <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform shrink-0 ml-1 ${isGroupOpen ? 'rotate-180' : ''}`} />
@@ -6342,22 +6368,34 @@ thead.sticky th {
                   exit={{ opacity: 0, y: 5 }}
                       className="absolute top-full right-0 mt-2 w-full min-w-[180px] bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
                 >
-                  <button onClick={() => { setGroupByField(null); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Grouping</button>
-                  {getTableColumns().map(col => (
-                    <button key={col} onClick={() => { setGroupByField(col); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{colLabel(col)}</button>
-                  ))}
+                  <button onClick={() => { setGroupByFields([]); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase transition-colors">Clear Grouping</button>
+                  {getTableColumns().map(col => {
+                    const idx = groupByFields.indexOf(col);
+                    const isActive = idx >= 0;
+                    return (
+                      <button key={col} onClick={() => { 
+                        if (isActive) setGroupByFields(groupByFields.filter(f => f !== col));
+                        else setGroupByFields([...groupByFields, col]);
+                      }} className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors uppercase ${isActive ? 'text-brand-primary bg-brand-primary/5' : 'text-slate-700 hover:bg-slate-50'}`}>
+                        <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${isActive ? 'bg-brand-primary border-brand-primary' : 'border-slate-300'}`}>
+                          {isActive && <span className="text-[10px] text-white font-black">{idx + 1}</span>}
+                        </div>
+                        <span className="truncate">{colLabel(col)}</span>
+                      </button>
+                    );
+                  })}
                 </motion.div>
               </>
             )}
           </AnimatePresence>
         </div>
 
-        <div className="relative hidden sm:block shrink min-w-0 w-[120px] xl:w-[180px]">
+        <div className="relative hidden sm:block shrink min-w-[100px] flex-1 max-w-[180px]">
           <button
             onClick={() => { setIsSortOpen(!isSortOpen); setIsGroupOpen(false); }}
             className="flex items-center justify-between bg-white border border-slate-300 rounded-xl px-2.5 xl:px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group w-full"
           >
-            <div className="flex items-center truncate min-w-0">
+            <div className="flex items-center min-w-0 flex-1">
               <ArrowUpDown className="h-4 w-4 text-slate-500 mr-1.5 xl:mr-2 shrink-0" />
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate">
                 {sortBy ? colLabel(sortBy.field) : "No Sort"}
@@ -6398,12 +6436,12 @@ thead.sticky th {
 
       {/* Desktop Hide Fields */}
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && viewMode === 'grid' && (
-            <div className="relative hidden sm:block shrink min-w-0 w-[100px] xl:w-[140px]">
+            <div className="relative hidden sm:block shrink min-w-[90px] flex-1 max-w-[140px]">
           <button
             onClick={() => { setIsFieldsOpen(!isFieldsOpen); setIsGroupOpen(false); setIsSortOpen(false); }}
                 className={`flex items-center justify-between bg-white border rounded-xl px-2.5 xl:px-4 h-10 shadow-sm hover:border-brand-primary/50 transition-all group w-full ${(hiddenColumns[activeTable]?.length || 0) > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-300'}`}
           >
-                <div className="flex items-center truncate min-w-0">
+                <div className="flex items-center min-w-0 flex-1">
                   <Eye className="h-4 w-4 mr-1.5 xl:mr-2 shrink-0" />
                   <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate">
                     {(hiddenColumns[activeTable]?.length || 0) > 0 ? `${hiddenColumns[activeTable].length} hidden` : 'Fields'}
@@ -6506,11 +6544,11 @@ thead.sticky th {
         <>
           <button
             onClick={() => setMobileGroupOpen(true)}
-            className={`relative p-2 rounded-lg border bg-white transition-colors shrink-0 ${groupByField ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500'}`}
+            className={`relative p-2 rounded-lg border bg-white transition-colors shrink-0 ${groupByFields.length > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500'}`}
             title="Group By"
           >
             <Layers className="h-4 w-4" />
-            {groupByField && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
+            {groupByFields.length > 0 && <span className="absolute -top-1 -right-1 h-3 min-w-[12px] px-0.5 bg-brand-primary text-white rounded-full flex items-center justify-center text-[8px] font-black">{groupByFields.length}</span>}
           </button>
           <button
             onClick={() => setMobileSortOpen(true)}
@@ -6575,16 +6613,16 @@ thead.sticky th {
       )}
 
       {/* Mobile-only active filter bar */}
-      {activeTable !== 'Home' && (groupByField || sortBy) && (
+      {activeTable !== 'Home' && (groupByFields.length > 0 || sortBy) && (
         <div className="sm:hidden flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-200 overflow-x-auto shrink-0">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Active:</span>
-          {groupByField && (
+          {groupByFields.length > 0 && (
             <button
-              onClick={() => setGroupByField(null)}
+              onClick={() => setGroupByFields([])}
               className="flex items-center gap-1 bg-brand-primary/10 text-brand-primary text-[10px] font-black uppercase px-2 py-1 rounded-lg border border-brand-primary/20 shrink-0"
             >
               <Layers className="h-3 w-3" />
-              {colLabel(groupByField)}
+              {groupByFields.length} Group{groupByFields.length > 1 ? 's' : ''}
               <X className="h-3 w-3" />
             </button>
           )}
@@ -6622,24 +6660,29 @@ thead.sticky th {
             </div>
             <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-2">
               <button
-                onClick={() => setGroupByField(null)}
-                className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center px-4 gap-3 ${!groupByField ? 'bg-brand-primary text-white border-brand-primary shadow-md shadow-brand-primary/20' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+                onClick={() => setGroupByFields([])}
+                className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center px-4 gap-3 ${groupByFields.length === 0 ? 'bg-brand-primary text-white border-brand-primary shadow-md shadow-brand-primary/20' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
               >
-                <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${!groupByField ? 'border-white bg-white' : 'border-slate-300'}`}>
-                  {!groupByField && <span className="h-2 w-2 rounded-full bg-brand-primary block" />}
+                <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${groupByFields.length === 0 ? 'border-white bg-white' : 'border-slate-300'}`}>
+                  {groupByFields.length === 0 && <span className="h-2 w-2 rounded-full bg-brand-primary block" />}
                 </span>
                 None
               </button>
-              {getTableColumns().map(col => (
-                <button key={col} onClick={() => setGroupByField(col)}
-                  className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center px-4 gap-3 ${groupByField === col ? 'bg-brand-primary text-white border-brand-primary shadow-md shadow-brand-primary/20' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
-                >
-                  <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${groupByField === col ? 'border-white bg-white' : 'border-slate-300'}`}>
-                    {groupByField === col && <span className="h-2 w-2 rounded-full bg-brand-primary block" />}
-                  </span>
-                  <span className="truncate">{colLabel(col)}</span>
-                </button>
-              ))}
+              {getTableColumns().map(col => {
+                const idx = groupByFields.indexOf(col);
+                const isActive = idx >= 0;
+                return (
+                  <button key={col} onClick={() => {
+                    if (isActive) setGroupByFields(groupByFields.filter(f => f !== col));
+                    else setGroupByFields([...groupByFields, col]);
+                  }} className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center px-4 gap-3 ${isActive ? 'bg-brand-primary text-white border-brand-primary shadow-md shadow-brand-primary/20' : 'bg-white text-slate-600 border-slate-200 hover:border-slate-300'}`}>
+                    <span className={`h-4 w-4 rounded border-2 shrink-0 flex items-center justify-center ${isActive ? 'border-white bg-transparent' : 'border-slate-300'}`}>
+                      {isActive && <span className="text-[10px] text-white font-black leading-none">{idx + 1}</span>}
+                    </span>
+                    <span className="truncate">{colLabel(col)}</span>
+                  </button>
+                );
+              })}
             </div>
             <div className="px-5 py-4 border-t border-slate-100 shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
               <button onClick={() => setMobileGroupOpen(false)} className="w-full py-3.5 bg-brand-primary text-white rounded-2xl text-[13px] font-black uppercase tracking-widest shadow-lg shadow-brand-primary/25 active:scale-95 transition-all">Apply</button>
@@ -7059,10 +7102,11 @@ thead.sticky th {
       </motion.div>
     );
 
-    if (groupByField) {
+    if (groupByFields.length > 0) {
+      const activeGroupField = groupByFields[0];
       const grouped: Record<string, any[]> = {};
       sortedVisualData.forEach((item: any) => {
-        const raw = String(item[groupByField] || '');
+        const raw = String(item[activeGroupField] || '');
         const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
         (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
       });
@@ -7130,10 +7174,11 @@ thead.sticky th {
       </motion.div>
     );
 
-    if (groupByField) {
+    if (groupByFields.length > 0) {
+      const activeGroupField = groupByFields[0];
       const grouped: Record<string, any[]> = {};
       sortedVisualData.forEach((item: any) => {
-        const raw = String(item[groupByField] || '');
+        const raw = String(item[activeGroupField] || '');
         const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
         (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
       });
@@ -7199,10 +7244,11 @@ thead.sticky th {
       </motion.div>
     );
 
-    if (groupByField) {
+    if (groupByFields.length > 0) {
+      const activeGroupField = groupByFields[0];
       const grouped: Record<string, any[]> = {};
       sortedVisualData.forEach((item: any) => {
-        const raw = String(item[groupByField] || '');
+        const raw = String(item[activeGroupField] || '');
         const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
         (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
       });
@@ -7265,10 +7311,11 @@ thead.sticky th {
       );
     };
 
-    if (groupByField) {
+    if (groupByFields.length > 0) {
+      const activeGroupField = groupByFields[0];
       const grouped: Record<string, any[]> = {};
       sortedVisualData.forEach((item: any) => {
-        const raw = String(item[groupByField] || '');
+        const raw = String(item[activeGroupField] || '');
         const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
         (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
       });
@@ -7378,10 +7425,11 @@ thead.sticky th {
                         </div>
                       );
                     };
-                    if (groupByField) {
+                    if (groupByFields.length > 0) {
+                      const activeGroupField = groupByFields[0];
                       const grouped: Record<string, any[]> = {};
                       sortedData.forEach((item: any) => {
-                        const raw = String(item[groupByField] || '');
+                        const raw = String(item[activeGroupField] || '');
                         const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
                         (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
                       });
@@ -7529,10 +7577,11 @@ thead.sticky th {
                                       </div>
                                     </motion.div>
                                   );
-                    if (groupByField) {
+                    if (groupByFields.length > 0) {
+                      const activeGroupField = groupByFields[0];
                       const mlGrouped: Record<string, any[]> = {};
                       mlSortedData.forEach((item: any) => {
-                        const raw = String(item[groupByField] || '');
+                        const raw = String(item[activeGroupField] || '');
                         const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
                         (keys.length > 0 ? keys : ['—']).forEach((k: string) => { if (!mlGrouped[k]) mlGrouped[k] = []; mlGrouped[k].push(item); });
                       });
@@ -7660,10 +7709,11 @@ thead.sticky th {
                         </div>
                       </motion.div>
                     );
-                    if (groupByField) {
+                    if (groupByFields.length > 0) {
+                      const activeGroupField = groupByFields[0];
                       const vlGrouped: Record<string, any[]> = {};
                       vlSortedData.forEach((item: any) => {
-                        const raw = String(item[groupByField] || '');
+                        const raw = String(item[activeGroupField] || '');
                         const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
                         (keys.length > 0 ? keys : ['—']).forEach((k: string) => { if (!vlGrouped[k]) vlGrouped[k] = []; vlGrouped[k].push(item); });
                       });
@@ -7870,10 +7920,11 @@ thead.sticky th {
                     </motion.div>
                   );
 
-                  if (groupByField) {
+                  if (groupByFields.length > 0) {
+                    const activeGroupField = groupByFields[0];
                     const grouped: Record<string, any[]> = {};
                     sortedVisualData.forEach((item: any) => {
-                      const raw = String(item[groupByField] || '');
+                      const raw = String(item[activeGroupField] || '');
                       const keys = raw.split(',').map((s: string) => s.trim()).filter(Boolean);
                       (keys.length > 0 ? keys : ['—']).forEach(k => { if (!grouped[k]) grouped[k] = []; grouped[k].push(item); });
                     });
@@ -8073,11 +8124,7 @@ thead.sticky th {
   {(() => { const _rows = getProcessedData(); return _rows.map((row, idx) => {
 
     // 1. Visibility logic (Keep this exactly as you had it)
-    if (row.type === 'header' && row.parentId && collapsedGroups.includes(row.parentId)) return null;
-    if (row.type === 'row' && (
-      (row.parentId && collapsedGroups.includes(row.parentId)) || 
-      (row.grandParentId && collapsedGroups.includes(row.grandParentId))
-    )) return null;
+    if (row.ancestorIds?.some((id: string) => id !== row.id && collapsedGroups.includes(id))) return null;
 
     // 2. SAFETY CHECK: Check if this specific row is being edited
     // Use optional chaining (row.data?._id) to prevent the crash
@@ -8111,7 +8158,7 @@ thead.sticky th {
              </div>
           </td>
           <td colSpan={getTableColumns().length} className="px-4 py-2.5">
-           <div className="flex flex-col gap-0.5" style={{ paddingLeft: row.level === 2 ? '24px' : '0px' }}>
+           <div className="flex flex-col gap-0.5" style={{ paddingLeft: `${(row.level - 1) * 24}px` }}>
           
           {/* 1. FIELD NAME (TOP) */}
           <div className="flex items-center gap-1">
@@ -8136,9 +8183,10 @@ thead.sticky th {
 
     // C. RENDER DATA ROWS
     const nextItem = _rows[idx + 1];
-    const isLastInGroup = !!(groupByField && row.parentId &&
+    const isDeepestLevel = row.ancestorIds?.length === groupByFields.length;
+    const isLastInGroup = !!(groupByFields.length > 0 && isDeepestLevel && row.parentId &&
       !collapsedGroups.includes(row.parentId) &&
-      (!nextItem || nextItem.type === 'header' || nextItem.type === 'edit-row'));
+      (!nextItem || nextItem.type === 'header' || nextItem.parentId !== row.parentId));
     const groupHeader = isLastInGroup ? _rows.find(r => r.type === 'header' && r.id === row.parentId) : null;
     const isTemp = !!(row.data?._isTemp);
 
@@ -8249,8 +8297,10 @@ thead.sticky th {
         <tr
           className="hover:bg-slate-50/80 cursor-pointer border-b border-slate-100 group/addrow"
           onClick={() => {
-            const seedVal = groupHeader?.value === 'Unspecified' ? '' : groupHeader?.value;
-            const seed = groupByField && seedVal != null ? { [groupByField]: seedVal } : {};
+            const seed: Record<string, any> = {};
+            if (groupByFields.length > 0 && row.data) {
+               groupByFields.forEach(f => { seed[f] = row.data[f] === 'Unspecified' ? '' : row.data[f]; });
+            }
             handleAddBlankRow(seed);
           }}
         >
@@ -8304,8 +8354,8 @@ thead.sticky th {
                       <span>{sortBy ? `Sorted by ${colLabel(sortBy.field)}` : 'Default Sort'}</span>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className={`h-2 w-2 rounded-full ${groupByField ? 'bg-green-500 shadow-sm animate-pulse' : 'bg-slate-300'}`} />
-                      <span>{groupByField ? 'Grouped View enabled' : 'Grouped View disabled'}</span>
+                      <div className={`h-2 w-2 rounded-full ${groupByFields.length > 0 ? 'bg-green-500 shadow-sm animate-pulse' : 'bg-slate-300'}`} />
+                      <span>{groupByFields.length > 0 ? `Grouped by ${groupByFields.length} field(s)` : 'Grouped View disabled'}</span>
                     </div>
                   </div>
                 </div>
