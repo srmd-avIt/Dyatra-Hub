@@ -8293,7 +8293,7 @@ thead.sticky th {
           </div>
         )}
       </tr>
-      {isLastInGroup && (
+      {isLastInGroup && hasPerm(user, activeTable, 'add') && (
         <tr
           className="hover:bg-slate-50/80 cursor-pointer border-b border-slate-100 group/addrow"
           onClick={() => {
