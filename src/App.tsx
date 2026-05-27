@@ -90,6 +90,7 @@ import {
   UserCheck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
+import AudioSetupVisualizer from './AudioSetupVisualizer';
 
 const TAG_COLORS = [
   "bg-indigo-500/20 text-indigo-900 border-indigo-500/30 dark:text-indigo-200",
@@ -6325,7 +6326,7 @@ thead.sticky th.sticky {
       >
         <Menu className="h-6 w-6" />
       </Button>
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (
         <>
           {/* Desktop search */}
               <div className="relative hidden sm:block shrink min-w-[120px] flex-1 max-w-[240px]">
@@ -6351,7 +6352,7 @@ thead.sticky th.sticky {
     {/* Right: desktop toolbar items + inbox (inbox always visible here) */}
         <div className="flex flex-wrap items-center justify-end gap-1.5 md:gap-2 flex-1 min-w-0">
       {/* Desktop view switcher */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (
         <div className="hidden sm:flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-11 items-center">
           <Button
             size="sm"
@@ -6375,7 +6376,7 @@ thead.sticky th.sticky {
       )}
 
       {/* Desktop Filter button */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (
             <div className="relative hidden sm:block shrink min-w-[80px] flex-1 max-w-[130px]">
           <button
             onClick={() => {
@@ -6432,7 +6433,7 @@ thead.sticky th.sticky {
       )}
 
       {/* Desktop Group By + Sort By */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && (viewMode === 'grid' || viewMode === 'visual') && <>
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (viewMode === 'grid' || viewMode === 'visual') && <>
             <div className="relative hidden sm:block shrink min-w-[100px] flex-1 max-w-[180px]">
           <button
             onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
@@ -6523,7 +6524,7 @@ thead.sticky th.sticky {
       </>}
 
       {/* Desktop Hide Fields */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && viewMode === 'grid' && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && viewMode === 'grid' && (
             <div className="relative hidden sm:block shrink min-w-[90px] flex-1 max-w-[140px]">
           <button
             onClick={() => { setIsFieldsOpen(!isFieldsOpen); setIsGroupOpen(false); setIsSortOpen(false); }}
@@ -6571,7 +6572,7 @@ thead.sticky th.sticky {
       )}
 
       {/* Add Record — desktop only in top row */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && hasPerm(user, activeTable, 'add') && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && hasPerm(user, activeTable, 'add') && (
         <Button
           onClick={openAddModal}
                 className="hidden sm:flex bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-3 xl:px-4 shadow-md items-center gap-1.5 xl:gap-2 transition-transform active:scale-95 ml-0.5 xl:ml-1 shrink-0"
@@ -6603,7 +6604,7 @@ thead.sticky th.sticky {
   </div>
 
   {/* ── MOBILE TOOLBAR ROW (sm:hidden, non-home pages only) ── */}
-  {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
+  {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (
     <div className="sm:hidden flex items-center gap-1.5 pb-2.5 w-full">
       {/* View switcher */}
       {(viewMode === 'grid' || viewMode === 'visual') && (
@@ -6680,7 +6681,7 @@ thead.sticky th.sticky {
 </header>
 
       {/* Mobile search bar (expands below header when toggled) */}
-      {activeTable !== 'Home' && mobileSearchOpen && (
+      {activeTable !== 'Home' && activeTable !== 'AudioSetup' && mobileSearchOpen && (
         <div className="sm:hidden px-4 py-2.5 bg-white border-b border-slate-200 shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -6701,7 +6702,7 @@ thead.sticky th.sticky {
       )}
 
       {/* Mobile-only active filter bar */}
-      {activeTable !== 'Home' && (groupByFields.length > 0 || sortBy) && (
+      {activeTable !== 'Home' && activeTable !== 'AudioSetup' && (groupByFields.length > 0 || sortBy) && (
         <div className="sm:hidden flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-200 overflow-x-auto shrink-0">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Active:</span>
           {groupByFields.length > 0 && (
@@ -7098,6 +7099,8 @@ thead.sticky th.sticky {
               />
             ) : activeTable === 'UserManagement' ? (
               ['admin', 'owner'].includes(user?.role) ? <UserManagement currentUser={user} onToast={showToast} /> : null
+            ) : activeTable === 'AudioSetup' ? (
+              <AudioSetupVisualizer {...({ onChecklistClick: () => setActiveTable('DyatraChecklist') } as any)} />
             ) : (
               <>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -8043,7 +8046,7 @@ thead.sticky th.sticky {
                   );
                   })()
                 )
-                ) : (
+              ) : (
                   /* --- 3. DATA GRID VIEW (Table) --- */
                   /* --- 3. WHITE EXCEL / AIRTABLE STYLE GRID VIEW --- */
                <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-[calc(100vh-200px)]">
