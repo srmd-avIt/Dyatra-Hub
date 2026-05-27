@@ -362,7 +362,7 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
             {isGroupOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsGroupOpen(false)} />
-                <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2">
+                <div className="absolute top-full left-0 sm:right-0 sm:left-auto mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2">
                   <button onClick={() => { setUserGroupBy(null); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50">No Grouping</button>
                   <button onClick={() => { setUserGroupBy('role'); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase">Role</button>
                   <button onClick={() => { setUserGroupBy('department'); setIsGroupOpen(false); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase">Department</button>
@@ -381,7 +381,7 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
             {isSortOpen && (
               <>
                 <div className="fixed inset-0 z-40" onClick={() => setIsSortOpen(false)} />
-                <div className="absolute top-full right-0 mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2">
+                <div className="absolute top-full left-0 sm:right-0 sm:left-auto mt-2 w-48 bg-white border border-slate-200 rounded-xl shadow-xl z-50 py-2">
                   <button onClick={() => { setUserSortBy(null); setIsSortOpen(false); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-500 hover:bg-slate-50">No Sort</button>
                   {['name', 'email', 'department', 'role', 'created_at'].map(f => (
                     <button key={f} onClick={() => { setUserSortBy({ field: f, direction: userSortBy?.field === f && userSortBy.direction === 'asc' ? 'desc' : 'asc' }); setIsSortOpen(false); }} className="w-full text-left px-4 py-2 text-xs font-semibold text-slate-700 hover:bg-brand-primary hover:text-white flex justify-between uppercase">
@@ -2046,7 +2046,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
       opts = [...new Set(events.map((e: any) => e.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
     else if ((isEv || isSe) && col === 'City')
       opts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
-    else if (isEv && col === 'Year') {
+    else if (columnTypes[tableName]?.[col] === 'year' || col === 'Year') {
       const yr = new Date().getFullYear();
       opts = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
     } else if (isSe && col === 'Occasion')
@@ -2078,7 +2078,8 @@ const hasDropdown = opts.length > 0
   || (isEv && (col === 'Occasion' || col === 'City' || col === 'Year'))
   || (isSe && (col === 'City' || col === 'Occasion' || col === 'Time Of Day' || col === 'SessionType' || col === 'Parent Event'))
   || ((isVSetup || isASetup) && (col === 'Status' || col === 'Assignee'))
-  || (isGuide && (col === 'City' || col === 'Category' || col === 'Event'));
+  || (isGuide && (col === 'City' || col === 'Category' || col === 'Event'))
+  || columnTypes[tableName]?.[col] === 'year';
 if (hasDropdown) {
   const isMulti = col === 'Occasion' || col === 'City' || col === 'Tags' || columnTypes[tableName]?.[col] === 'badge_multi' || col === 'Assignee';
   return (
@@ -2092,7 +2093,7 @@ if (hasDropdown) {
       removableOptions={(hasPerm(currentUser, tableName, 'edit') || hasPerm(currentUser, tableName, 'add')) ? opts : []}
       onRemoveOption={(hasPerm(currentUser, tableName, 'edit') || hasPerm(currentUser, tableName, 'add')) ? val => onRemoveTag(tableName, col, val) : undefined}
       placeholder={`Select ${col}…`}
-      tagClass={tagClass}
+      tagClass={columnTypes[tableName]?.[col] === 'year' ? "bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20" : tagClass}
       isUserPicker={col === 'Assignee'}
     />
   );
@@ -2923,6 +2924,14 @@ if (sessionFieldNames.includes(col) && typeof val === 'string') {
       ))}
     </div>
   );
+}
+                        
+    if (colType === 'year' && typeof val === 'string') {
+      return (
+        <div className="mt-1">
+          <span className="bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20">{val}</span>
+        </div>
+      );
 }
     
     if (col === 'Assignee' && typeof val === 'string') {
@@ -3929,7 +3938,7 @@ if (['Status', 'status'].includes(col)) return 'status';
 const getFilterOptions = (col: string): string[] => {
   const type = getColumnType(col);
   const isMulti = type === 'badge_multi' || col === 'Occasion' || col === 'City' || col === 'Tags';
-  const isDropdown = ['select', 'badge', 'badge_multi', 'status', 'yes_no'].includes(type)
+  const isDropdown = ['select', 'badge', 'badge_multi', 'status', 'yes_no', 'year'].includes(type)
     || (activeTable === 'Events' && ['Occasion', 'City', 'Year'].includes(col))
     || (activeTable === 'Session' && ['City', 'Occasion', 'Time Of Day', 'SessionType', 'Parent Event'].includes(col))
     || (activeTable === 'Tracks' && ['Source', 'Plays'].includes(col))
@@ -3985,7 +3994,7 @@ case 'text':
     case 'select':
       return val ? (
         <div className="flex justify-center">
-          <span className={getTagStyle(String(val))}>{val}</span>
+          <span className={type === 'year' ? "bg-brand-primary/10 text-brand-primary border border-brand-primary/20 font-black text-[12px] px-3 py-0.5 rounded-sm" : getTagStyle(String(val))}>{val}</span>
         </div>
       ) : empty;
 
@@ -5539,7 +5548,7 @@ const updateDraftOnly = (col: string, val: string) => {
         const isActuallyActive = editingCell === col && !isAutoFilled;
         const colType = getColumnType(col);
         const isMulti = colType === 'badge_multi';
-        const isSingleBadge = colType === 'status' || colType === 'select';
+        const isSingleBadge = colType === 'status' || colType === 'select' || colType === 'badge' || colType === 'year';
         const isLinkCol = colType === 'link_to_record';
         const isFreezeEdge = i === frozen;
 
@@ -5735,13 +5744,12 @@ const updateDraftOnly = (col: string, val: string) => {
               else if (activeTable === 'MusicLog' && col === 'PlayedAt') {
                 opts = [...new Set(musicLogs.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
               }
-              else if (isEv && (col === 'Occasion' || col === 'City' || col === 'Year')) {
-                 if (col === 'Year') {
-                   const yr = new Date().getFullYear();
-                   opts = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
-                 } else {
-                   opts = [...new Set(events.map((e: any) => e[col]).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort();
-                 }
+              else if (colType === 'year' || col === 'Year') {
+                 const yr = new Date().getFullYear();
+                 opts = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
+              }
+              else if (isEv && (col === 'Occasion' || col === 'City')) {
+                 opts = [...new Set(events.map((e: any) => e[col]).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort();
               }
               else if (isSe && ['City', 'Occasion', 'Time Of Day', 'SessionType', 'Parent Event'].includes(col)) {
                  if (col === 'Parent Event') opts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort();
@@ -5770,6 +5778,7 @@ const updateDraftOnly = (col: string, val: string) => {
                     onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
                     onOutsideClick={() => handleUpdateRecord()}
                     placeholder={`Select ${col}…`}
+                    tagClass={colType === 'year' ? "bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20" : undefined}
                     isMinimal={true}
                     isUserPicker={col === 'Assignee'}
                   />
@@ -7028,12 +7037,12 @@ thead.sticky th.sticky {
             <div className="space-y-1">
               {recentEvents.length === 0 && <div className="text-slate-300 text-xs font-bold uppercase py-6 text-center">No events yet</div>}
               {recentEvents.map((ev: any, i: number) => (
-                <div key={i} onClick={() => { setActiveTable('Events'); setViewingRecord(ev); }} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer">
+                <div key={i} onClick={() => { setActiveTable('Events'); setViewingRecord(ev); }} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer group transition-colors">
                   <div className="h-9 w-9 rounded-xl bg-blue-50 border border-blue-100 flex items-center justify-center shrink-0">
                     <Calendar className="h-4 w-4 text-blue-500" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-bold text-slate-800 truncate">{ev["Event Name"] || ev.EventName || '—'}</div>
+                    <div className="text-[13px] font-bold text-slate-800 group-hover:text-brand-primary transition-colors truncate">{ev["Event Name"] || ev.EventName || '—'}</div>
                     <div className="text-[10px] text-slate-400">{ev.DateFrom || '—'}{ev.City ? ` · ${ev.City}` : ''}</div>
                   </div>
                   {ev.Year && <Badge className="bg-slate-100 text-slate-500 border-none text-[10px] font-black shrink-0">{ev.Year}</Badge>}
@@ -7052,12 +7061,12 @@ thead.sticky th.sticky {
             <div className="space-y-1">
               {recentSessions.length === 0 && <div className="text-slate-300 text-xs font-bold uppercase py-6 text-center">No sessions yet</div>}
               {recentSessions.map((s: any, i: number) => (
-                <div key={i} onClick={() => { setActiveTable('Session'); setViewingRecord(s); }} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer">
+                <div key={i} onClick={() => { setActiveTable('Session'); setViewingRecord(s); }} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer group transition-colors">
                   <div className="h-9 w-9 rounded-xl bg-violet-50 border border-violet-100 flex items-center justify-center shrink-0">
                     <MessageSquare className="h-4 w-4 text-violet-500" />
                   </div>
                   <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-bold text-slate-800 truncate">{s["Session Name"] || '—'}</div>
+                    <div className="text-[13px] font-bold text-slate-800 group-hover:text-brand-primary transition-colors truncate">{s["Session Name"] || '—'}</div>
                     <div className="text-[10px] text-slate-400">{s["Parent Event"] || ''}{s["Date"] ? ` · ${s["Date"]}` : ''}</div>
                   </div>
                   {s["SessionType"] && <Badge className="bg-violet-50 text-violet-500 border border-violet-100 text-[10px] font-black shrink-0">{s["SessionType"]}</Badge>}
@@ -7492,12 +7501,6 @@ thead.sticky th.sticky {
                                 </div>
                               </div>
                             ))}
-                            {hasPerm(user, activeTable, 'edit') && (
-                            <div onClick={(e) => { e.stopPropagation(); const fi = e.currentTarget.querySelector('input[type="file"]') as HTMLInputElement; if (fi) fi.click(); }} className="h-20 md:h-24 w-20 md:w-24 shrink-0 rounded-xl border-2 border-dashed border-slate-300 flex flex-col items-center justify-center gap-1.5 text-slate-400 hover:text-brand-primary hover:border-brand-primary/50 transition-colors cursor-pointer bg-slate-50 hover:bg-white">
-                              <Plus className="h-4 w-4 pointer-events-none" /><span className="text-[7px] md:text-[8px] font-black uppercase pointer-events-none">Add Media</span>
-                              <input type="file" accept="image/png, image/jpeg, image/jpg, image/webp, image/gif, image/svg+xml" className="hidden" onClick={(e) => e.stopPropagation()} onChange={(e) => handleDirectImageUpload(e, item, 'sessions', setSessions as any)} />
-                            </div>
-                            )}
                           </div>
                         </div>
                       );
@@ -8129,7 +8132,7 @@ thead.sticky th.sticky {
             onDoubleClick={() => isExtraColumn && hasPerm(user, activeTable, 'edit') && setEditingHeader({ index: i, value: col })}
             className="flex items-center gap-2 px-4 py-3 h-full w-full cursor-grab active:cursor-grabbing hover:bg-black/5 transition-colors truncate pr-16"
           >
-            <GripVertical className="h-3 w-3 shrink-0 text-slate-300 opacity-0 group-hover/header:opacity-100 transition-opacity -ml-1.5" />
+            <GripVertical className="h-3 w-3 shrink-0 text-slate-300 opacity-100 sm:opacity-0 sm:group-hover/header:opacity-100 transition-opacity -ml-1.5" />
             <TypeIcon className="h-3.5 w-3.5 shrink-0 text-slate-400" />
             <span className="truncate">{(() => {
               const meta = columnMeta[activeTable]?.[col];
@@ -8140,7 +8143,7 @@ thead.sticky th.sticky {
           </div>
 
           {/* COLUMN ACTIONS — type picker, freeze, delete */}
-          <div className="absolute right-2 flex items-center gap-0.5 opacity-0 group-hover/header:opacity-100 transition-all">
+          <div className="absolute right-2 flex items-center gap-0.5 opacity-100 sm:opacity-0 sm:group-hover/header:opacity-100 transition-all">
             {hasPerm(user, activeTable, 'edit') && (
             <button
               onClick={(e) => { e.stopPropagation(); const existMeta = columnMeta[activeTable]?.[col] || {}; setEditColumnModal({ col, type: getColumnType(col), extraIndex, linkedTable: existMeta.linkedTable || '', lookupField: existMeta.lookupField || '' }); }}
@@ -8187,8 +8190,7 @@ thead.sticky th.sticky {
     <th className="w-12 border-b border-slate-200 bg-slate-50 hover:bg-slate-100 cursor-pointer" title="Add Field">
       <button
         onClick={() => {
-          const currentExtras = extraColumns[activeTable] || [];
-          setAddColumnModal({ name: `Field ${currentExtras.length + 1}`, type: 'text', linkedTable: '', lookupField: '' });
+          setAddColumnModal({ name: '', type: 'text', linkedTable: '', lookupField: '' });
         }}
         className="w-full h-full flex items-center justify-center text-slate-400 hover:text-brand-primary transition-colors"
       >
