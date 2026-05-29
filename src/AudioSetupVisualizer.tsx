@@ -230,30 +230,25 @@ export default function AudioSetupHub() {
               {/* --- TAB: GENERAL INSTRUCTIONS (FLAW TABLE) --- */}
               {activeTab === 'instructions' && (
                 <Card className="rounded-[40px] border-none shadow-xl ring-1 ring-slate-200 overflow-hidden bg-white">
-                   <div className="p-8 border-b border-slate-100 flex items-center gap-4 bg-red-50/30">
-                     <AlertTriangle className="text-red-500" size={32}/>
-                     <div>
-                       <h2 className="text-2xl font-black text-slate-900 uppercase tracking-tighter italic">General Instructions <span className="text-red-500">& Standards</span></h2>
-                       <p className="text-xs font-bold text-slate-400 uppercase tracking-widest mt-1">Based on Flaw Analysis of previous years</p>
-                     </div>
+                   <div className="p-6 border-b border-slate-100 flex items-center gap-3 bg-red-50/30">
+                     <AlertTriangle className="text-red-500" size={24}/>
+                     <h2 className="text-xl font-black text-slate-900 uppercase tracking-tight">Audio Setup</h2>
                    </div>
                    <div className="overflow-x-auto">
                      <table className="w-full text-left">
                        <thead className="bg-slate-50 text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">
                          <tr>
-                           <th className="px-8 py-5">#</th>
-                           <th className="px-8 py-5">Risk Category</th>
-                           <th className="px-8 py-5">What Was Wrong?</th>
-                           <th className="px-8 py-5 text-green-600">The Mandatory Correction</th>
+                           <th className="px-6 py-4">Area</th>
+                           <th className="px-6 py-4">Issue</th>
+                           <th className="px-6 py-4 text-green-600">Fix</th>
                          </tr>
                        </thead>
                        <tbody className="divide-y divide-slate-100">
                          {FLAW_TABLE.map(f => (
                            <tr key={f.id} className="hover:bg-red-50/10 transition-colors">
-                             <td className="px-8 py-6 font-black text-slate-400 italic">0{f.id}</td>
-                             <td className="px-8 py-6"><Badge className={f.severity === 'CRITICAL' ? 'bg-red-500' : 'bg-orange-500'}>{f.severity}</Badge></td>
-                             <td className="px-8 py-6 text-sm font-bold text-slate-600 italic">"{f.wrong}"</td>
-                             <td className="px-8 py-6 text-[13px] font-black text-slate-900 leading-snug">{f.correction}</td>
+                             <td className="px-6 py-4 text-[13px] font-black text-slate-700">{f.category}</td>
+                             <td className="px-6 py-4 text-[13px] text-slate-500">{f.wrong}</td>
+                             <td className="px-6 py-4 text-[13px] font-semibold text-slate-900">{f.correction}</td>
                            </tr>
                          ))}
                        </tbody>
