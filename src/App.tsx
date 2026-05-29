@@ -1,4 +1,4 @@
-﻿
+﻿﻿
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import { 
@@ -88,6 +88,8 @@ import {
   Shield,
   UserCog,
   UserCheck,
+  Radio ,
+  ClipboardCheck,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import AudioSetupVisualizer from './AudioSetupVisualizer';
@@ -6318,15 +6320,31 @@ thead.sticky th.sticky {
   <div className="flex flex-wrap sm:flex-nowrap items-center justify-between w-full min-h-[56px] py-1.5 gap-2">
     {/* Left: hamburger + search */}
         <div className="flex items-center gap-2 shrink-0 min-w-[120px] flex-1 sm:flex-none sm:max-w-[300px]">
-      <Button
-        variant="ghost"
-        size="icon"
-        className="lg:hidden text-brand-text-muted h-11 w-11 shrink-0"
-        onClick={() => setIsSidebarOpen(true)}
-      >
+      <Button variant="ghost" size="icon" className="lg:hidden text-brand-text-muted h-11 w-11 shrink-0" onClick={() => setIsSidebarOpen(true)}>
         <Menu className="h-6 w-6" />
       </Button>
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (
+
+      {activeTable === 'AudioSetup' ? (
+        <div className="flex items-center gap-3">
+          <div className="h-8 w-8 bg-indigo-600 rounded flex items-center justify-center relative shadow-sm shrink-0">
+            <Radio className="text-white absolute animate-pulse" size={16} />
+            <Radio className="text-white" size={16} />
+          </div>
+          <div>
+            <div className="flex items-center gap-2 flex-wrap">
+              <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase italic leading-none">
+                SRMD AV Audio Setup <span className="text-indigo-600">Hub</span>
+              </h1>
+              
+            </div>
+            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-1.5 flex items-center gap-1.5">
+              <span>REVISED DISCOURSE GUIDELINES</span>
+              <span>•</span>
+              <span className="bg-indigo-50 text-indigo-700 px-1 rounded font-mono">S.O.P. MANUAL</span>
+            </p>
+          </div>
+        </div>
+      ) : (activeTable !== 'Home' && activeTable !== 'UserManagement') && (
         <>
           {/* Desktop search */}
               <div className="relative hidden sm:block shrink min-w-[120px] flex-1 max-w-[240px]">
@@ -6350,7 +6368,23 @@ thead.sticky th.sticky {
     </div>
 
     {/* Right: desktop toolbar items + inbox (inbox always visible here) */}
-        <div className="flex flex-wrap items-center justify-end gap-1.5 md:gap-2 flex-1 min-w-0">
+    <div className="flex flex-wrap items-center justify-end gap-1.5 md:gap-2 flex-1 min-w-0">
+      {activeTable === 'AudioSetup' ? (
+        <div className="flex items-center gap-3.5 text-xs font-mono">
+          <div className="hidden sm:flex bg-slate-50 p-2 border border-slate-200 rounded-md items-center gap-2 font-bold text-slate-600">
+            <Calendar className="text-slate-400" size={13} />
+            <span>SOP REFDATE: 2026-05-28</span>
+          </div>
+          <Button
+            onClick={() => setActiveTable('DyatraChecklist')}
+            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-bold flex items-center gap-1.5 transition-all text-[11px] shadow-sm"
+          >
+            <ClipboardCheck size={14} />
+            <span className="hidden sm:inline">Go to Checklist</span>
+          </Button>
+        </div>
+      ) : (
+        <>
       {/* Desktop view switcher */}
       {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (
         <div className="hidden sm:flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-11 items-center">
@@ -6581,7 +6615,8 @@ thead.sticky th.sticky {
           <span className="hidden xl:inline uppercase text-xs font-bold tracking-wide">Add Record</span>
         </Button>
       )}
-
+        </>
+      )}
       {/* Inbox — always in top row so it lines up with hamburger on all pages */}
       {user && (
         <>
@@ -6681,7 +6716,7 @@ thead.sticky th.sticky {
 </header>
 
       {/* Mobile search bar (expands below header when toggled) */}
-      {activeTable !== 'Home' && activeTable !== 'AudioSetup' && mobileSearchOpen && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && mobileSearchOpen && (
         <div className="sm:hidden px-4 py-2.5 bg-white border-b border-slate-200 shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -6702,7 +6737,7 @@ thead.sticky th.sticky {
       )}
 
       {/* Mobile-only active filter bar */}
-      {activeTable !== 'Home' && activeTable !== 'AudioSetup' && (groupByFields.length > 0 || sortBy) && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (groupByFields.length > 0 || sortBy) && (
         <div className="sm:hidden flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-200 overflow-x-auto shrink-0">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Active:</span>
           {groupByFields.length > 0 && (
@@ -7100,7 +7135,7 @@ thead.sticky th.sticky {
             ) : activeTable === 'UserManagement' ? (
               ['admin', 'owner'].includes(user?.role) ? <UserManagement currentUser={user} onToast={showToast} /> : null
             ) : activeTable === 'AudioSetup' ? (
-              <AudioSetupVisualizer {...({ onChecklistClick: () => setActiveTable('DyatraChecklist') } as any)} />
+              <AudioSetupVisualizer />
             ) : (
               <>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
