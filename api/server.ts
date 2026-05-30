@@ -388,7 +388,69 @@ async function createAssignmentNotifications(db: any, collection: string, record
 /**
  * DYNAMIC CRUD ROUTES
  */
-const collections = ['events', 'sessions', 'musiclog', 'videolog', 'checklist', 'locations', 'led_details', 'rentals', 'guidance', 'media', 'videosetup', 'audiosetup'];
+/**
+ * EQUIPMENT — atomic stock movement
+ * POST /api/equipment-movement
+ * Creates a movement record AND updates Available Qty + Status in one transaction.
+ */
+app.post('/api/equipment-movement', async (req, res) => {
+  try {
+    const db = await getDb();
+    const { movement, equipmentId } = req.body as {
+      movement: Record<string, any>;
+      equipmentId: string;
+    };
+
+    if (!equipmentId || !movement) {
+      return res.status(400).json({ error: 'equipmentId and movement are required' });
+    }
+
+    const movementType: string = movement['Movement Type'] || 'stock-in';
+    const qty = Number(movement['Qty']) || 1;
+    const isIn = movementType === 'stock-in';
+
+    // Fetch current equipment to validate and compute new qty
+    const equipment = await db.collection('equipment').findOne({ _id: new ObjectId(equipmentId) });
+    if (!equipment) return res.status(404).json({ error: 'Equipment not found' });
+
+    const currentAvail = Number(equipment['Available Qty'] ?? 0);
+    if (!isIn && qty > currentAvail) {
+      return res.status(400).json({ error: `Only ${currentAvail} unit(s) available for dispatch` });
+    }
+
+    const newAvail = isIn ? currentAvail + qty : currentAvail - qty;
+    const reason: string = movement['Reason'] || '';
+    let newStatus: string;
+    if (!isIn && reason === 'Sent for Repair') {
+      newStatus = 'in-repair';
+    } else if (isIn && reason === 'Return from Repair') {
+      newStatus = newAvail > 0 ? 'available' : 'checked-out';
+    } else {
+      newStatus = newAvail === 0 ? 'checked-out' : 'available';
+    }
+
+    // Insert movement record
+    const movementDoc = { ...movement, created_at: new Date() };
+    const mvResult = await db.collection('equipment_movements').insertOne(movementDoc);
+
+    // Update equipment available qty + status atomically
+    await db.collection('equipment').updateOne(
+      { _id: new ObjectId(equipmentId) },
+      { $set: { 'Available Qty': newAvail, Status: newStatus, updated_at: new Date() } }
+    );
+
+    res.status(201).json({
+      movement: { ...movementDoc, _id: mvResult.insertedId },
+      newAvailableQty: newAvail,
+      newStatus,
+    });
+  } catch (e) {
+    console.error('Stock movement error:', e);
+    res.status(500).json({ error: 'Stock movement failed' });
+  }
+});
+
+const collections = ['events', 'sessions', 'musiclog', 'videolog', 'checklist', 'locations', 'led_details', 'rentals', 'guidance', 'media', 'videosetup', 'audiosetup', 'equipment', 'equipment_movements'];
 
 collections.forEach(col => {
   // GET ALL

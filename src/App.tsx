@@ -1,14 +1,18 @@
 ﻿﻿
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
-import { 
-  Event, 
-  MediaItem, 
-  ChecklistItem, 
-  LEDDetail, 
-  RentalItem, 
-  Guidance 
+import {
+  Event,
+  MediaItem,
+  ChecklistItem,
+  LEDDetail,
+  RentalItem,
+  Guidance,
+  EquipmentItem,
+  EquipmentMovement,
 } from './types';
+import jsQR from 'jsqr';
+import QRCode from 'qrcode';
 import { getGeminiResponse } from './lib/gemini';
 
 // UI Components
@@ -90,6 +94,15 @@ import {
   UserCheck,
   Radio ,
   ClipboardCheck,
+  Package,
+  QrCode,
+  ScanLine,
+  ArrowLeftRight,
+  ArrowDownToLine,
+  ArrowUpFromLine,
+  Boxes,
+  Wrench,
+  RotateCcw,
 } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import AudioSetupVisualizer from './AudioSetupVisualizer';
@@ -186,7 +199,7 @@ const getTagStyle = (val: any) => {
   return [base, TAG_COLORS[index]].join(' ');
 };
 
-const ALL_TABLES = ['Events', 'Session', 'MusicLog', 'VideoLog', 'Tracks', 'DyatraChecklist', 'Guidance & Learning', 'LED', 'DataSharing', 'VideoSetup', 'AudioSetup'];
+const ALL_TABLES = ['Events', 'Session', 'MusicLog', 'VideoLog', 'Tracks', 'DyatraChecklist', 'Guidance & Learning', 'LED', 'DataSharing', 'VideoSetup', 'AudioSetup', 'Equipment', 'EquipmentMovements'];
 
 // RBAC Permission Checker
 const hasPerm = (user: any, table: string, action: 'view' | 'add' | 'edit' | 'delete') => {
@@ -1560,6 +1573,16 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   const [step, setStep] = useState(0);
   const draftRef = useRef(draft);
   draftRef.current = draft;
+  const [qrDataUrl, setQrDataUrl] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (tableName !== 'Equipment') return;
+    const tag = draft['Asset Tag'];
+    if (!tag) return;
+    QRCode.toDataURL(String(tag), { width: 200, margin: 2, color: { dark: '#1e293b', light: '#ffffff' } })
+      .then(url => setQrDataUrl(url))
+      .catch(() => {});
+  }, [tableName, draft['Asset Tag']]);
 
   useEffect(() => {
     const imageCols = ['Images', 'Attachments', 'Attachment', 'images', 'attachments'];
@@ -1715,7 +1738,8 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
       case 'Tracks': return 'media'; case 'DyatraChecklist': return 'checklist';
       case 'Guidance & Learning': return 'guidance'; case 'LED': return 'led_details';
       case 'DataSharing': return 'locations'; case 'VideoSetup': return 'videosetup';
-      case 'AudioSetup': return 'audiosetup'; default: return tableName.toLowerCase();
+      case 'AudioSetup': return 'audiosetup'; case 'Equipment': return 'equipment';
+      case 'EquipmentMovements': return 'equipment_movements'; default: return tableName.toLowerCase();
     }
   })();
   const [comments, setComments] = useState<any[]>([]);
@@ -1823,6 +1847,8 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
       case 'LED': return 'LedId';
       case 'DataSharing': return 'Sevak';
       case 'VideoSetup': case 'AudioSetup': return 'Name';
+      case 'Equipment': return 'Name';
+      case 'EquipmentMovements': return 'Equipment Name';
       default: return 'name';
     }
   };
@@ -2177,6 +2203,24 @@ if (hasDropdown) {
 
   const sidebarContent = (
     <>
+      {tableName === 'Equipment' && draft['Asset Tag'] && (
+        <div className="p-4 border-b border-slate-200">
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] mb-3">QR Code</div>
+          <div className="flex flex-col items-center gap-3">
+            {qrDataUrl ? (
+              <>
+                <img src={qrDataUrl} alt={`QR for ${draft['Asset Tag']}`} className="w-36 h-36 rounded-xl border border-slate-200 shadow-sm" />
+                <div className="text-[11px] font-mono font-black text-brand-primary bg-brand-primary/10 px-3 py-1 rounded-lg border border-brand-primary/20">{draft['Asset Tag']}</div>
+                <a href={qrDataUrl} download={`${draft['Asset Tag']}.png`} className="text-[11px] font-black text-brand-primary hover:underline flex items-center gap-1">
+                  <Download className="h-3 w-3" /> Download QR
+                </a>
+              </>
+            ) : (
+              <div className="text-[11px] text-slate-400 italic">Generating…</div>
+            )}
+          </div>
+        </div>
+      )}
       {isEv && (
         <div className="p-4 border-b border-slate-200">
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] mb-3">Linked Sessions</div>
@@ -3167,6 +3211,682 @@ const FilterNodeUI = ({ node, onChange, onDelete, columns, getOptions, depth = 0
   }
 };
 
+// ── Inventory Module ─────────────────────────────────────────────────────────
+const CATEGORY_ICONS: Record<string, string> = {
+  'Microphone': '🎤', 'Speaker': '🔊', 'Amplifier': '🎛️', 'Projector': '📽️',
+  'Screen': '🖥️', 'LED Panel': '💡', 'Camera': '📷', 'Tripod': '📐',
+  'Cable': '🔌', 'Stand': '🎙️', 'Laptop': '💻', 'Mixer': '🎚️',
+  'Lighting': '💡', 'Other': '📦',
+};
+
+const InventoryModule = React.memo(({
+  equipment, movements, events: evts, currentUser,
+  onCheckOut, onCheckIn, onScanQR, onExpandRecord, onAddEquipment, onDeleteItem,
+}: {
+  equipment: any[]; movements: any[]; events: any[]; currentUser?: any;
+  onCheckOut: (item: any) => void; onCheckIn: (item: any) => void;
+  onScanQR: () => void; onExpandRecord: (item: any) => void;
+  onAddEquipment: (data: any) => Promise<void>; onDeleteItem: (item: any) => void;
+}) => {
+  const [view, setView] = useState<'inventory'|'log'>('inventory');
+  const [tab, setTab] = useState<'all'|'available'|'out'|'repair'>('all');
+  const [search, setSearch] = useState('');
+  const [catFilter, setCatFilter] = useState('');
+  const [logSearch, setLogSearch] = useState('');
+  const [addOpen, setAddOpen] = useState(false);
+  const [adding, setAdding] = useState(false);
+  const [addForm, setAddForm] = useState<any>({ Status: 'available', 'Total Qty': 1 });
+
+  // ── Derived stats ──────────────────────────────────────────────────────────
+  const totalItems = equipment.length;
+  const totalUnits = equipment.reduce((s, e) => s + (Number(e['Total Qty']) || 0), 0);
+  const availableUnits = equipment.reduce((s, e) => s + (Number(e['Available Qty']) || 0), 0);
+  const checkedOutUnits = totalUnits - availableUnits;
+  const inRepairCount = equipment.filter(e => e['Status'] === 'in-repair').length;
+
+  // ── Latest movement per item ────────────────────────────────────────────────
+  const latestOut = useMemo(() => {
+    const map: Record<string, any> = {};
+    movements.forEach(m => {
+      const tag = m['Asset Tag'];
+      if (!tag) return;
+      const prev = map[tag];
+      if (!prev || new Date(m['Date']) >= new Date(prev['Date'])) {
+        if (m['Movement Type'] === 'stock-out') map[tag] = m;
+        else if (m['Movement Type'] === 'stock-in') delete map[tag];
+      }
+    });
+    return map;
+  }, [movements]);
+
+  // ── Filter ─────────────────────────────────────────────────────────────────
+  const filtered = useMemo(() => {
+    return equipment.filter(eq => {
+      const avail = Number(eq['Available Qty'] ?? eq['Total Qty'] ?? 0);
+      const total = Number(eq['Total Qty'] ?? 0);
+      if (tab === 'available' && avail === 0) return false;
+      if (tab === 'out' && avail >= total && eq['Status'] !== 'checked-out') return false;
+      if (tab === 'repair' && eq['Status'] !== 'in-repair') return false;
+      if (catFilter && eq['Category'] !== catFilter) return false;
+      if (search) {
+        const q = search.toLowerCase();
+        if (!eq['Name']?.toLowerCase().includes(q) && !eq['Asset Tag']?.toLowerCase().includes(q) && !eq['Category']?.toLowerCase().includes(q)) return false;
+      }
+      return true;
+    });
+  }, [equipment, tab, search, catFilter]);
+
+  const categories = useMemo(() => [...new Set(equipment.map(e => e['Category']).filter(Boolean))].sort(), [equipment]);
+
+  // ── Add form helpers ───────────────────────────────────────────────────────
+  const nextTag = `EQ-${String(equipment.length + 1).padStart(3, '0')}`;
+  const catOpts = categories.length ? categories : ['Microphone','Speaker','Amplifier','Projector','Screen','LED Panel','Camera','Tripod','Cable','Stand','Laptop','Mixer','Lighting','Other'];
+
+  const submitAdd = async () => {
+    if (!addForm['Name']) return;
+    setAdding(true);
+    const data = {
+      'Asset Tag': addForm['Asset Tag'] || nextTag,
+      'Name': addForm['Name'],
+      'Category': addForm['Category'] || 'Other',
+      'Serial No': addForm['Serial No'] || '',
+      'Total Qty': Number(addForm['Total Qty']) || 1,
+      'Available Qty': Number(addForm['Total Qty']) || 1,
+      'Status': addForm['Status'] || 'available',
+      'Location': addForm['Location'] || '',
+      'Purchase Date': addForm['Purchase Date'] || '',
+      'Warranty Expiry': addForm['Warranty Expiry'] || '',
+      'Notes': addForm['Notes'] || '',
+    };
+    await onAddEquipment(data);
+    setAdding(false);
+    setAddOpen(false);
+    setAddForm({ Status: 'available', 'Total Qty': 1 });
+  };
+
+  const inputCls = "w-full h-10 bg-white border border-slate-200 rounded-xl px-3.5 text-[13px] font-medium text-slate-900 placeholder:text-slate-400 focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 outline-none transition-all";
+  const labelCls = "text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-1.5 block";
+
+  // ── Tab config ─────────────────────────────────────────────────────────────
+  const tabs = [
+    { key: 'all', label: 'All', count: equipment.length },
+    { key: 'available', label: 'Available', count: equipment.filter(e => (e['Available Qty'] ?? 0) > 0).length },
+    { key: 'out', label: 'Checked Out', count: equipment.filter(e => (e['Available Qty'] ?? e['Total Qty']) < (e['Total Qty'] ?? 0) || e['Status'] === 'checked-out').length },
+    { key: 'repair', label: 'In Repair', count: inRepairCount },
+  ] as const;
+
+  // ── Transaction log (event-linked movements, newest first) ────────────────
+  const logMovements = useMemo(() => {
+    const sorted = [...movements].sort((a, b) => new Date(b['Date'] || b.created_at).getTime() - new Date(a['Date'] || a.created_at).getTime());
+    if (!logSearch) return sorted;
+    const q = logSearch.toLowerCase();
+    return sorted.filter(m =>
+      m['Equipment Name']?.toLowerCase().includes(q) ||
+      m['Asset Tag']?.toLowerCase().includes(q) ||
+      m['Linked Event']?.toLowerCase().includes(q) ||
+      m['Reason']?.toLowerCase().includes(q) ||
+      m['Operator']?.toLowerCase().includes(q)
+    );
+  }, [movements, logSearch]);
+
+  // Group log entries by date string for display
+  const logByDate = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    logMovements.forEach(m => {
+      const raw = m['Date'] || (m.created_at ? String(m.created_at).split('T')[0] : '');
+      const key = raw ? raw.split('T')[0] : 'Unknown date';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(m);
+    });
+    return Object.entries(groups);
+  }, [logMovements]);
+
+  return (
+    <div className="flex flex-col h-full min-h-0 bg-slate-50">
+      {/* ── Top bar ── */}
+      <div className="shrink-0 px-5 pt-5 pb-4 bg-white border-b border-slate-200">
+        <div className="flex items-center justify-between mb-4">
+          <div className="flex items-center gap-3">
+            <div className="h-10 w-10 rounded-2xl bg-brand-primary flex items-center justify-center shadow-sm shrink-0">
+              <Boxes className="h-5 w-5 text-white" />
+            </div>
+            <div>
+              <h1 className="text-[18px] font-black text-slate-900 leading-tight">Equipment Inventory</h1>
+              <p className="text-[11px] text-slate-500">{totalItems} items · {availableUnits}/{totalUnits} units available</p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={onScanQR} className="flex items-center gap-1.5 h-9 px-3 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-[12px] font-black uppercase tracking-wide transition-all">
+              <ScanLine className="h-3.5 w-3.5 shrink-0" /><span className="hidden sm:inline">Scan QR</span>
+            </button>
+            <button onClick={() => setAddOpen(true)} className="flex items-center gap-1.5 h-9 px-3 rounded-xl bg-brand-primary hover:bg-brand-primary/90 text-white text-[12px] font-black uppercase tracking-wide transition-all shadow-md">
+              <Plus className="h-3.5 w-3.5 shrink-0" /><span className="hidden sm:inline">Add Item</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Stats */}
+        <div className="grid grid-cols-4 gap-3 mb-4">
+          {[
+            { label: 'Total Items', value: totalItems, color: 'text-slate-900', bg: 'bg-slate-100', onClick: undefined },
+            { label: 'Available', value: availableUnits, color: 'text-green-700', bg: 'bg-green-50', onClick: () => { setView('inventory'); setTab('available'); } },
+            { label: 'Checked Out', value: checkedOutUnits, color: 'text-orange-700', bg: 'bg-orange-50', onClick: () => { setView('inventory'); setTab('out'); } },
+            { label: 'In Repair', value: inRepairCount, color: 'text-yellow-700', bg: 'bg-yellow-50', onClick: () => { setView('inventory'); setTab('repair'); } },
+          ].map(s => (
+            <div key={s.label} onClick={s.onClick} className={`${s.bg} rounded-2xl p-3 text-center ${s.onClick ? 'cursor-pointer hover:opacity-80 transition-opacity' : ''}`}>
+              <div className={`text-[22px] font-black ${s.color}`}>{s.value}</div>
+              <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wide mt-0.5">{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* View toggle + search */}
+        <div className="flex items-center gap-3">
+          <div className="flex bg-slate-100 rounded-xl p-1 gap-1 shrink-0">
+            <button onClick={() => setView('inventory')} className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wide transition-all flex items-center gap-1.5 ${view === 'inventory' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              <Package className="h-3 w-3" />Inventory
+            </button>
+            <button onClick={() => setView('log')} className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wide transition-all flex items-center gap-1.5 ${view === 'log' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+              <ArrowLeftRight className="h-3 w-3" />Log <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black ml-0.5 ${view === 'log' ? 'bg-brand-primary text-white' : 'bg-slate-200 text-slate-500'}`}>{movements.length}</span>
+            </button>
+          </div>
+          {view === 'inventory' ? (
+            <div className="flex items-center gap-2 flex-1 max-w-sm">
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+                <input className="w-full h-9 pl-9 pr-3 bg-slate-100 rounded-xl text-[12px] outline-none focus:bg-white focus:ring-2 focus:ring-brand-primary/30 transition-all" placeholder="Search equipment…" value={search} onChange={e => setSearch(e.target.value)} />
+              </div>
+              <select className="h-9 pl-3 pr-8 bg-slate-100 rounded-xl text-[12px] outline-none focus:bg-white focus:ring-2 focus:ring-brand-primary/30 transition-all" value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+                <option value="">All Categories</option>
+                {categories.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+          ) : (
+            <div className="relative flex-1 max-w-sm">
+              <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
+              <input className="w-full h-9 pl-9 pr-3 bg-slate-100 rounded-xl text-[12px] outline-none focus:bg-white focus:ring-2 focus:ring-brand-primary/30 transition-all" placeholder="Search by event, equipment, operator…" value={logSearch} onChange={e => setLogSearch(e.target.value)} />
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ── Inventory tabs (hidden in log view) ── */}
+      {view === 'inventory' && (
+        <div className="shrink-0 px-5 pt-3 pb-0 bg-white border-b border-slate-200">
+          <div className="flex gap-1">
+            {tabs.map(t => (
+              <button key={t.key} onClick={() => setTab(t.key as any)} className={`px-3 py-2 rounded-t-lg text-[12px] font-black uppercase tracking-wide transition-all flex items-center gap-1.5 ${tab === t.key ? 'text-brand-primary border-b-2 border-brand-primary bg-brand-primary/5' : 'text-slate-500 hover:text-slate-700'}`}>
+                {t.label} <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${tab === t.key ? 'bg-brand-primary text-white' : 'bg-slate-200 text-slate-500'}`}>{t.count}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {view === 'log' ? (
+        /* ── Transaction Log ── */
+        <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0">
+          {logByDate.length === 0 ? (
+            <div className="flex flex-col items-center justify-center py-20 text-center">
+              <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4"><ArrowLeftRight className="h-8 w-8 text-slate-400" /></div>
+              <div className="text-[14px] font-black text-slate-600">No transactions yet</div>
+              <div className="text-[12px] text-slate-400 mt-1">Dispatch or return equipment to see the log</div>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {logByDate.map(([dateKey, entries]) => (
+                <div key={dateKey}>
+                  {/* Date header */}
+                  <div className="flex items-center gap-3 mb-3">
+                    <div className="h-px flex-1 bg-slate-200" />
+                    <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-full border border-slate-200">
+                      {(() => {
+                        const d = new Date(dateKey + 'T12:00:00');
+                        return isNaN(d.getTime()) ? dateKey : d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+                      })()}
+                    </span>
+                    <div className="h-px flex-1 bg-slate-200" />
+                  </div>
+                  {/* Entries for this date */}
+                  <div className="space-y-2">
+                    {entries.map((m: any, idx: number) => {
+                      const isIn = m['Movement Type'] === 'stock-in';
+                      const isRepair = m['Reason'] === 'Sent for Repair' || m['Reason'] === 'Return from Repair';
+                      const dotColor = isRepair ? 'bg-yellow-400' : isIn ? 'bg-green-500' : 'bg-orange-500';
+                      const typeLabel = isIn ? (m['Reason'] === 'Return from Repair' ? 'Repaired' : 'Returned') : (m['Reason'] === 'Sent for Repair' ? 'To Repair' : 'Dispatched');
+                      const typeCls = isIn ? (isRepair ? 'bg-yellow-50 border-yellow-100 text-yellow-800' : 'bg-green-50 border-green-100 text-green-800') : (isRepair ? 'bg-yellow-50 border-yellow-100 text-yellow-800' : 'bg-orange-50 border-orange-100 text-orange-800');
+                      return (
+                        <div key={m._id || idx} className="flex items-start gap-3 p-3.5 bg-white rounded-2xl border border-slate-200 hover:border-slate-300 transition-colors">
+                          <div className={`h-2.5 w-2.5 rounded-full ${dotColor} mt-1.5 shrink-0`} />
+                          <div className="flex-1 min-w-0">
+                            <div className="flex items-center flex-wrap gap-2 mb-1">
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${typeCls} uppercase tracking-wide`}>{typeLabel}</span>
+                              <span className="font-mono text-[11px] font-black text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded border border-brand-primary/20">{m['Asset Tag'] || '—'}</span>
+                              <span className="text-[13px] font-bold text-slate-900 truncate">{m['Equipment Name'] || '—'}</span>
+                              <span className="text-[12px] font-black text-slate-700 ml-auto shrink-0">×{m['Qty'] || 1}</span>
+                            </div>
+                            <div className="flex items-center flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-slate-500">
+                              {m['Linked Event'] && (
+                                <span className="flex items-center gap-1 font-bold text-slate-700">
+                                  <Calendar className="h-3 w-3 text-brand-primary shrink-0" />
+                                  {m['Linked Event']}
+                                </span>
+                              )}
+                              {m['Reason'] && <span className="text-slate-400">{m['Reason']}</span>}
+                              {m['Operator'] && <span className="flex items-center gap-1"><span className="text-slate-400">By</span> {m['Operator']}</span>}
+                            </div>
+                            {m['Notes'] && <div className="mt-1 text-[11px] text-slate-400 italic">{m['Notes']}</div>}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+      ) : (
+      /* ── Equipment list ── */
+      <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0 space-y-3">
+            {filtered.length === 0 ? (
+              <div className="flex flex-col items-center justify-center py-20 text-center">
+                <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4"><Package className="h-8 w-8 text-slate-400" /></div>
+                <div className="text-[14px] font-black text-slate-600">No equipment found</div>
+                <div className="text-[12px] text-slate-400 mt-1">{search ? 'Try a different search term' : 'Add your first item to get started'}</div>
+                {!search && <button onClick={() => setAddOpen(true)} className="mt-4 h-10 px-4 rounded-xl bg-brand-primary text-white text-[12px] font-black uppercase tracking-wide"><Plus className="h-3.5 w-3.5 inline mr-1" />Add Item</button>}
+              </div>
+            ) : (
+              filtered.map(eq => {
+                const tag = eq['Asset Tag'];
+                const avail = Number(eq['Available Qty'] ?? 0);
+                const total = Number(eq['Total Qty'] ?? 0);
+                const pct = total > 0 ? avail / total : 0;
+                const isOut = avail < total;
+                const isRepair = eq['Status'] === 'in-repair';
+                const outInfo = latestOut[tag];
+                const catIcon = CATEGORY_ICONS[eq['Category']] || '📦';
+                const statusColor = isRepair ? 'bg-yellow-50 border-yellow-100' : avail === 0 ? 'bg-orange-50 border-orange-100' : isOut ? 'bg-blue-50 border-blue-100' : 'bg-white border-slate-200';
+
+                return (
+                  <div key={tag || eq._id || eq.id} className={`${statusColor} border rounded-2xl p-4 transition-all hover:shadow-sm group`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0 flex-1">
+                        <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-[20px] shrink-0 mt-0.5">{catIcon}</div>
+                        <div className="min-w-0 flex-1">
+                          <div className="flex items-center gap-2 flex-wrap mb-1">
+                            <span className="font-mono text-[11px] font-black text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded border border-brand-primary/20">{tag || '—'}</span>
+                            {eq['Category'] && <span className="text-[11px] font-bold text-slate-500 bg-slate-100 px-2 py-0.5 rounded-lg">{catIcon} {eq['Category']}</span>}
+                          </div>
+                          <div className="text-[15px] font-black text-slate-900 truncate">{eq['Name'] || '—'}</div>
+                          {eq['Location'] && <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1"><MapPin className="h-3 w-3" />{eq['Location']}</div>}
+                          {outInfo && outInfo['Linked Event'] && (
+                            <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-orange-700 bg-orange-50 border border-orange-100 rounded-lg px-2 py-1 w-fit">
+                              <Calendar className="h-3 w-3 shrink-0" />
+                              <span className="font-bold">{total - avail} unit{total - avail > 1 ? 's' : ''}</span>
+                              <span className="text-orange-500">→</span>
+                              <span className="font-black">{outInfo['Linked Event']}</span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+
+                      {/* Qty + Status */}
+                      <div className="flex flex-col items-end gap-2 shrink-0">
+                        <div className="text-right">
+                          <div className={`text-[18px] font-black leading-tight ${avail === 0 ? 'text-red-600' : isOut ? 'text-orange-600' : 'text-green-600'}`}>{avail}</div>
+                          <div className="text-[10px] text-slate-400 font-bold">/ {total} units</div>
+                        </div>
+                        <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
+                          <div className={`h-full rounded-full transition-all ${avail === 0 ? 'bg-red-500' : isOut ? 'bg-orange-400' : 'bg-green-500'}`} style={{ width: `${pct * 100}%` }} />
+                        </div>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isRepair ? 'bg-yellow-100 text-yellow-700' : avail === 0 ? 'bg-red-100 text-red-700' : isOut ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                          {isRepair ? 'In Repair' : avail === 0 ? 'All Out' : isOut ? `${total - avail} Out` : 'Available'}
+                        </span>
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+                      {avail > 0 && !isRepair && (
+                        <button onClick={() => onCheckOut(eq)} className="flex items-center gap-1.5 h-8 px-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-black uppercase tracking-wide transition-all">
+                          <ArrowUpFromLine className="h-3 w-3" />Dispatch
+                        </button>
+                      )}
+                      {isOut && (
+                        <button onClick={() => onCheckIn(eq)} className="flex items-center gap-1.5 h-8 px-3 rounded-xl bg-green-600 hover:bg-green-700 text-white text-[11px] font-black uppercase tracking-wide transition-all">
+                          <ArrowDownToLine className="h-3 w-3" />Return
+                        </button>
+                      )}
+                      <button onClick={() => onExpandRecord(eq)} className="flex items-center gap-1.5 h-8 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-[11px] font-black uppercase tracking-wide transition-all ml-auto">
+                        <Eye className="h-3 w-3" />Details
+                      </button>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+          </div>
+      )}
+
+      {/* ── Add Equipment Sheet ── */}
+      {addOpen && createPortal(
+        <div className="fixed inset-0 z-[700] flex items-end sm:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)' }} onClick={() => setAddOpen(false)}>
+          <div className="w-full sm:max-w-lg bg-white sm:rounded-2xl rounded-t-3xl shadow-2xl flex flex-col max-h-[90vh]" onClick={e => e.stopPropagation()}>
+            <div className="flex justify-center pt-3 pb-1 shrink-0 sm:hidden"><div className="w-10 h-1 bg-slate-300 rounded-full" /></div>
+            <div className="px-5 pt-4 pb-3 flex items-center justify-between shrink-0 border-b border-slate-100">
+              <div>
+                <div className="text-[16px] font-black text-slate-900">Add Equipment</div>
+                <div className="text-[11px] text-slate-400">A QR code will be generated automatically</div>
+              </div>
+              <button onClick={() => setAddOpen(false)} className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"><X className="h-4 w-4" /></button>
+            </div>
+            <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0 space-y-4">
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className={labelCls}>Asset Tag</label><input className={inputCls + ' font-mono'} placeholder={nextTag} value={addForm['Asset Tag'] || ''} onChange={e => setAddForm((f: any) => ({...f, 'Asset Tag': e.target.value}))} /></div>
+                <div><label className={labelCls}>Name *</label><input className={inputCls} placeholder="Equipment name" value={addForm['Name'] || ''} onChange={e => setAddForm((f: any) => ({...f, 'Name': e.target.value}))} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className={labelCls}>Category</label>
+                  <select className={inputCls} value={addForm['Category'] || ''} onChange={e => setAddForm((f: any) => ({...f, 'Category': e.target.value}))}>
+                    <option value="">Select…</option>{catOpts.map(c => <option key={c} value={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div><label className={labelCls}>Serial No</label><input className={inputCls + ' font-mono'} placeholder="Serial number" value={addForm['Serial No'] || ''} onChange={e => setAddForm((f: any) => ({...f, 'Serial No': e.target.value}))} /></div>
+              </div>
+              <div className="grid grid-cols-3 gap-4">
+                <div><label className={labelCls}>Total Qty</label><input type="number" min={1} className={inputCls} value={addForm['Total Qty'] || 1} onChange={e => setAddForm((f: any) => ({...f, 'Total Qty': Number(e.target.value)}))} /></div>
+                <div><label className={labelCls}>Status</label>
+                  <select className={inputCls} value={addForm['Status'] || 'available'} onChange={e => setAddForm((f: any) => ({...f, 'Status': e.target.value}))}>
+                    <option value="available">Available</option><option value="in-repair">In Repair</option><option value="retired">Retired</option>
+                  </select>
+                </div>
+                <div><label className={labelCls}>Location</label><input className={inputCls} placeholder="Warehouse, Van…" value={addForm['Location'] || ''} onChange={e => setAddForm((f: any) => ({...f, 'Location': e.target.value}))} /></div>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div><label className={labelCls}>Purchase Date</label><input type="date" className={inputCls} value={addForm['Purchase Date'] || ''} onChange={e => setAddForm((f: any) => ({...f, 'Purchase Date': e.target.value}))} /></div>
+                <div><label className={labelCls}>Warranty Expiry</label><input type="date" className={inputCls} value={addForm['Warranty Expiry'] || ''} onChange={e => setAddForm((f: any) => ({...f, 'Warranty Expiry': e.target.value}))} /></div>
+              </div>
+              <div><label className={labelCls}>Notes</label><textarea className={inputCls + ' h-16 py-2.5 resize-none'} placeholder="Any notes…" value={addForm['Notes'] || ''} onChange={e => setAddForm((f: any) => ({...f, 'Notes': e.target.value}))} /></div>
+            </div>
+            <div className="px-5 py-4 border-t border-slate-100 shrink-0 flex gap-3" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+              <button onClick={() => setAddOpen(false)} className="flex-1 h-12 border border-slate-200 rounded-2xl text-[12px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
+              <button onClick={submitAdd} disabled={adding || !addForm['Name']} className="flex-[2] h-12 bg-brand-primary hover:bg-brand-primary/90 text-white rounded-2xl text-[12px] font-black uppercase tracking-widest transition-all disabled:opacity-50 shadow-md">
+                {adding ? 'Saving…' : 'Add Equipment'}
+              </button>
+            </div>
+          </div>
+        </div>,
+        document.body
+      )}
+    </div>
+  );
+});
+
+// ── QR Scanner Modal ─────────────────────────────────────────────────────────
+const QRScannerModal = React.memo(({ onClose, equipment, onAction }: {
+  onClose: () => void;
+  equipment: any[];
+  onAction: (item: any, type: 'stock-in' | 'stock-out' | 'view') => void;
+}) => {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const animRef = useRef<number>();
+  const streamRef = useRef<MediaStream | null>(null);
+  const activeRef = useRef(true);
+  const scanningRef = useRef(true);
+  const [error, setError] = useState<string | null>(null);
+  const [scanned, setScanned] = useState<any | null>(null);
+
+  const startScan = (video: HTMLVideoElement) => {
+    const tick = () => {
+      if (!activeRef.current || !scanningRef.current) return;
+      const canvas = canvasRef.current;
+      if (canvas && video.readyState === video.HAVE_ENOUGH_DATA) {
+        canvas.width = video.videoWidth;
+        canvas.height = video.videoHeight;
+        const ctx = canvas.getContext('2d');
+        if (ctx) {
+          ctx.drawImage(video, 0, 0);
+          const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          const code = jsQR(imageData.data, imageData.width, imageData.height, { inversionAttempts: 'dontInvert' });
+          if (code?.data) {
+            const found = equipment.find(e => e['Asset Tag'] === code.data || e['Name'] === code.data);
+            if (found) { scanningRef.current = false; setScanned(found); return; }
+          }
+        }
+      }
+      animRef.current = requestAnimationFrame(tick);
+    };
+    animRef.current = requestAnimationFrame(tick);
+  };
+
+  useEffect(() => {
+    navigator.mediaDevices?.getUserMedia({ video: { facingMode: 'environment' } })
+      .then(stream => {
+        if (!activeRef.current) { stream.getTracks().forEach(t => t.stop()); return; }
+        streamRef.current = stream;
+        const video = videoRef.current;
+        if (video) { video.srcObject = stream; video.play().then(() => startScan(video)).catch(() => {}); }
+      })
+      .catch(() => setError('Camera access denied — please allow camera permissions and try again.'));
+    return () => {
+      activeRef.current = false;
+      if (animRef.current) cancelAnimationFrame(animRef.current);
+      streamRef.current?.getTracks().forEach(t => t.stop());
+    };
+  }, []);
+
+  const rescan = () => { setScanned(null); scanningRef.current = true; if (videoRef.current) startScan(videoRef.current); };
+
+  const eqStatus = scanned?.['Status'];
+  const statusLabel = eqStatus === 'available' ? 'Available' : eqStatus === 'checked-out' ? 'Checked Out' : eqStatus === 'in-repair' ? 'In Repair' : eqStatus === 'retired' ? 'Retired' : eqStatus || '—';
+  const statusCls = eqStatus === 'available' ? 'bg-green-100 text-green-700' : eqStatus === 'checked-out' ? 'bg-orange-100 text-orange-700' : eqStatus === 'in-repair' ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-600';
+
+  return createPortal(
+    <div className="fixed inset-0 z-[700] flex flex-col bg-black/95" onClick={e => e.stopPropagation()}>
+      {/* Header */}
+      <div className="flex items-center justify-between px-5 pt-5 pb-3 shrink-0">
+        <div className="flex items-center gap-2.5">
+          <div className="h-8 w-8 rounded-xl bg-brand-primary/20 flex items-center justify-center"><ScanLine className="h-4 w-4 text-brand-primary" /></div>
+          <div>
+            <div className="text-[14px] font-black text-white">QR Scanner</div>
+            <div className="text-[11px] text-slate-400">{scanned ? 'Equipment found' : 'Point camera at QR code'}</div>
+          </div>
+        </div>
+        <button onClick={onClose} className="p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-all"><X className="h-5 w-5" /></button>
+      </div>
+
+      {/* Camera view */}
+      <div className="flex-1 flex flex-col items-center justify-center px-5 gap-4 min-h-0">
+        {error ? (
+          <div className="text-center text-slate-400 space-y-2">
+            <div className="h-16 w-16 rounded-2xl bg-red-500/10 flex items-center justify-center mx-auto"><X className="h-8 w-8 text-red-400" /></div>
+            <div className="text-[13px]">{error}</div>
+          </div>
+        ) : (
+          <div className="relative rounded-2xl overflow-hidden bg-black w-full max-w-sm aspect-square">
+            <video ref={videoRef} className="w-full h-full object-cover" playsInline muted />
+            <canvas ref={canvasRef} className="hidden" />
+            {/* Viewfinder overlay */}
+            {!scanned && (
+              <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+                <div className="w-48 h-48 relative">
+                  <div className="absolute top-0 left-0 w-8 h-8 border-t-2 border-l-2 border-brand-primary rounded-tl-sm" />
+                  <div className="absolute top-0 right-0 w-8 h-8 border-t-2 border-r-2 border-brand-primary rounded-tr-sm" />
+                  <div className="absolute bottom-0 left-0 w-8 h-8 border-b-2 border-l-2 border-brand-primary rounded-bl-sm" />
+                  <div className="absolute bottom-0 right-0 w-8 h-8 border-b-2 border-r-2 border-brand-primary rounded-br-sm" />
+                  <div className="absolute top-1/2 left-4 right-4 h-0.5 bg-brand-primary/60 animate-pulse" />
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Scanned result card */}
+        {scanned && (
+          <div className="w-full max-w-sm bg-white rounded-2xl shadow-2xl overflow-hidden">
+            <div className="p-4">
+              <div className="flex items-start justify-between mb-3">
+                <div>
+                  <div className="text-[15px] font-black text-slate-900 leading-tight">{scanned['Name']}</div>
+                  <div className="text-[12px] font-mono text-brand-primary font-bold mt-0.5">{scanned['Asset Tag']}</div>
+                </div>
+                <span className={`text-[11px] font-black px-2 py-1 rounded-lg ${statusCls}`}>{statusLabel}</span>
+              </div>
+              <div className="grid grid-cols-2 gap-2 text-[11px] text-slate-600 mb-4">
+                <div><span className="text-slate-400">Category</span><br /><span className="font-semibold">{scanned['Category'] || '—'}</span></div>
+                <div><span className="text-slate-400">Available</span><br /><span className="font-semibold font-mono">{scanned['Available Qty'] ?? '—'} / {scanned['Total Qty'] ?? '—'}</span></div>
+                <div><span className="text-slate-400">Location</span><br /><span className="font-semibold">{scanned['Location'] || '—'}</span></div>
+                <div><span className="text-slate-400">Serial</span><br /><span className="font-semibold font-mono">{scanned['Serial No'] || '—'}</span></div>
+              </div>
+              <div className="flex gap-2">
+                <button onClick={() => onAction(scanned, 'stock-in')} className="flex-1 h-10 bg-green-600 hover:bg-green-700 text-white text-[12px] font-black rounded-xl flex items-center justify-center gap-1.5 transition-all">
+                  <ArrowDownToLine className="h-3.5 w-3.5" /> Stock In
+                </button>
+                <button onClick={() => onAction(scanned, 'stock-out')} className="flex-1 h-10 bg-orange-500 hover:bg-orange-600 text-white text-[12px] font-black rounded-xl flex items-center justify-center gap-1.5 transition-all">
+                  <ArrowUpFromLine className="h-3.5 w-3.5" /> Stock Out
+                </button>
+                <button onClick={() => onAction(scanned, 'view')} className="flex-1 h-10 bg-slate-800 hover:bg-slate-900 text-white text-[12px] font-black rounded-xl flex items-center justify-center gap-1.5 transition-all">
+                  <Eye className="h-3.5 w-3.5" /> View
+                </button>
+              </div>
+            </div>
+            <button onClick={rescan} className="w-full py-3 border-t border-slate-100 text-[12px] font-black text-brand-primary hover:bg-brand-primary/5 transition-all flex items-center justify-center gap-1.5">
+              <RotateCcw className="h-3.5 w-3.5" /> Scan another
+            </button>
+          </div>
+        )}
+      </div>
+    </div>,
+    document.body
+  );
+});
+
+// ── Stock Movement Modal ──────────────────────────────────────────────────────
+const StockMovementModal = React.memo(({ onClose, equipmentItem, movementType, events: evts, currentUser, onSubmit }: {
+  onClose: () => void;
+  equipmentItem: any;
+  movementType: 'stock-in' | 'stock-out';
+  events: any[];
+  currentUser?: any;
+  onSubmit: (movement: any, updatedEquipment: any) => Promise<void>;
+}) => {
+  const isIn = movementType === 'stock-in';
+  const today = new Date();
+  const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+  const [form, setForm] = useState({
+    Date: todayStr,
+    Qty: 1,
+    Reason: isIn ? 'Return from Event' : 'Dispatched to Event',
+    'Linked Event': '',
+    Operator: currentUser?.name || currentUser?.email || '',
+    Notes: '',
+  });
+  const [saving, setSaving] = useState(false);
+
+  const reasonOpts = isIn
+    ? ['New Purchase', 'Return from Event', 'Return from Repair', 'Donation', 'Other']
+    : ['Dispatched to Event', 'Sent for Repair', 'Written Off', 'Transferred', 'Other'];
+
+  const maxQty = isIn ? 999 : (equipmentItem['Available Qty'] ?? 0);
+
+  const handleSubmit = async () => {
+    if (form.Qty < 1) return;
+    if (!isIn && form.Qty > maxQty) { return; }
+    setSaving(true);
+    const movement = {
+      Date: form.Date,
+      'Equipment Name': equipmentItem['Name'],
+      'Asset Tag': equipmentItem['Asset Tag'],
+      'Movement Type': movementType,
+      Qty: form.Qty,
+      Reason: form.Reason,
+      'Linked Event': form['Linked Event'],
+      Operator: form.Operator,
+      Notes: form.Notes,
+    };
+    const newAvail = isIn
+      ? (equipmentItem['Available Qty'] ?? 0) + form.Qty
+      : Math.max(0, (equipmentItem['Available Qty'] ?? 0) - form.Qty);
+    const updatedEquipment = {
+      ...equipmentItem,
+      'Available Qty': newAvail,
+      Status: newAvail === 0 ? 'checked-out' : 'available',
+    };
+    await onSubmit(movement, updatedEquipment);
+    setSaving(false);
+    onClose();
+  };
+
+  const inputCls = "w-full h-10 bg-white border border-slate-200 rounded-xl px-3.5 text-[13px] font-medium text-slate-900 placeholder:text-slate-400 focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 outline-none transition-all";
+  const labelCls = "text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-1.5 block";
+
+  return createPortal(
+    <div className="fixed inset-0 z-[700] flex items-end sm:items-center justify-center" style={{ backgroundColor: 'rgba(0,0,0,0.6)', backdropFilter: 'blur(3px)' }} onClick={onClose}>
+      <div className="w-full sm:max-w-md bg-white sm:rounded-2xl rounded-t-3xl shadow-2xl flex flex-col max-h-[85vh]" onClick={e => e.stopPropagation()}>
+        {/* Drag handle (mobile) */}
+        <div className="flex justify-center pt-3 pb-1 shrink-0 sm:hidden"><div className="w-10 h-1 bg-slate-300 rounded-full" /></div>
+        {/* Header */}
+        <div className="px-5 pt-4 pb-3 flex items-start justify-between shrink-0 border-b border-slate-100">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className={`h-7 w-7 rounded-lg flex items-center justify-center ${isIn ? 'bg-green-100' : 'bg-orange-100'}`}>
+                {isIn ? <ArrowDownToLine className="h-4 w-4 text-green-600" /> : <ArrowUpFromLine className="h-4 w-4 text-orange-600" />}
+              </div>
+              <span className={`text-[16px] font-black ${isIn ? 'text-green-700' : 'text-orange-700'}`}>{isIn ? 'Stock In' : 'Stock Out'}</span>
+            </div>
+            <div className="text-[12px] text-slate-500 mt-1 font-mono">{equipmentItem['Asset Tag']} — {equipmentItem['Name']}</div>
+          </div>
+          <button onClick={onClose} className="p-1.5 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-all"><X className="h-4 w-4" /></button>
+        </div>
+        {/* Body */}
+        <div className="flex-1 overflow-y-auto px-5 py-4 min-h-0 space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div>
+              <label className={labelCls}>Date</label>
+              <input type="date" className={inputCls} value={form.Date} onChange={e => setForm(f => ({ ...f, Date: e.target.value }))} />
+            </div>
+            <div>
+              <label className={labelCls}>Quantity {!isIn && <span className="text-orange-600">(max {maxQty})</span>}</label>
+              <input type="number" min={1} max={isIn ? 999 : maxQty} className={inputCls} value={form.Qty} onChange={e => setForm(f => ({ ...f, Qty: Math.max(1, Math.min(isIn ? 999 : maxQty, Number(e.target.value))) }))} />
+            </div>
+          </div>
+          <div>
+            <label className={labelCls}>Reason</label>
+            <select className={inputCls} value={form.Reason} onChange={e => setForm(f => ({ ...f, Reason: e.target.value }))}>
+              {reasonOpts.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Linked Event (optional)</label>
+            <select className={inputCls} value={form['Linked Event']} onChange={e => setForm(f => ({ ...f, 'Linked Event': e.target.value }))}>
+              <option value="">— None —</option>
+              {evts.map(ev => <option key={ev._id || ev.id} value={ev['Event Name']}>{ev['Event Name']}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className={labelCls}>Operator</label>
+            <input className={inputCls} placeholder="Who is doing this?" value={form.Operator} onChange={e => setForm(f => ({ ...f, Operator: e.target.value }))} />
+          </div>
+          <div>
+            <label className={labelCls}>Notes</label>
+            <textarea className={`${inputCls} h-16 py-2.5 resize-none`} placeholder="Any additional notes…" value={form.Notes} onChange={e => setForm(f => ({ ...f, Notes: e.target.value }))} />
+          </div>
+        </div>
+        {/* Footer */}
+        <div className="px-5 py-4 border-t border-slate-100 shrink-0 flex gap-3" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
+          <button onClick={onClose} className="flex-1 h-12 border border-slate-200 rounded-2xl text-[12px] font-black uppercase tracking-widest text-slate-600 hover:bg-slate-50 transition-all">Cancel</button>
+          <button onClick={handleSubmit} disabled={saving || (!isIn && form.Qty > maxQty)} className={`flex-[2] h-12 rounded-2xl text-[12px] font-black uppercase tracking-widest text-white transition-all disabled:opacity-50 ${isIn ? 'bg-green-600 hover:bg-green-700' : 'bg-orange-500 hover:bg-orange-600'}`}>
+            {saving ? 'Saving…' : isIn ? 'Confirm Stock In' : 'Confirm Stock Out'}
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  );
+});
+
 export default function App() {
   const gridContainerRef = useRef<HTMLDivElement>(null);
   const [user, setUser] = useState<any>(null);
@@ -3196,6 +3916,12 @@ const [cellPreview, setCellPreview] = useState<{ label: string; value: string; r
   const [locations, setLocations] = useState<any[]>([]);
   const [videoSetup, setVideoSetup] = useState<any[]>([]);
   const [audioSetup, setAudioSetup] = useState<any[]>([]);
+  const [equipmentItems, setEquipmentItems] = useState<EquipmentItem[]>([]);
+  const [equipmentMovements, setEquipmentMovements] = useState<EquipmentMovement[]>([]);
+  const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
+  const [isStockModalOpen, setIsStockModalOpen] = useState(false);
+  const [stockModalItem, setStockModalItem] = useState<any>(null);
+  const [stockModalType, setStockModalType] = useState<'stock-in' | 'stock-out'>('stock-in');
   const [appUsers, setAppUsers] = useState<any[]>([]);
   const [columnOrder, setColumnOrder] = useState<Record<string, string[]>>({});
   const [frozenUpTo, setFrozenUpTo] = useState<Record<string, number>>({});
@@ -3350,6 +4076,8 @@ const getImageCollection = () => {
     case 'DataSharing': return 'locations';
     case 'VideoSetup': return 'videosetup';
     case 'AudioSetup': return 'audiosetup';
+    case 'Equipment': return 'equipment';
+    case 'EquipmentMovements': return 'equipment_movements';
     default: return activeTable.toLowerCase();
   }
 };
@@ -3367,6 +4095,7 @@ const handleImageSaved = (newValue: string) => {
     media: setMedia as any, checklist: setChecklist as any,
     guidance: setGuidance as any, led_details: setLedDetails as any,
     locations: setLocations, videosetup: setVideoSetup, audiosetup: setAudioSetup,
+    equipment: setEquipmentItems as any, equipment_movements: setEquipmentMovements as any,
   };
   const setter = setterMap[coll];
   if (setter) {
@@ -3415,6 +4144,8 @@ const handleBulkDelete = async () => {
     case 'DataSharing':         collection = 'locations'; break;
     case 'VideoSetup':          collection = 'videosetup'; break;
     case 'AudioSetup':          collection = 'audiosetup'; break;
+    case 'Equipment':           collection = 'equipment'; break;
+    case 'EquipmentMovements':  collection = 'equipment_movements'; break;
     default: console.error('Unknown table for delete:', activeTable); return;
   }
 
@@ -3425,6 +4156,7 @@ const handleBulkDelete = async () => {
     'media': setMedia as any, 'checklist': setChecklist as any,
     'guidance': setGuidance as any, 'led_details': setLedDetails as any,
     'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+    'equipment': setEquipmentItems as any, 'equipment_movements': setEquipmentMovements as any,
   };
   const setter = optimisticSetter[collection];
   if (setter) setter(prev => prev.filter(r => !selectedIds.includes(r._id || r.id)));
@@ -3467,6 +4199,8 @@ const handleDeleteRecord = async (record: any) => {
     case 'DataSharing': collection = 'locations'; break;
     case 'VideoSetup': collection = 'videosetup'; break;
     case 'AudioSetup': collection = 'audiosetup'; break;
+    case 'Equipment': collection = 'equipment'; break;
+    case 'EquipmentMovements': collection = 'equipment_movements'; break;
     default: return;
   }
 
@@ -3477,6 +4211,7 @@ const handleDeleteRecord = async (record: any) => {
     'media': setMedia as any, 'checklist': setChecklist as any,
     'guidance': setGuidance as any, 'led_details': setLedDetails as any,
     'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+    'equipment': setEquipmentItems as any, 'equipment_movements': setEquipmentMovements as any,
   };
   const setter = optimisticSetter[collection];
   if (setter) setter(prev => prev.filter(r => r._id !== id && r.id !== id));
@@ -3587,6 +4322,8 @@ const confirmAddColumn = async () => {
           case 'DataSharing': return 'locations';
           case 'VideoSetup': return 'videosetup';
           case 'AudioSetup': return 'audiosetup';
+          case 'Equipment': return 'equipment';
+          case 'EquipmentMovements': return 'equipment_movements';
           default: return '';
         }
       })();
@@ -3651,6 +4388,8 @@ const getActiveData = () => {
     case 'DataSharing': return locations;
     case 'VideoSetup': return videoSetup;
     case 'AudioSetup': return audioSetup;
+    case 'Equipment': return equipmentItems;
+    case 'EquipmentMovements': return equipmentMovements;
     case 'Tracks':
       // This more inclusive filter checks for type OR the existence of a Title
       return media.filter((m: any) =>
@@ -3673,6 +4412,8 @@ const getDataForTable = (table: string): any[] => {
     case 'DataSharing': return locations;
     case 'VideoSetup': return videoSetup;
     case 'AudioSetup': return audioSetup;
+    case 'Equipment': return equipmentItems;
+    case 'EquipmentMovements': return equipmentMovements;
     case 'Tracks': return media.filter((m: any) => m.type === 'track' || m.Type === 'track' || m["Title"]);
     default: return [];
   }
@@ -3692,6 +4433,8 @@ const getPrimaryField = (table: string): string => {
     case 'DataSharing': return 'Sevak';
     case 'VideoSetup': return 'Name';
     case 'AudioSetup': return 'Name';
+    case 'Equipment': return 'Name';
+    case 'EquipmentMovements': return 'Equipment Name';
     default: return 'name';
   }
 };
@@ -3912,6 +4655,12 @@ const [editColumnModal, setEditColumnModal] = useState<{ col: string; type: Fiel
 const getColumnType = (col: string): FieldType => {
   // Explicitly stored type always wins
   if (columnTypes[activeTable]?.[col]) return columnTypes[activeTable][col] as FieldType;
+  // Equipment-specific column types
+  if (col === 'Asset Tag') return 'id';
+  if (['Total Qty', 'Available Qty', 'Qty'].includes(col)) return 'number';
+  if (['Movement Type'].includes(col)) return 'status';
+  if (['Location', 'Serial No', 'Operator', 'Linked Event', 'Reason'].includes(col)) return 'text';
+  if (['Purchase Date', 'Warranty Expiry'].includes(col)) return 'date';
   // Smart defaults by column name
   if (['PlayID', 'VideoPlayId', 'LedId', 'LearningId'].includes(col) || (col.toLowerCase().endsWith('id') && !col.includes(' '))) return 'id';
   if (['DateFrom', 'DateTo', 'Date', 'PlayedAt', 'LastUpdated'].includes(col) || col.startsWith('Date (') || col.startsWith('DateFrom (') || col.startsWith('DateTo (')) return 'date';
@@ -4033,18 +4782,25 @@ case 'text':
           case 'Ready':
           case 'Done':
           case 'Complete':
-          case 'Completed':    return 'bg-green-100 text-green-700 border-green-200';
+          case 'Completed':
+          case 'available':
+          case 'stock-in':    return 'bg-green-100 text-green-700 border-green-200';
           case 'Pending':
           case 'In Progress':
-          case 'In Review':    return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+          case 'In Review':
+          case 'in-repair':   return 'bg-yellow-100 text-yellow-700 border-yellow-200';
+          case 'checked-out':
+          case 'stock-out':   return 'bg-orange-100 text-orange-700 border-orange-200';
           case 'To Do':
-          case 'Not Started':  return 'bg-slate-100 text-slate-600 border-slate-200';
+          case 'Not Started':
+          case 'retired':     return 'bg-slate-100 text-slate-600 border-slate-200';
           case 'Blocked':
-          case 'Cancelled':    return 'bg-red-100 text-red-700 border-red-200';
+          case 'Cancelled':   return 'bg-red-100 text-red-700 border-red-200';
           default:             return 'bg-blue-50 text-blue-600 border-blue-100';
         }
       })();
-      return val ? <Badge className={`${statusCls} text-[11px] px-2`}>{val}</Badge> : empty;
+      const displayVal = val === 'available' ? 'Available' : val === 'checked-out' ? 'Checked Out' : val === 'in-repair' ? 'In Repair' : val === 'retired' ? 'Retired' : val === 'stock-in' ? 'Stock In' : val === 'stock-out' ? 'Stock Out' : val;
+      return val ? <Badge className={`${statusCls} text-[11px] px-2`}>{displayVal}</Badge> : empty;
     }
         
     case 'email':
@@ -4146,6 +4902,12 @@ const getTableColumns = (includeHidden = false) => {
       break;
     case 'AudioSetup':
       baseCols = ['Name', 'Notes', 'Assignee', 'Status', 'Attachments', 'Attachment Summary'];
+      break;
+    case 'Equipment':
+      baseCols = ['Asset Tag', 'Name', 'Category', 'Serial No', 'Total Qty', 'Available Qty', 'Status', 'Location', 'Purchase Date', 'Warranty Expiry', 'Notes'];
+      break;
+    case 'EquipmentMovements':
+      baseCols = ['Date', 'Equipment Name', 'Asset Tag', 'Movement Type', 'Qty', 'Reason', 'Linked Event', 'Operator', 'Notes'];
       break;
     default:
       baseCols = [];
@@ -4324,6 +5086,7 @@ const renderRow = (item: any) => {
     'VideoLog': 'VideoPlayId', 'Guidance & Learning': 'LearningId', 'LED': 'LedId',
     'DyatraChecklist': 'Task', 'DataSharing': 'Sevak', 'Tracks': 'Title',
     'VideoSetup': 'Name', 'AudioSetup': 'Name',
+    'Equipment': 'Name', 'EquipmentMovements': 'Equipment Name',
   };
   const primaryFallbacks: Record<string, string> = {
     'Events': 'Untitled Event', 'Session': 'Untitled Session', 'Tracks': 'Untitled Track',
@@ -4543,6 +5306,39 @@ const renderRow = (item: any) => {
           );
         }
 
+        // ── EQUIPMENT special cells ───────────────────────────────────────
+        if (activeTable === 'Equipment' && col === 'Asset Tag') {
+          return (
+            <td key={col} className={`${cellCls} ${isColFrozen ? stickyBg : ''}`} style={style}>
+              <span className="font-mono font-black text-[12px] text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded border border-brand-primary/20">
+                {item[col] || <span className="text-slate-300 italic text-[12px]">—</span>}
+              </span>
+            </td>
+          );
+        }
+        if (activeTable === 'Equipment' && col === 'Available Qty') {
+          const avail = Number(item['Available Qty'] ?? 0);
+          const total = Number(item['Total Qty'] ?? 0);
+          const pct = total > 0 ? avail / total : 0;
+          const cls = avail === 0 ? 'text-red-600' : avail < total ? 'text-orange-600' : 'text-green-600';
+          return (
+            <td key={col} className={`${cellCls} ${isColFrozen ? stickyBg : ''}`} style={style}>
+              <span className={`font-mono font-black text-[13px] ${cls}`}>{avail}</span>
+              <span className="text-slate-400 font-mono text-[12px]"> / {total}</span>
+              {total > 0 && <div className="mt-1 h-1 rounded-full bg-slate-100 overflow-hidden w-16"><div className="h-full rounded-full bg-current transition-all" style={{ width: `${pct * 100}%` }} /></div>}
+            </td>
+          );
+        }
+        if (activeTable === 'EquipmentMovements' && col === 'Asset Tag') {
+          return (
+            <td key={col} className={`${cellCls} ${isColFrozen ? stickyBg : ''}`} style={style}>
+              <span className="font-mono font-black text-[12px] text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded border border-brand-primary/20">
+                {item[col] || <span className="text-slate-300 italic text-[12px]">—</span>}
+              </span>
+            </td>
+          );
+        }
+
         // ── PRIMARY COLUMN ────────────────────────────────────────────────
        if (isPrimary) {
           const primaryVal = item[col] || item[col.toLowerCase()] || '';
@@ -4597,6 +5393,8 @@ const handleAddBlankRow = async (initialData: Record<string, any> = {}) => {
     case 'Guidance & Learning': collection = 'guidance'; break;
     case 'VideoSetup': collection = 'videosetup'; break;
     case 'AudioSetup': collection = 'audiosetup'; break;
+    case 'Equipment': collection = 'equipment'; break;
+    case 'EquipmentMovements': collection = 'equipment_movements'; break;
     default: return;
   }
 
@@ -4606,6 +5404,7 @@ const handleAddBlankRow = async (initialData: Record<string, any> = {}) => {
     'media': setMedia as any, 'checklist': setChecklist as any,
     'guidance': setGuidance as any, 'led_details': setLedDetails as any,
     'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+    'equipment': setEquipmentItems as any, 'equipment_movements': setEquipmentMovements as any,
   };
   const setter = optimisticSetter[collection];
 
@@ -4676,6 +5475,8 @@ const fetchAllData = async () => {
       { key: 'audiosetup', setter: setAudioSetup },
       { key: 'media', setter: setMedia },
       { key: 'users', setter: setAppUsers },
+      { key: 'equipment', setter: setEquipmentItems as any },
+      { key: 'equipment_movements', setter: setEquipmentMovements as any },
     ];
 
     // Fetch all endpoints concurrently instead of sequentially for much faster initial load
@@ -4713,6 +5514,8 @@ const fetchActiveTable = async (table = activeTableRef.current) => {
     'DataSharing':         { key: 'locations',   setter: d => setLocations(d) },
     'VideoSetup':          { key: 'videosetup',  setter: d => setVideoSetup(d) },
     'AudioSetup':          { key: 'audiosetup',  setter: d => setAudioSetup(d) },
+    'Equipment':           { key: 'equipment',   setter: d => setEquipmentItems(d) },
+    'EquipmentMovements':  { key: 'equipment_movements', setter: d => setEquipmentMovements(d) },
   };
   const entry = map[table];
   if (!entry) return;
@@ -4862,6 +5665,21 @@ useEffect(() => {
       collection = 'audiosetup';
       remap('name', 'Name'); remap('notes', 'Notes'); remap('attachments', 'Attachments');
       remap('assignee', 'Assignee'); remap('status', 'Status'); remap('attachmentSummary', 'Attachment Summary');
+      break;
+    case 'Equipment':
+      collection = 'equipment';
+      if (!data['Name']) { showToast('Equipment name is required.', 'error'); return; }
+      if (!data['Total Qty']) data['Total Qty'] = 1;
+      if (data['Available Qty'] === undefined) data['Available Qty'] = data['Total Qty'];
+      if (!data['Status']) data['Status'] = 'available';
+      if (!data['Asset Tag']) data['Asset Tag'] = `EQ-${String(equipmentItems.length + 1).padStart(3, '0')}`;
+      break;
+    case 'EquipmentMovements':
+      collection = 'equipment_movements';
+      if (!data['Equipment Name']) { showToast('Equipment is required.', 'error'); return; }
+      if (!data['Movement Type']) data['Movement Type'] = 'stock-in';
+      if (!data['Qty']) data['Qty'] = 1;
+      if (!data['Date']) { const t = new Date(); data['Date'] = `${t.getFullYear()}-${String(t.getMonth()+1).padStart(2,'0')}-${String(t.getDate()).padStart(2,'0')}`; }
       break;
   }
 
@@ -5380,6 +6198,8 @@ const handleUpdateRecord = async (draftOverride?: any) => {
     case 'DataSharing': collection = 'locations'; break;
     case 'VideoSetup': collection = 'videosetup'; break;
     case 'AudioSetup': collection = 'audiosetup'; break;
+    case 'Equipment': collection = 'equipment'; break;
+    case 'EquipmentMovements': collection = 'equipment_movements'; break;
   }
 
   // Optimistic update — apply immediately so the UI shows the new value
@@ -5391,6 +6211,7 @@ const handleUpdateRecord = async (draftOverride?: any) => {
     'media': setMedia as any, 'checklist': setChecklist as any,
     'guidance': setGuidance as any, 'led_details': setLedDetails as any,
     'locations': setLocations, 'videosetup': setVideoSetup, 'audiosetup': setAudioSetup,
+    'equipment': setEquipmentItems as any, 'equipment_movements': setEquipmentMovements as any,
   };
   const setter = optimisticSetter[collection];
   if (setter) setter((prev: any[]) => prev.map(r => (r._id === id || r.id === id) ? { ...r, ...draft } : r));
@@ -5427,6 +6248,51 @@ const openNotificationRecord = async (tableName: string, collection: string, rec
   } catch { /* silent */ }
 };
 
+const handleStockMovement = async (movement: any, updatedEquipment: any) => {
+  const isIn = movement['Movement Type'] === 'stock-in';
+  try {
+    const res = await window.fetch('/api/equipment-movement', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        movement,
+        equipmentId: updatedEquipment._id || updatedEquipment.id,
+      }),
+    });
+    if (res.ok) {
+      showToast(`${isIn ? 'Return' : 'Dispatch'} recorded successfully.`, 'success');
+      await Promise.all([
+        window.fetch('/api/equipment').then(r => r.ok ? r.json() : []).then((d: any[]) => setEquipmentItems(d)),
+        window.fetch('/api/equipment_movements').then(r => r.ok ? r.json() : []).then((d: any[]) => setEquipmentMovements(d)),
+      ]);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast((err as any).error || 'Failed to record movement.', 'error');
+    }
+  } catch (e) {
+    console.error('Stock movement error', e);
+    showToast('Failed to record movement. Check your connection.', 'error');
+  }
+};
+
+const handleAddEquipmentItem = async (data: any) => {
+  try {
+    const res = await window.fetch('/api/equipment', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(data),
+    });
+    if (res.ok) {
+      showToast('Equipment added successfully.', 'success');
+      const updated = await window.fetch('/api/equipment').then(r => r.ok ? r.json() : []);
+      setEquipmentItems(updated);
+    } else {
+      const err = await res.json().catch(() => ({}));
+      showToast((err as any).error || 'Failed to add equipment.', 'error');
+    }
+  } catch {
+    showToast('Failed to add equipment. Check your connection.', 'error');
+  }
+};
+
 const handleExpandedSave = async (newDraft: any) => {
   for (const col of Object.keys(newDraft)) {
     if (getColumnType(col) === 'email' && newDraft[col] && !/^\S+@\S+\.\S+$/.test(newDraft[col])) {
@@ -5450,6 +6316,8 @@ const handleExpandedSave = async (newDraft: any) => {
     case 'DataSharing': collection = 'locations'; break;
     case 'VideoSetup': collection = 'videosetup'; break;
     case 'AudioSetup': collection = 'audiosetup'; break;
+    case 'Equipment': collection = 'equipment'; break;
+    case 'EquipmentMovements': collection = 'equipment_movements'; break;
     default: collection = activeTable.toLowerCase();
   }
   const updateData = { ...newDraft, _modifiedBy: user?.name || user?.email || 'Someone' };
@@ -5732,6 +6600,31 @@ const updateDraftOnly = (col: string, val: string) => {
               else if ((activeTable === 'VideoSetup' || activeTable === 'AudioSetup') && col === 'Assignee') {
                 opts = appUsers.map((u: any) => u.name || u.email).filter(Boolean).sort();
               }
+              else if (activeTable === 'Equipment' && col === 'Status') {
+                opts = ['available', 'checked-out', 'in-repair', 'retired'];
+              }
+              else if (activeTable === 'Equipment' && col === 'Category') {
+                opts = [...new Set(equipmentItems.map((e: any) => e['Category']).filter(Boolean))].sort();
+                if (!opts.length) opts = ['Microphone', 'Speaker', 'Amplifier', 'Projector', 'Screen', 'LED Panel', 'Camera', 'Tripod', 'Cable', 'Stand', 'Laptop', 'Mixer', 'Lighting', 'Other'];
+              }
+              else if (activeTable === 'EquipmentMovements' && col === 'Movement Type') {
+                opts = ['stock-in', 'stock-out'];
+              }
+              else if (activeTable === 'EquipmentMovements' && col === 'Reason') {
+                const isIn = editDraft?.['Movement Type'] === 'stock-in';
+                opts = isIn
+                  ? ['New Purchase', 'Return from Event', 'Return from Repair', 'Donation', 'Other']
+                  : ['Dispatched to Event', 'Sent for Repair', 'Written Off', 'Transferred', 'Other'];
+              }
+              else if (activeTable === 'EquipmentMovements' && col === 'Linked Event') {
+                opts = events.map((e: any) => e['Event Name']).filter(Boolean).sort();
+              }
+              else if (activeTable === 'EquipmentMovements' && col === 'Equipment Name') {
+                opts = equipmentItems.map((e: any) => e['Name']).filter(Boolean).sort();
+              }
+              else if (activeTable === 'EquipmentMovements' && col === 'Operator') {
+                opts = appUsers.map((u: any) => u.name || u.email).filter(Boolean).sort();
+              }
               else if (activeTable === 'DataSharing' && col === 'Dept') {
                 opts = [...new Set(locations.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
               }
@@ -5871,6 +6764,8 @@ const handleInlineSave = async () => {
     case 'DataSharing': collection = 'locations'; break;
     case 'VideoSetup': collection = 'videosetup'; break;
     case 'AudioSetup': collection = 'audiosetup'; break;
+    case 'Equipment': collection = 'equipment'; break;
+    case 'EquipmentMovements': collection = 'equipment_movements'; break;
     default: return;
   }
 
@@ -6213,6 +7108,12 @@ thead.sticky th.sticky {
               { icon: Film,  label: 'Video Setup', table: 'VideoSetup' },
             ],
           },
+          {
+            groupLabel: 'Equipment',
+            items: [
+              { icon: Package, label: 'Inventory', table: 'Equipment' },
+            ],
+          },
         ];
 
         // Filter routes based on user permissions
@@ -6344,7 +7245,7 @@ thead.sticky th.sticky {
             </p>
           </div>
         </div>
-      ) : (activeTable !== 'Home' && activeTable !== 'UserManagement') && (
+      ) : (activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements') && (
         <>
           {/* Desktop search */}
               <div className="relative hidden sm:block shrink min-w-[120px] flex-1 max-w-[240px]">
@@ -6386,7 +7287,7 @@ thead.sticky th.sticky {
       ) : (
         <>
       {/* Desktop view switcher */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && (
         <div className="hidden sm:flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-11 items-center">
           <Button
             size="sm"
@@ -6410,7 +7311,7 @@ thead.sticky th.sticky {
       )}
 
       {/* Desktop Filter button */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && (
             <div className="relative hidden sm:block shrink min-w-[80px] flex-1 max-w-[130px]">
           <button
             onClick={() => {
@@ -6467,7 +7368,7 @@ thead.sticky th.sticky {
       )}
 
       {/* Desktop Group By + Sort By */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (viewMode === 'grid' || viewMode === 'visual') && <>
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && (viewMode === 'grid' || viewMode === 'visual') && <>
             <div className="relative hidden sm:block shrink min-w-[100px] flex-1 max-w-[180px]">
           <button
             onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
@@ -6558,7 +7459,7 @@ thead.sticky th.sticky {
       </>}
 
       {/* Desktop Hide Fields */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && viewMode === 'grid' && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && viewMode === 'grid' && (
             <div className="relative hidden sm:block shrink min-w-[90px] flex-1 max-w-[140px]">
           <button
             onClick={() => { setIsFieldsOpen(!isFieldsOpen); setIsGroupOpen(false); setIsSortOpen(false); }}
@@ -6605,8 +7506,8 @@ thead.sticky th.sticky {
         </div>
       )}
 
-      {/* Add Record — desktop only in top row */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && hasPerm(user, activeTable, 'add') && (
+{/* Add Record — desktop only in top row */}
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && hasPerm(user, activeTable, 'add') && (
         <Button
           onClick={openAddModal}
                 className="hidden sm:flex bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-3 xl:px-4 shadow-md items-center gap-1.5 xl:gap-2 transition-transform active:scale-95 ml-0.5 xl:ml-1 shrink-0"
@@ -6639,7 +7540,7 @@ thead.sticky th.sticky {
   </div>
 
   {/* ── MOBILE TOOLBAR ROW (sm:hidden, non-home pages only) ── */}
-  {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (
+  {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && (
     <div className="sm:hidden flex items-center gap-1.5 pb-2.5 w-full">
       {/* View switcher */}
       {(viewMode === 'grid' || viewMode === 'visual') && (
@@ -6716,7 +7617,7 @@ thead.sticky th.sticky {
 </header>
 
       {/* Mobile search bar (expands below header when toggled) */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && mobileSearchOpen && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && mobileSearchOpen && (
         <div className="sm:hidden px-4 py-2.5 bg-white border-b border-slate-200 shrink-0">
           <div className="relative">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
@@ -6737,7 +7638,7 @@ thead.sticky th.sticky {
       )}
 
       {/* Mobile-only active filter bar */}
-      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && (groupByFields.length > 0 || sortBy) && (
+      {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && (groupByFields.length > 0 || sortBy) && (
         <div className="sm:hidden flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-200 overflow-x-auto shrink-0">
           <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Active:</span>
           {groupByFields.length > 0 && (
@@ -7136,6 +8037,19 @@ thead.sticky th.sticky {
               ['admin', 'owner'].includes(user?.role) ? <UserManagement currentUser={user} onToast={showToast} /> : null
             ) : activeTable === 'AudioSetup' ? (
               <AudioSetupVisualizer />
+            ) : (activeTable === 'Equipment' || activeTable === 'EquipmentMovements') ? (
+              <InventoryModule
+                equipment={equipmentItems}
+                movements={equipmentMovements}
+                events={events}
+                currentUser={user}
+                onCheckOut={item => { setStockModalItem(item); setStockModalType('stock-out'); setIsStockModalOpen(true); }}
+                onCheckIn={item => { setStockModalItem(item); setStockModalType('stock-in'); setIsStockModalOpen(true); }}
+                onScanQR={() => setIsQRScannerOpen(true)}
+                onExpandRecord={item => setExpandedRecord(item)}
+                onAddEquipment={handleAddEquipmentItem}
+                onDeleteItem={item => handleDeleteRecord(item)}
+              />
             ) : (
               <>
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -8344,10 +9258,10 @@ thead.sticky th.sticky {
             className="h-3.5 w-3.5 rounded border-slate-300 text-brand-primary focus:ring-brand-primary cursor-pointer"
           />
           <button
-            onClick={e => { 
-              e.stopPropagation(); 
+            onClick={e => {
+              e.stopPropagation();
               if (hasPerm(user, activeTable, 'edit')) {
-                setExpandedRecord(row.data); 
+                setExpandedRecord(row.data);
               } else {
                 setViewingRecord(row.data);
               }
@@ -9230,6 +10144,138 @@ thead.sticky th.sticky {
     <Input value={newRecord["Attachment"] || ''} onChange={(e) => setNewRecord({...newRecord, "Attachment": e.target.value})} placeholder="Attachment Link (https://...)" className="bg-brand-bg" />
   </div>
 )}
+    {/* EQUIPMENT FIELDS */}
+    {activeTable === 'Equipment' && (() => {
+      const nextTag = `EQ-${String(equipmentItems.length + 1).padStart(3, '0')}`;
+      const catOpts = equipmentItems.length
+        ? [...new Set(equipmentItems.map((e: any) => e['Category']).filter(Boolean))].sort()
+        : ['Microphone', 'Speaker', 'Amplifier', 'Projector', 'Screen', 'LED Panel', 'Camera', 'Tripod', 'Cable', 'Stand', 'Laptop', 'Mixer', 'Lighting', 'Other'];
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Asset Tag</label>
+              <Input value={newRecord['Asset Tag'] || nextTag} onChange={e => setNewRecord({...newRecord, 'Asset Tag': e.target.value})} placeholder={nextTag} className="bg-brand-bg font-mono" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Name *</label>
+              <Input value={newRecord['Name'] || ''} onChange={e => setNewRecord({...newRecord, 'Name': e.target.value})} placeholder="Equipment name" className="bg-brand-bg" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Category</label>
+              <select className="w-full h-9 bg-brand-bg border border-brand-border rounded-md px-3 text-sm text-brand-text focus:ring-2 focus:ring-brand-primary outline-none" value={newRecord['Category'] || ''} onChange={e => setNewRecord({...newRecord, 'Category': e.target.value})}>
+                <option value="">Select category…</option>
+                {catOpts.map(c => <option key={c} value={c}>{c}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Serial No</label>
+              <Input value={newRecord['Serial No'] || ''} onChange={e => setNewRecord({...newRecord, 'Serial No': e.target.value})} placeholder="Serial number" className="bg-brand-bg font-mono" />
+            </div>
+          </div>
+          <div className="grid grid-cols-3 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Total Qty</label>
+              <Input type="number" min={1} value={newRecord['Total Qty'] ?? 1} onChange={e => setNewRecord({...newRecord, 'Total Qty': Number(e.target.value), 'Available Qty': Number(e.target.value)})} className="bg-brand-bg" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Status</label>
+              <select className="w-full h-9 bg-brand-bg border border-brand-border rounded-md px-3 text-sm text-brand-text focus:ring-2 focus:ring-brand-primary outline-none" value={newRecord['Status'] || 'available'} onChange={e => setNewRecord({...newRecord, 'Status': e.target.value})}>
+                <option value="available">Available</option>
+                <option value="checked-out">Checked Out</option>
+                <option value="in-repair">In Repair</option>
+                <option value="retired">Retired</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Location</label>
+              <Input value={newRecord['Location'] || ''} onChange={e => setNewRecord({...newRecord, 'Location': e.target.value})} placeholder="Storage location" className="bg-brand-bg" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Purchase Date</label>
+              <Input type="date" value={newRecord['Purchase Date'] || ''} onChange={e => setNewRecord({...newRecord, 'Purchase Date': e.target.value})} className="bg-brand-bg" />
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Warranty Expiry</label>
+              <Input type="date" value={newRecord['Warranty Expiry'] || ''} onChange={e => setNewRecord({...newRecord, 'Warranty Expiry': e.target.value})} className="bg-brand-bg" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase text-slate-500">Notes</label>
+            <Textarea value={newRecord['Notes'] || ''} onChange={e => setNewRecord({...newRecord, 'Notes': e.target.value})} placeholder="Additional notes…" className="bg-brand-bg min-h-[60px]" />
+          </div>
+        </div>
+      );
+    })()}
+
+    {/* EQUIPMENT MOVEMENTS FIELDS */}
+    {activeTable === 'EquipmentMovements' && (() => {
+      const today = new Date();
+      const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+      const isIn = (newRecord['Movement Type'] || 'stock-in') === 'stock-in';
+      const reasonOpts = isIn
+        ? ['New Purchase', 'Return from Event', 'Return from Repair', 'Donation', 'Other']
+        : ['Dispatched to Event', 'Sent for Repair', 'Written Off', 'Transferred', 'Other'];
+      return (
+        <div className="space-y-4">
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Movement Type</label>
+              <select className="w-full h-9 bg-brand-bg border border-brand-border rounded-md px-3 text-sm text-brand-text focus:ring-2 focus:ring-brand-primary outline-none" value={newRecord['Movement Type'] || 'stock-in'} onChange={e => setNewRecord({...newRecord, 'Movement Type': e.target.value, 'Reason': ''})}>
+                <option value="stock-in">Stock In</option>
+                <option value="stock-out">Stock Out</option>
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Date</label>
+              <Input type="date" value={newRecord['Date'] || todayStr} onChange={e => setNewRecord({...newRecord, 'Date': e.target.value})} className="bg-brand-bg" />
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Equipment</label>
+              <select className="w-full h-9 bg-brand-bg border border-brand-border rounded-md px-3 text-sm text-brand-text focus:ring-2 focus:ring-brand-primary outline-none" value={newRecord['Equipment Name'] || ''} onChange={e => { const eq = equipmentItems.find((x: any) => x['Name'] === e.target.value); setNewRecord({...newRecord, 'Equipment Name': e.target.value, 'Asset Tag': eq?.['Asset Tag'] || ''}); }}>
+                <option value="">Select equipment…</option>
+                {equipmentItems.map((eq: any) => <option key={eq._id || eq.id} value={eq['Name']}>{eq['Name']} ({eq['Asset Tag']})</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Qty</label>
+              <Input type="number" min={1} value={newRecord['Qty'] ?? 1} onChange={e => setNewRecord({...newRecord, 'Qty': Number(e.target.value)})} className="bg-brand-bg" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase text-slate-500">Reason</label>
+            <select className="w-full h-9 bg-brand-bg border border-brand-border rounded-md px-3 text-sm text-brand-text focus:ring-2 focus:ring-brand-primary outline-none" value={newRecord['Reason'] || ''} onChange={e => setNewRecord({...newRecord, 'Reason': e.target.value})}>
+              <option value="">Select reason…</option>
+              {reasonOpts.map(r => <option key={r} value={r}>{r}</option>)}
+            </select>
+          </div>
+          <div className="grid grid-cols-2 gap-4">
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Linked Event</label>
+              <select className="w-full h-9 bg-brand-bg border border-brand-border rounded-md px-3 text-sm text-brand-text focus:ring-2 focus:ring-brand-primary outline-none" value={newRecord['Linked Event'] || ''} onChange={e => setNewRecord({...newRecord, 'Linked Event': e.target.value})}>
+                <option value="">— None —</option>
+                {events.map((ev: any) => <option key={ev._id || ev.id} value={ev['Event Name']}>{ev['Event Name']}</option>)}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label className="text-[10px] font-bold uppercase text-slate-500">Operator</label>
+              <Input value={newRecord['Operator'] || ''} onChange={e => setNewRecord({...newRecord, 'Operator': e.target.value})} placeholder="Who is doing this?" className="bg-brand-bg" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase text-slate-500">Notes</label>
+            <Textarea value={newRecord['Notes'] || ''} onChange={e => setNewRecord({...newRecord, 'Notes': e.target.value})} placeholder="Additional notes…" className="bg-brand-bg min-h-[60px]" />
+          </div>
+        </div>
+      );
+    })()}
+
     {/* DATA SHARING (Mapped to Locations) */}
   {/* DATA SHARING FIELDS */}
 {activeTable === 'DataSharing' && (
@@ -10034,6 +11080,31 @@ thead.sticky th.sticky {
             setImageManager({ item: currentItem, column: col, collection: getImageCollection(), isOpen: true });
           }}
           setLinkedRecordPopup={setLinkedRecordPopup}
+        />
+      )}
+
+      {/* QR SCANNER MODAL */}
+      {isQRScannerOpen && (
+        <QRScannerModal
+          onClose={() => setIsQRScannerOpen(false)}
+          equipment={equipmentItems}
+          onAction={(item, type) => {
+            setIsQRScannerOpen(false);
+            if (type === 'view') { setActiveTable('Equipment'); setExpandedRecord(item); }
+            else { setStockModalItem(item); setStockModalType(type); setIsStockModalOpen(true); }
+          }}
+        />
+      )}
+
+      {/* STOCK MOVEMENT MODAL */}
+      {isStockModalOpen && stockModalItem && (
+        <StockMovementModal
+          onClose={() => { setIsStockModalOpen(false); setStockModalItem(null); }}
+          equipmentItem={stockModalItem}
+          movementType={stockModalType}
+          events={events}
+          currentUser={user}
+          onSubmit={handleStockMovement}
         />
       )}
 

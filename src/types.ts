@@ -60,3 +60,38 @@ export interface Guidance {
   content: string;
   category?: string;
 }
+
+export type EquipmentStatus = 'available' | 'checked-out' | 'in-repair' | 'retired';
+export type MovementType = 'stock-in' | 'stock-out';
+
+export interface EquipmentItem {
+  _id?: string;
+  id?: string;
+  'Asset Tag': string;
+  'Name': string;
+  'Category': string;
+  'Serial No'?: string;
+  'Total Qty': number;
+  'Available Qty': number;
+  'Status': EquipmentStatus;
+  'Location'?: string;
+  'Purchase Date'?: string;
+  'Warranty Expiry'?: string;
+  'Notes'?: string;
+  created_at?: string;
+}
+
+export interface EquipmentMovement {
+  _id?: string;
+  id?: string;
+  'Date': string;
+  'Equipment Name': string;
+  'Asset Tag': string;
+  'Movement Type': MovementType;
+  'Qty': number;
+  'Reason': string;
+  'Linked Event'?: string;
+  'Operator'?: string;
+  'Notes'?: string;
+  created_at?: string;
+}
