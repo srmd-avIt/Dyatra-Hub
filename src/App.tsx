@@ -199,7 +199,7 @@ const getTagStyle = (val: any) => {
   return [base, TAG_COLORS[index]].join(' ');
 };
 
-const ALL_TABLES = ['Events', 'Session', 'MusicLog', 'VideoLog', 'Tracks', 'DyatraChecklist', 'Guidance & Learning', 'LED', 'DataSharing', 'VideoSetup', 'AudioSetup', 'Equipment', 'EquipmentMovements'];
+const ALL_TABLES = ['Events', 'Session', 'MusicLog', 'VideoLog', 'Tracks', 'DyatraChecklist', 'Guidance & Learning', 'LED', 'DataSharing', 'VideoSetup', 'AudioSetup', 'Inventory'];
 
 // RBAC Permission Checker
 const hasPerm = (user: any, table: string, action: 'view' | 'add' | 'edit' | 'delete') => {
@@ -208,8 +208,16 @@ const hasPerm = (user: any, table: string, action: 'view' | 'add' | 'edit' | 'de
   if (table === 'Home') return true; // All users can see the Home dashboard.
   if (table === 'UserManagement') return false; // Only admins/owners can see this, which is handled by the rule above.
 
-  if (user.permissions && user.permissions[table]) {
-    return !!user.permissions[table][action];
+  const permTable = (table === 'Equipment' || table === 'EquipmentMovements') ? 'Inventory' : table;
+
+  if (user.permissions) {
+    if (user.permissions[permTable]) {
+      return !!user.permissions[permTable][action];
+    }
+    // Fallback for existing user data before the rename
+    if (permTable === 'Inventory' && user.permissions['Equipment']) {
+      return !!user.permissions['Equipment'][action];
+    }
   }
   if (user.role === 'guest') return action === 'view'; // Guests view-only by default
   return false; // Deny by default. If no permissions are set for a user/table, they can't access it.
@@ -1580,7 +1588,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     const tag = draft['Asset Tag'];
     if (!tag) return;
     QRCode.toDataURL(String(tag), { width: 200, margin: 2, color: { dark: '#1e293b', light: '#ffffff' } })
-      .then(url => setQrDataUrl(url))
+      .then((url: string) => setQrDataUrl(url))
       .catch(() => {});
   }, [tableName, draft['Asset Tag']]);
 
@@ -3036,7 +3044,6 @@ const FIELD_TYPES = [
   { id: 'date',        label: 'Date',        icon: Calendar,    desc: 'Date, shown monospace' },
   { id: 'time',        label: 'Time',        icon: Clock,       desc: 'Time value (HH:MM)' },
   { id: 'year',        label: 'Year',        icon: Calendar,    desc: 'Year pill badge' },
-  { id: 'checkbox',    label: 'Checkbox',    icon: CheckSquare, desc: 'True / false toggle' },
   { id: 'yes_no',      label: 'Yes / No',    icon: CheckSquare, desc: 'Yes or No colored badge' },
   { id: 'status',      label: 'Status',      icon: Zap,         desc: 'Ready / Pending / other' },
   { id: 'select',      label: 'Select',      icon: List,        desc: 'Dropdown single-select' },
@@ -3351,22 +3358,27 @@ const InventoryModule = React.memo(({
               <Boxes className="h-5 w-5 text-white" />
             </div>
             <div>
-              <h1 className="text-[18px] font-black text-slate-900 leading-tight">Equipment Inventory</h1>
-              <p className="text-[11px] text-slate-500">{totalItems} items · {availableUnits}/{totalUnits} units available</p>
+              <h1 className="text-[16px] sm:text-[18px] font-black text-slate-900 leading-tight">Equipment Inventory</h1>
+              <p className="text-[10px] sm:text-[11px] text-slate-500">{totalItems} items · {availableUnits}/{totalUnits} units available</p>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={onScanQR} className="flex items-center gap-1.5 h-9 px-3 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-[12px] font-black uppercase tracking-wide transition-all">
-              <ScanLine className="h-3.5 w-3.5 shrink-0" /><span className="hidden sm:inline">Scan QR</span>
-            </button>
-            <button onClick={() => setAddOpen(true)} className="flex items-center gap-1.5 h-9 px-3 rounded-xl bg-brand-primary hover:bg-brand-primary/90 text-white text-[12px] font-black uppercase tracking-wide transition-all shadow-md">
-              <Plus className="h-3.5 w-3.5 shrink-0" /><span className="hidden sm:inline">Add Item</span>
-            </button>
+            {hasPerm(currentUser, 'Inventory', 'add') && (
+              <button onClick={onScanQR} className="flex items-center justify-center h-9 w-9 sm:w-auto sm:px-3 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-[12px] font-black uppercase tracking-wide transition-all">
+                <ScanLine className="h-4 w-4 sm:h-3.5 sm:w-3.5 shrink-0" /><span className="hidden sm:inline ml-1.5">Scan QR</span>
+              </button>
+            )}
+            {hasPerm(currentUser, 'Inventory', 'add') && (
+              <button onClick={() => setAddOpen(true)} className="flex items-center justify-center h-9 w-9 sm:w-auto sm:px-3 rounded-xl bg-brand-primary hover:bg-brand-primary/90 text-white text-[12px] font-black uppercase tracking-wide transition-all shadow-md">
+                <Plus className="h-4 w-4 sm:h-3.5 sm:w-3.5 shrink-0" />
+            <span role="text" className="hidden sm:inline ml-1.5">Add Item</span>
+              </button>
+            )}
           </div>
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-4 gap-3 mb-4">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mb-4">
           {[
             { label: 'Total Items', value: totalItems, color: 'text-slate-900', bg: 'bg-slate-100', onClick: undefined },
             { label: 'Available', value: availableUnits, color: 'text-green-700', bg: 'bg-green-50', onClick: () => { setView('inventory'); setTab('available'); } },
@@ -3381,30 +3393,32 @@ const InventoryModule = React.memo(({
         </div>
 
         {/* View toggle + search */}
-        <div className="flex items-center gap-3">
-          <div className="flex bg-slate-100 rounded-xl p-1 gap-1 shrink-0">
-            <button onClick={() => setView('inventory')} className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wide transition-all flex items-center gap-1.5 ${view === 'inventory' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3">
+          <div className="flex bg-slate-100 rounded-xl p-1 gap-1 shrink-0 w-full sm:w-auto">
+            <button onClick={() => setView('inventory')} className={`flex-1 sm:flex-none justify-center sm:justify-start px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wide transition-all flex items-center gap-1.5 ${view === 'inventory' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
               <Package className="h-3 w-3" />Inventory
             </button>
-            <button onClick={() => setView('log')} className={`px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wide transition-all flex items-center gap-1.5 ${view === 'log' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
-              <ArrowLeftRight className="h-3 w-3" />Log <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black ml-0.5 ${view === 'log' ? 'bg-brand-primary text-white' : 'bg-slate-200 text-slate-500'}`}>{movements.length}</span>
-            </button>
+            {hasPerm(currentUser, 'Inventory', 'view') && (
+              <button onClick={() => setView('log')} className={`flex-1 sm:flex-none justify-center sm:justify-start px-3 py-1.5 rounded-lg text-[11px] font-black uppercase tracking-wide transition-all flex items-center gap-1.5 ${view === 'log' ? 'bg-white text-brand-primary shadow-sm' : 'text-slate-500 hover:text-slate-700'}`}>
+                <ArrowLeftRight className="h-3 w-3" />Log <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-black ml-0.5 ${view === 'log' ? 'bg-brand-primary text-white' : 'bg-slate-200 text-slate-500'}`}>{movements.length}</span>
+              </button>
+            )}
           </div>
           {view === 'inventory' ? (
-            <div className="flex items-center gap-2 flex-1 max-w-sm">
+            <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 flex-1 w-full sm:max-w-sm">
               <div className="relative flex-1">
                 <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-                <input className="w-full h-9 pl-9 pr-3 bg-slate-100 rounded-xl text-[12px] outline-none focus:bg-white focus:ring-2 focus:ring-brand-primary/30 transition-all" placeholder="Search equipment…" value={search} onChange={e => setSearch(e.target.value)} />
+                <input className="w-full h-9 pl-9 pr-3 bg-slate-100 rounded-xl text-[12px] text-black outline-none focus:bg-white focus:ring-2 focus:ring-brand-primary/30 transition-all" placeholder="Search equipment…" value={search} onChange={e => setSearch(e.target.value)} />
               </div>
-              <select className="h-9 pl-3 pr-8 bg-slate-100 rounded-xl text-[12px] outline-none focus:bg-white focus:ring-2 focus:ring-brand-primary/30 transition-all" value={catFilter} onChange={e => setCatFilter(e.target.value)}>
+              <select className="h-9 pl-3 pr-8 bg-slate-100 rounded-xl text-[12px] text-black outline-none focus:bg-white focus:ring-2 focus:ring-brand-primary/30 transition-all shrink-0 w-full sm:w-auto" value={catFilter} onChange={e => setCatFilter(e.target.value)}>
                 <option value="">All Categories</option>
                 {categories.map(c => <option key={c} value={c}>{c}</option>)}
               </select>
             </div>
           ) : (
-            <div className="relative flex-1 max-w-sm">
+            <div className="relative flex-1 w-full sm:max-w-sm">
               <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-slate-400" />
-              <input className="w-full h-9 pl-9 pr-3 bg-slate-100 rounded-xl text-[12px] outline-none focus:bg-white focus:ring-2 focus:ring-brand-primary/30 transition-all" placeholder="Search by event, equipment, operator…" value={logSearch} onChange={e => setLogSearch(e.target.value)} />
+              <input className="w-full h-9 pl-9 pr-3 bg-slate-100 rounded-xl text-[12px] text-black outline-none focus:bg-white focus:ring-2 focus:ring-brand-primary/30 transition-all" placeholder="Search by event, equipment, operator…" value={logSearch} onChange={e => setLogSearch(e.target.value)} />
             </div>
           )}
         </div>
@@ -3412,8 +3426,8 @@ const InventoryModule = React.memo(({
 
       {/* ── Inventory tabs (hidden in log view) ── */}
       {view === 'inventory' && (
-        <div className="shrink-0 px-5 pt-3 pb-0 bg-white border-b border-slate-200">
-          <div className="flex gap-1">
+        <div className="shrink-0 px-5 pt-3 pb-0 bg-white border-b border-slate-200 overflow-x-auto scrollbar-hide">
+          <div className="flex gap-1 min-w-max">
             {tabs.map(t => (
               <button key={t.key} onClick={() => setTab(t.key as any)} className={`px-3 py-2 rounded-t-lg text-[12px] font-black uppercase tracking-wide transition-all flex items-center gap-1.5 ${tab === t.key ? 'text-brand-primary border-b-2 border-brand-primary bg-brand-primary/5' : 'text-slate-500 hover:text-slate-700'}`}>
                 {t.label} <span className={`text-[10px] px-1.5 py-0.5 rounded-full font-black ${tab === t.key ? 'bg-brand-primary text-white' : 'bg-slate-200 text-slate-500'}`}>{t.count}</span>
@@ -3459,13 +3473,15 @@ const InventoryModule = React.memo(({
                         <div key={m._id || idx} className="flex items-start gap-3 p-3.5 bg-white rounded-2xl border border-slate-200 hover:border-slate-300 transition-colors">
                           <div className={`h-2.5 w-2.5 rounded-full ${dotColor} mt-1.5 shrink-0`} />
                           <div className="flex-1 min-w-0">
-                            <div className="flex items-center flex-wrap gap-2 mb-1">
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${typeCls} uppercase tracking-wide`}>{typeLabel}</span>
-                              <span className="font-mono text-[11px] font-black text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded border border-brand-primary/20">{m['Asset Tag'] || '—'}</span>
-                              <span className="text-[13px] font-bold text-slate-900 truncate">{m['Equipment Name'] || '—'}</span>
-                              <span className="text-[12px] font-black text-slate-700 ml-auto shrink-0">×{m['Qty'] || 1}</span>
+                            <div className="flex items-start sm:items-center justify-between sm:justify-start gap-2 mb-1">
+                              <div className="flex items-center flex-wrap gap-2">
+                                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${typeCls} uppercase tracking-wide`}>{typeLabel}</span>
+                                <span className="font-mono text-[11px] font-black text-brand-primary bg-brand-primary/10 px-2 py-0.5 rounded border border-brand-primary/20">{m['Asset Tag'] || '—'}</span>
+                                <span className="text-[13px] font-bold text-slate-900 line-clamp-2 sm:truncate">{m['Equipment Name'] || '—'}</span>
+                              </div>
+                              <span className="text-[12px] font-black text-slate-700 shrink-0 mt-0.5 sm:mt-0 sm:ml-auto">×{m['Qty'] || 1}</span>
                             </div>
-                            <div className="flex items-center flex-wrap gap-x-4 gap-y-0.5 text-[11px] text-slate-500">
+                            <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 mt-1 sm:mt-0">
                               {m['Linked Event'] && (
                                 <span className="flex items-center gap-1 font-bold text-slate-700">
                                   <Calendar className="h-3 w-3 text-brand-primary shrink-0" />
@@ -3494,7 +3510,7 @@ const InventoryModule = React.memo(({
                 <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4"><Package className="h-8 w-8 text-slate-400" /></div>
                 <div className="text-[14px] font-black text-slate-600">No equipment found</div>
                 <div className="text-[12px] text-slate-400 mt-1">{search ? 'Try a different search term' : 'Add your first item to get started'}</div>
-                {!search && <button onClick={() => setAddOpen(true)} className="mt-4 h-10 px-4 rounded-xl bg-brand-primary text-white text-[12px] font-black uppercase tracking-wide"><Plus className="h-3.5 w-3.5 inline mr-1" />Add Item</button>}
+                {!search && hasPerm(currentUser, 'Inventory', 'add') && <button onClick={() => setAddOpen(true)} className="mt-4 h-10 px-4 rounded-xl bg-brand-primary text-white text-[12px] font-black uppercase tracking-wide"><Plus className="h-3.5 w-3.5 inline mr-1" />Add Item</button>}
               </div>
             ) : (
               filtered.map(eq => {
@@ -3510,7 +3526,7 @@ const InventoryModule = React.memo(({
 
                 return (
                   <div key={tag || eq._id || eq.id} className={`${statusColor} border rounded-2xl p-4 transition-all hover:shadow-sm group`}>
-                    <div className="flex items-start justify-between gap-3">
+                    <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3">
                       <div className="flex items-start gap-3 min-w-0 flex-1">
                         <div className="h-10 w-10 rounded-xl bg-slate-100 flex items-center justify-center text-[20px] shrink-0 mt-0.5">{catIcon}</div>
                         <div className="min-w-0 flex-1">
@@ -3521,44 +3537,46 @@ const InventoryModule = React.memo(({
                           <div className="text-[15px] font-black text-slate-900 truncate">{eq['Name'] || '—'}</div>
                           {eq['Location'] && <div className="text-[11px] text-slate-400 mt-0.5 flex items-center gap-1"><MapPin className="h-3 w-3" />{eq['Location']}</div>}
                           {outInfo && outInfo['Linked Event'] && (
-                            <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-orange-700 bg-orange-50 border border-orange-100 rounded-lg px-2 py-1 w-fit">
+                            <div className="mt-1.5 flex items-center gap-1.5 text-[11px] text-orange-700 bg-orange-50 border border-orange-100 rounded-lg px-2 py-1 w-fit max-w-full">
                               <Calendar className="h-3 w-3 shrink-0" />
-                              <span className="font-bold">{total - avail} unit{total - avail > 1 ? 's' : ''}</span>
-                              <span className="text-orange-500">→</span>
-                              <span className="font-black">{outInfo['Linked Event']}</span>
+                              <span className="font-bold shrink-0">{total - avail} unit{total - avail > 1 ? 's' : ''}</span>
+                              <span className="text-orange-500 shrink-0">→</span>
+                              <span className="font-black truncate">{outInfo['Linked Event']}</span>
                             </div>
                           )}
                         </div>
                       </div>
 
                       {/* Qty + Status */}
-                      <div className="flex flex-col items-end gap-2 shrink-0">
-                        <div className="text-right">
+                      <div className="flex flex-row sm:flex-col items-center sm:items-end justify-between sm:justify-start gap-2 sm:gap-2 shrink-0 w-full sm:w-auto mt-2 sm:mt-0 pt-3 sm:pt-0 border-t sm:border-t-0 border-slate-200/60">
+                        <div className="flex items-baseline sm:flex-col sm:items-end gap-1.5 sm:gap-0 text-left sm:text-right">
                           <div className={`text-[18px] font-black leading-tight ${avail === 0 ? 'text-red-600' : isOut ? 'text-orange-600' : 'text-green-600'}`}>{avail}</div>
                           <div className="text-[10px] text-slate-400 font-bold">/ {total} units</div>
                         </div>
-                        <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden">
-                          <div className={`h-full rounded-full transition-all ${avail === 0 ? 'bg-red-500' : isOut ? 'bg-orange-400' : 'bg-green-500'}`} style={{ width: `${pct * 100}%` }} />
+                        <div className="flex items-center sm:flex-col sm:items-end gap-2 sm:gap-1">
+                          <div className="w-20 h-1.5 bg-slate-200 rounded-full overflow-hidden hidden sm:block">
+                            <div className={`h-full rounded-full transition-all ${avail === 0 ? 'bg-red-500' : isOut ? 'bg-orange-400' : 'bg-green-500'}`} style={{ width: `${pct * 100}%` }} />
+                          </div>
+                          <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isRepair ? 'bg-yellow-100 text-yellow-700' : avail === 0 ? 'bg-red-100 text-red-700' : isOut ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
+                            {isRepair ? 'In Repair' : avail === 0 ? 'All Out' : isOut ? `${total - avail} Out` : 'Available'}
+                          </span>
                         </div>
-                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isRepair ? 'bg-yellow-100 text-yellow-700' : avail === 0 ? 'bg-red-100 text-red-700' : isOut ? 'bg-orange-100 text-orange-700' : 'bg-green-100 text-green-700'}`}>
-                          {isRepair ? 'In Repair' : avail === 0 ? 'All Out' : isOut ? `${total - avail} Out` : 'Available'}
-                        </span>
                       </div>
                     </div>
 
                     {/* Actions */}
-                    <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100">
-                      {avail > 0 && !isRepair && (
-                        <button onClick={() => onCheckOut(eq)} className="flex items-center gap-1.5 h-8 px-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-black uppercase tracking-wide transition-all">
+                    <div className="flex flex-wrap items-center gap-2 mt-3 pt-3 border-t border-slate-100">
+                      {avail > 0 && !isRepair && hasPerm(currentUser, 'Inventory', 'add') && (
+                        <button onClick={() => onCheckOut(eq)} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 h-8 px-3 rounded-xl bg-orange-500 hover:bg-orange-600 text-white text-[11px] font-black uppercase tracking-wide transition-all">
                           <ArrowUpFromLine className="h-3 w-3" />Dispatch
                         </button>
                       )}
-                      {isOut && (
-                        <button onClick={() => onCheckIn(eq)} className="flex items-center gap-1.5 h-8 px-3 rounded-xl bg-green-600 hover:bg-green-700 text-white text-[11px] font-black uppercase tracking-wide transition-all">
+                      {isOut && hasPerm(currentUser, 'Inventory', 'add') && (
+                        <button onClick={() => onCheckIn(eq)} className="flex-1 sm:flex-none flex items-center justify-center gap-1.5 h-8 px-3 rounded-xl bg-green-600 hover:bg-green-700 text-white text-[11px] font-black uppercase tracking-wide transition-all">
                           <ArrowDownToLine className="h-3 w-3" />Return
                         </button>
                       )}
-                      <button onClick={() => onExpandRecord(eq)} className="flex items-center gap-1.5 h-8 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-[11px] font-black uppercase tracking-wide transition-all ml-auto">
+                      <button onClick={() => onExpandRecord(eq)} className="flex items-center justify-center gap-1.5 h-8 px-3 rounded-xl border border-slate-200 bg-white hover:bg-slate-50 text-slate-600 text-[11px] font-black uppercase tracking-wide transition-all sm:ml-auto w-full sm:w-auto">
                         <Eye className="h-3 w-3" />Details
                       </button>
                     </div>
@@ -3631,7 +3649,7 @@ const QRScannerModal = React.memo(({ onClose, equipment, onAction }: {
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const animRef = useRef<number>();
+  const animRef = useRef<number | undefined>(undefined);
   const streamRef = useRef<MediaStream | null>(null);
   const activeRef = useRef(true);
   const scanningRef = useRef(true);
@@ -4817,11 +4835,7 @@ case 'text':
       {String(val)}
     </div>
   ) : empty;
-    
-    case 'checkbox':
-      return (val === 'true' || val === true)
-        ? <Check className="h-4 w-4 text-green-500 mx-auto" />
-        : empty;
+  
 
     case 'link_to_record': {
       if (!val) return empty;
@@ -6681,10 +6695,6 @@ const updateDraftOnly = (col: string, val: string) => {
                 );
               }
 
-              if (colType === 'checkbox') {
-                return <input type="checkbox" checked={editDraft[col] === 'true' || editDraft[col] === true} onChange={e => commitField(col, e.target.checked ? 'true' : 'false')} className="h-4 w-4 rounded accent-brand-primary cursor-pointer" />;
-              }
-
               if (colType === 'date') {
                  return <input type="date" className={inputCls()} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => handleUpdateRecord()} onKeyDown={saveKeys} autoFocus />;
               }
@@ -7859,8 +7869,8 @@ thead.sticky th.sticky {
     const now = new Date();
     const hr = now.getHours();
     const greeting = hr < 12 ? 'Good Morning' : hr < 17 ? 'Good Afternoon' : 'Good Evening';
-    const recentEvents = [...events].sort((a: any, b: any) => new Date(b.DateFrom || 0).getTime() - new Date(a.DateFrom || 0).getTime()).slice(0, 4);
-    const recentSessions = [...sessions].sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()).slice(0, 5);
+    const recentEvents = [...events].sort((a: any, b: any) => new Date(b.DateFrom || 0).getTime() - new Date(a.DateFrom || 0).getTime()).slice(0, 10);
+    const recentSessions = [...sessions].sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()).slice(0, 10);
     const recentTasks = [...checklist].sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()).slice(0, 10);
     const navLinks = [
       { label: 'Events', table: 'Events', Icon: Calendar, count: events.length, color: 'bg-blue-500' },
@@ -7971,7 +7981,7 @@ thead.sticky th.sticky {
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Recent Events</p>
               <button onClick={() => setActiveTable('Events')} className="text-[10px] font-black text-brand-primary uppercase tracking-widest hover:underline">View All</button>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 overflow-y-auto max-h-[320px] thin-scrollbar pr-1 -mr-1">
               {recentEvents.length === 0 && <div className="text-slate-300 text-xs font-bold uppercase py-6 text-center">No events yet</div>}
               {recentEvents.map((ev: any, i: number) => (
                 <div key={i} onClick={() => { setActiveTable('Events'); setViewingRecord(ev); }} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer group transition-colors">
@@ -7995,7 +8005,7 @@ thead.sticky th.sticky {
               <p className="text-[10px] font-black uppercase tracking-[0.2em] text-slate-400">Recent Sessions</p>
               <button onClick={() => setActiveTable('Session')} className="text-[10px] font-black text-brand-primary uppercase tracking-widest hover:underline">View All</button>
             </div>
-            <div className="space-y-1">
+            <div className="space-y-1 overflow-y-auto max-h-[320px] thin-scrollbar pr-1 -mr-1">
               {recentSessions.length === 0 && <div className="text-slate-300 text-xs font-bold uppercase py-6 text-center">No sessions yet</div>}
               {recentSessions.map((s: any, i: number) => (
                 <div key={i} onClick={() => { setActiveTable('Session'); setViewingRecord(s); }} className="flex items-center gap-3 p-2.5 rounded-xl hover:bg-slate-50 cursor-pointer group transition-colors">
