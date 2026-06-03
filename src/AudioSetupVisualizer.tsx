@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { 
   Mic2, Speaker, Settings2, Info, Cable, 
@@ -8,7 +8,8 @@ import {
   Download, ShieldAlert, Radio, Terminal, 
   Box, Volume2, Monitor, Cpu, History, 
   CheckSquare, Activity, Eye, Play, List,
-  ArrowUpRight, Gauge, Layers, Database
+  ArrowUpRight, Gauge, Layers, Database,
+  Calendar, Maximize2
 } from 'lucide-react';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent } from '@/components/ui/card';
@@ -73,44 +74,126 @@ const AUDIT_STEPS = [
   { section: 'Soundcheck', tasks: ['GD Main vs Backup EQ Match', 'Verify Stereo PB Field', 'Loop-check Matrix Rec Out'] }
 ];
 
-export default function AudioSetupHub() {
+export default function AudioSetupHub({ currentUser, onReportStored }: { currentUser?: any, onReportStored?: () => void } = {}) {
   const [activeTab, setActiveTab] = useState('templates');
   const [activeVenue, setActiveVenue] = useState('medium');
   const [inspectGear, setInspectGear] = useState<any>(null);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [checkedTasks, setCheckedTasks] = useState<Record<string, boolean>>({});
+  const [logs, setLogs] = useState<any[]>([]);
+  const [loadingLogs, setLoadingLogs] = useState(false);
+  const [selectedLog, setSelectedLog] = useState<any | null>(null);
+
+  const fetchLogs = async () => {
+    setLoadingLogs(true);
+    try {
+      const res = await window.fetch('/api/audiosetup');
+      if (res.ok) {
+        const data = await res.json();
+        setLogs(data.filter((item: any) => item.Name?.startsWith('Pre-Event Audit')).sort((a: any, b: any) => new Date(b.created_at || 0).getTime() - new Date(a.created_at || 0).getTime()));
+      }
+    } catch (e) {
+      console.error('Failed to fetch logs', e);
+    } finally {
+      setLoadingLogs(false);
+    }
+  };
+
+  useEffect(() => {
+    if (activeTab === 'log') {
+      fetchLogs();
+    }
+  }, [activeTab]);
+
+  const logByDate = useMemo(() => {
+    const groups: Record<string, any[]> = {};
+    logs.forEach(m => {
+      const raw = m.created_at ? String(m.created_at).split('T')[0] : '';
+      const key = raw ? raw.split('T')[0] : 'Unknown date';
+      if (!groups[key]) groups[key] = [];
+      groups[key].push(m);
+    });
+    return Object.entries(groups).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
+  }, [logs]);
 
   const venue = SETUP_TEMPLATES.find(v => v.id === activeVenue)!;
+
+  const allTasksCount = AUDIT_STEPS.reduce((acc, section) => acc + section.tasks.length, 0);
+  const completedTasksCount = Object.values(checkedTasks).filter(Boolean).length;
+
+  const submitAuditReport = async () => {
+    setIsSubmitting(true);
+    try {
+      const userName = currentUser?.name || currentUser?.email || 'System';
+      const passedTasks = Object.entries(checkedTasks).filter(([_, v]) => v).map(([k]) => k);
+      
+      const resAudio = await window.fetch('/api/audiosetup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          Name: `Pre-Event Audit: ${venue.title}`,
+          Notes: `${completedTasksCount} out of ${allTasksCount} tasks verified.\n\nChecks:\n${passedTasks.length > 0 ? passedTasks.map(t => `• ${t}`).join('\n') : 'None'}`,
+          Status: 'Done',
+          Assignee: userName,
+          _modifiedBy: userName
+        })
+      });
+
+      if (resAudio.ok) {
+        alert('Pre-Event Audit Report stored in database successfully!');
+        setIsSubmitted(true);
+        setCheckedTasks({}); // Automatically reset checkboxes
+        if (onReportStored) onReportStored();
+        
+        // Reset the submit button state after 3 seconds so it can be used again
+        setTimeout(() => {
+          setIsSubmitted(false);
+        }, 3000);
+      } else {
+        alert('Failed to store report in database. Please check your connection.');
+      }
+    } catch (error) {
+      alert(`Network error while storing report: ${error}`);
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
 
   return (
     <div className="flex flex-col h-screen bg-[#f1f5f9] overflow-hidden font-sans">
       
       {/* --- HEADER --- */}
-      <header className="px-8 py-4 bg-white border-b border-slate-200 flex items-center justify-between shrink-0">
-        <div className="flex items-center gap-4">
-          <div className="h-10 w-10 bg-brand-primary rounded-xl flex items-center justify-center shadow-lg shadow-brand-primary/20">
-             <Settings2 className="text-white" size={22} />
+      <header className="px-4 sm:px-8 py-4 bg-white border-b border-slate-200 flex flex-col lg:flex-row items-start lg:items-center justify-between shrink-0 gap-4 max-w-full">
+        <div className="flex items-center gap-3 sm:gap-4">
+          <div className="h-8 w-8 sm:h-10 sm:w-10 bg-brand-primary rounded-xl flex items-center justify-center shadow-lg shadow-brand-primary/20 shrink-0">
+             <Settings2 className="text-white h-4 w-4 sm:h-[22px] sm:w-[22px]" />
           </div>
           <div>
-            <h1 className="text-xl font-black text-slate-900 tracking-tight leading-none uppercase italic">AUDIO <span className="text-brand-primary">SetUp</span></h1>
-            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 italic">D'yatra Support System v2.2</p>
+            <h1 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-none uppercase italic">AUDIO <span className="text-brand-primary">SetUp</span></h1>
+            <p className="text-[9px] sm:text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1 italic">D'yatra Support System v2.2</p>
           </div>
         </div>
 
-        <nav className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200">
-          {[
-            { id: 'templates', label: 'Setup Templates', icon: Layout },
-            { id: 'library', label: 'Equipment Library', icon: Database },
-            { id: 'instructions', label: 'General Instructions', icon: List },
-            { id: 'audit', label: 'Pre-Event Audit', icon: ShieldAlert }
-          ].map(t => (
-            <button key={t.id} onClick={() => setActiveTab(t.id)} className={`px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2 ${activeTab === t.id ? 'bg-white text-brand-primary shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800'}`}>
-              <t.icon size={14}/> {t.label}
-            </button>
-          ))}
-        </nav>
+        <div className="w-full lg:w-auto overflow-x-auto scrollbar-hide -mx-4 px-4 lg:mx-0 lg:px-0">
+          <nav className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 w-max">
+            {[
+              { id: 'templates', label: 'Setup Templates', icon: Layout },
+              { id: 'library', label: 'Equipment Library', icon: Database },
+              { id: 'instructions', label: 'General Instructions', icon: List },
+              { id: 'audit', label: 'Pre-Event Audit', icon: ShieldAlert },
+              { id: 'log', label: 'Audit Log', icon: History }
+            ].map(t => (
+              <button key={t.id} onClick={() => setActiveTab(t.id)} className={`shrink-0 px-3 sm:px-4 py-2 rounded-xl text-[9px] sm:text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-1.5 sm:gap-2 ${activeTab === t.id ? 'bg-white text-brand-primary shadow-sm ring-1 ring-slate-200' : 'text-slate-500 hover:text-slate-800'}`}>
+                <t.icon className="h-3.5 w-3.5 sm:h-4 sm:w-4"/> {t.label}
+              </button>
+            ))}
+          </nav>
+        </div>
       </header>
 
       {/* --- MAIN CONTENT AREA --- */}
-      <div className="flex-1 overflow-y-auto p-6 md:p-8 scrollbar-hide">
+      <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 scrollbar-hide">
         <div className="max-w-7xl mx-auto">
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
@@ -259,33 +342,120 @@ export default function AudioSetupHub() {
 
               {/* --- TAB: PRE-EVENT AUDIT CHECKLIST --- */}
               {activeTab === 'audit' && (
-                <div className="space-y-8">
+                <div className="space-y-4 sm:space-y-6">
                   {AUDIT_STEPS.map(section => (
-                    <Card key={section.section} className="rounded-[40px] border-none shadow-xl ring-1 ring-slate-200 bg-white overflow-hidden">
-                       <div className="px-8 py-5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
-                          <h3 className="text-[11px] font-black text-brand-primary uppercase tracking-[0.3em] font-mono italic">Phase: {section.section}</h3>
+                    <Card key={section.section} className="rounded-2xl sm:rounded-3xl border-none shadow-md ring-1 ring-slate-200 bg-white overflow-hidden">
+                       <div className="px-4 py-3 sm:px-6 sm:py-4 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
+                          <h3 className="text-[10px] sm:text-[11px] font-black text-brand-primary uppercase tracking-[0.2em] sm:tracking-[0.3em] font-mono italic">Phase: {section.section}</h3>
                        </div>
-                       <div className="p-8 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-4">
+                       <div className="p-4 sm:p-6 grid grid-cols-1 md:grid-cols-2 gap-x-4 sm:gap-x-6 gap-y-3 sm:gap-y-4">
                           {section.tasks.map((task, idx) => (
-                            <div key={idx} className="p-5 rounded-3xl border border-slate-100 bg-slate-50/20 flex items-center gap-5 group hover:bg-white hover:shadow-lg transition-all">
-                               <input type="checkbox" className="h-7 w-7 rounded-xl border-slate-300 text-brand-primary focus:ring-brand-primary cursor-pointer transition-all"/>
-                               <div>
-                                  <p className="text-[15px] font-black text-slate-900 group-hover:text-brand-primary transition-colors italic">{task}</p>
-                                  <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1">Verification Required by Sevak</p>
+                            <div key={idx} className="p-3 sm:p-4 rounded-2xl border border-slate-100 bg-slate-50/20 flex items-center gap-3 sm:gap-4 group hover:bg-white hover:shadow-md transition-all">
+                               <input 
+                                 type="checkbox" 
+                                 checked={!!checkedTasks[task]}
+                                 onChange={() => setCheckedTasks(prev => ({ ...prev, [task]: !prev[task] }))}
+                                 className="h-5 w-5 sm:h-6 sm:w-6 rounded-lg sm:rounded-xl border-slate-300 text-brand-primary focus:ring-brand-primary cursor-pointer transition-all shrink-0"
+                               />
+                               <div className="min-w-0 flex-1">
+                                  <p className="text-[12px] sm:text-[13px] font-black text-slate-900 group-hover:text-brand-primary transition-colors italic leading-snug mb-0.5">{task}</p>
+                                  <p className="text-[8px] sm:text-[9px] font-bold text-slate-400 uppercase tracking-wider sm:tracking-widest">Verification Required</p>
                                </div>
                             </div>
                           ))}
                        </div>
                     </Card>
                   ))}
-                  <div className="p-10 border-2 border-dashed border-slate-300 rounded-[40px] text-center bg-white/50 space-y-6 shadow-inner">
-                     <ShieldAlert className="mx-auto text-brand-primary" size={48}/>
+                  <div className="p-6 sm:p-8 border-2 border-dashed border-slate-300 rounded-[24px] sm:rounded-[32px] text-center bg-white/50 space-y-4 sm:space-y-5 shadow-inner">
+                     <ShieldAlert className="mx-auto text-brand-primary h-8 w-8 sm:h-12 sm:w-12"/>
                      <div>
-                       <h4 className="text-2xl font-black text-slate-900 uppercase italic">Quality Audit Submission</h4>
-                       <p className="text-xs font-bold text-slate-400 uppercase tracking-[0.1em] mt-2">Submit this checklist only when all physical tests are green.</p>
+                       <h4 className="text-lg sm:text-xl font-black text-slate-900 uppercase italic">Quality Audit Submission</h4>
+                       <p className="text-[10px] sm:text-[11px] font-bold text-slate-400 uppercase tracking-[0.1em] mt-1.5 sm:mt-2">Submit to log completed tests.</p>
                      </div>
-                     <button className="px-12 py-5 bg-slate-900 text-white rounded-[24px] text-xs font-black uppercase tracking-widest shadow-2xl hover:bg-brand-primary transition-all active:scale-95">Finalize & Submit Report</button>
+                     <button 
+                       onClick={submitAuditReport}
+                       disabled={isSubmitted || isSubmitting}
+                       className={`px-8 sm:px-12 py-3 sm:py-4 text-white rounded-xl sm:rounded-2xl text-[10px] sm:text-xs font-black uppercase tracking-widest shadow-lg transition-all w-full sm:w-auto ${isSubmitted ? 'bg-green-600' : isSubmitting ? 'bg-slate-400 cursor-not-allowed' : 'bg-slate-900 hover:bg-brand-primary active:scale-95'}`}
+                     >
+                       {isSubmitting ? 'Saving to Database...' : isSubmitted ? 'Report Stored ✓' : 'Finalize & Submit Report'}
+                     </button>
                   </div>
+                </div>
+              )}
+              
+              {/* --- TAB: AUDIT LOG --- */}
+              {activeTab === 'log' && (
+                <div className="space-y-4 sm:space-y-6">
+                  <div className="flex items-center justify-between px-2">
+                    <h2 className="text-lg sm:text-xl font-black text-slate-900 uppercase italic">Audit Reports Log</h2>
+                    <button onClick={fetchLogs} className="text-[10px] font-bold text-brand-primary uppercase tracking-widest hover:underline flex items-center gap-1">
+                      <History className="h-3 w-3" /> Refresh
+                    </button>
+                  </div>
+                  
+                  {loadingLogs ? (
+                    <div className="p-12 text-center text-slate-400 text-sm font-bold uppercase tracking-widest animate-pulse">Loading logs...</div>
+                  ) : logs.length === 0 ? (
+                    <div className="flex flex-col items-center justify-center py-20 text-center">
+                      <div className="h-16 w-16 rounded-2xl bg-slate-100 flex items-center justify-center mb-4"><History className="h-8 w-8 text-slate-400" /></div>
+                      <div className="text-[14px] font-black text-slate-600">No audit reports found</div>
+                      <div className="text-[12px] text-slate-400 mt-1">Submit an audit report to see the log</div>
+                    </div>
+                  ) : (
+                    <div className="space-y-6">
+                      {logByDate.map(([dateKey, entries]) => (
+                        <div key={dateKey}>
+                          {/* Date header */}
+                          <div className="flex items-center gap-3 mb-3">
+                            <div className="h-px flex-1 bg-slate-200" />
+                            <span className="text-[11px] font-black text-slate-500 uppercase tracking-widest bg-slate-50 px-3 py-1 rounded-full border border-slate-200">
+                              {(() => {
+                                const d = new Date(dateKey + 'T12:00:00');
+                                return isNaN(d.getTime()) ? dateKey : d.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+                              })()}
+                            </span>
+                            <div className="h-px flex-1 bg-slate-200" />
+                          </div>
+                          {/* Entries for this date */}
+                          <div className="space-y-2">
+                            {entries.map((log: any, idx: number) => {
+                              const logId = log._id || idx.toString();
+                              return (
+                              <div 
+                                key={logId} 
+                                onClick={() => setSelectedLog(log)}
+                                className="flex items-start gap-3 p-3.5 bg-white rounded-2xl border border-slate-200 hover:border-slate-300 transition-colors cursor-pointer group"
+                              >
+                                <div className="h-2.5 w-2.5 rounded-full bg-brand-primary mt-1.5 shrink-0" />
+                                <div className="flex-1 min-w-0">
+                                <div className="flex items-start sm:items-center justify-between gap-2 mb-1">
+                                    <div className="flex items-center flex-wrap gap-2">
+                                      <span className="text-[10px] font-black px-2 py-0.5 rounded-full border bg-green-50 border-green-100 text-green-800 uppercase tracking-wide">Stored</span>
+                                    <span className="text-[13px] font-bold text-slate-900 line-clamp-2 sm:truncate">{(log.Name || '—').split(' - ')[0]}</span>
+                                    </div>
+                                  <div className="flex items-center gap-2 sm:gap-3 ml-auto shrink-0">
+                                    <div className="text-[10px] font-bold text-slate-400 whitespace-nowrap">
+                                      {log.created_at ? new Date(log.created_at).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}
+                                    </div>
+                                    <Maximize2 className="h-3.5 w-3.5 text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity" />
+                                  </div>
+                                  </div>
+                                  <div className="flex items-center flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500 mt-1 sm:mt-0">
+                                    {log.Assignee && (
+                                      <span className="flex items-center gap-1 font-bold text-slate-700">
+                                        <ShieldAlert className="h-3 w-3 text-brand-primary shrink-0" />
+                                        By {log.Assignee}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                              </div>
+                            )})}
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
                 </div>
               )}
 
@@ -323,6 +493,81 @@ export default function AudioSetupHub() {
                     </p>
                   </div>
                 </div>
+              </div>
+            </motion.div>
+          </div>
+        )}
+      </AnimatePresence>
+
+      {/* --- AUDIT LOG DETAILS MODAL --- */}
+      <AnimatePresence>
+        {selectedLog && (
+          <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 sm:p-6" onClick={() => setSelectedLog(null)}>
+            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="absolute inset-0 bg-slate-900/60 backdrop-blur-sm" />
+            <motion.div 
+              initial={{ scale: 0.95, opacity: 0, y: 20 }} 
+              animate={{ scale: 1, opacity: 1, y: 0 }} 
+              exit={{ scale: 0.95, opacity: 0, y: 20 }} 
+              onClick={e => e.stopPropagation()} 
+              className="relative w-full max-w-lg bg-white rounded-3xl sm:rounded-[32px] overflow-hidden shadow-2xl flex flex-col max-h-[90vh]"
+            >
+              <div className="px-6 py-5 sm:px-8 sm:py-6 bg-slate-50 border-b border-slate-100 flex items-start justify-between gap-4 shrink-0">
+                <div>
+                  <div className="flex items-center gap-2 mb-2">
+                    <Badge className="bg-green-100 text-green-700 border-none text-[10px] font-black uppercase tracking-widest px-2.5 py-0.5">Report Stored</Badge>
+                    <span className="text-[11px] font-bold text-slate-400">
+                      {selectedLog.created_at ? new Date(selectedLog.created_at).toLocaleString([], { dateStyle: 'medium', timeStyle: 'short' }) : 'Unknown Date'}
+                    </span>
+                  </div>
+                  <h3 className="text-lg sm:text-xl font-black text-slate-900 tracking-tight leading-snug">
+                    {(selectedLog.Name || 'Audit Report').split(' - ')[0]}
+                  </h3>
+                  {selectedLog.Assignee && (
+                    <div className="flex items-center gap-1.5 text-[12px] font-bold text-slate-500 mt-2">
+                      <ShieldAlert className="h-3.5 w-3.5 text-brand-primary" />
+                      Submitted by <span className="text-slate-800">{selectedLog.Assignee}</span>
+                    </div>
+                  )}
+                </div>
+                <button onClick={() => setSelectedLog(null)} className="h-8 w-8 bg-slate-200 hover:bg-slate-300 rounded-full flex items-center justify-center transition-colors shrink-0">
+                  <X size={16} className="text-slate-600"/>
+                </button>
+              </div>
+              <div className="p-6 sm:p-8 overflow-y-auto flex-1 bg-white space-y-4">
+                 <h4 className="text-[10px] font-black text-slate-400 uppercase tracking-widest border-b border-slate-100 pb-2">Audit Details & Notes</h4>
+                 <div className="text-[13px] text-slate-700 leading-relaxed">
+                   {(() => {
+                     if (!selectedLog.Notes) return <span className="italic text-slate-400">No additional notes provided.</span>;
+                     const text = selectedLog.Notes.replace(/^\[.*?\]\n/, '');
+                     
+                     const match = text.match(/(.*?)\n*Checks:\s*(.*)/s);
+                     if (match) {
+                       const [_, summary, checksPart] = match;
+                       let items: string[] = [];
+                       
+                       if (checksPart.includes('•')) {
+                         items = checksPart.split('\n').filter((l: string) => l.trim().startsWith('•')).map((l: string) => l.replace(/^•\s*/, '').trim());
+                       } else if (checksPart.trim() !== 'None') {
+                         items = checksPart.split(',').map((s: string) => s.trim()).filter(Boolean);
+                       }
+                       
+                       return (
+                         <div className="space-y-4">
+                           <div className="whitespace-pre-wrap font-medium">{summary.trim()}</div>
+                           <div className="bg-slate-50 border border-slate-100 rounded-xl p-4 sm:p-5">
+                             <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest mb-3">Checks Passed</div>
+                             {items.length > 0 ? (
+                               <ul className="list-disc pl-4 space-y-1.5 text-slate-700 marker:text-brand-primary">
+                                 {items.map((item, i) => <li key={i} className="pl-1 leading-snug">{item}</li>)}
+                               </ul>
+                             ) : <span className="italic text-slate-400 text-[12px]">None</span>}
+                           </div>
+                         </div>
+                       );
+                     }
+                     return <div className="whitespace-pre-wrap">{text}</div>;
+                   })()}
+                 </div>
               </div>
             </motion.div>
           </div>

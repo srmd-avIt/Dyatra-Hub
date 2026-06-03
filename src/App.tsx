@@ -3272,7 +3272,7 @@ const InventoryModule = React.memo(({
       const avail = Number(eq['Available Qty'] ?? eq['Total Qty'] ?? 0);
       const total = Number(eq['Total Qty'] ?? 0);
       if (tab === 'available' && avail === 0) return false;
-      if (tab === 'out' && avail >= total && eq['Status'] !== 'checked-out') return false;
+      if (tab === 'out' && (eq['Status'] === 'in-repair' || (avail >= total && eq['Status'] !== 'checked-out'))) return false;
       if (tab === 'repair' && eq['Status'] !== 'in-repair') return false;
       if (catFilter && eq['Category'] !== catFilter) return false;
       if (search) {
@@ -3283,11 +3283,14 @@ const InventoryModule = React.memo(({
     });
   }, [equipment, tab, search, catFilter]);
 
-  const categories = useMemo(() => [...new Set(equipment.map(e => e['Category']).filter(Boolean))].sort(), [equipment]);
+  const categories = useMemo(() => {
+    const defaults = ['Microphone', 'Speaker', 'Amplifier', 'Projector', 'Screen', 'LED Panel', 'Camera', 'Tripod', 'Cable', 'Stand', 'Laptop', 'Mixer', 'Lighting', 'Other'];
+    return [...new Set([...equipment.map(e => e['Category']).filter(Boolean), ...defaults])].sort();
+  }, [equipment]);
 
   // ── Add form helpers ───────────────────────────────────────────────────────
   const nextTag = `EQ-${String(equipment.length + 1).padStart(3, '0')}`;
-  const catOpts = categories.length ? categories : ['Microphone','Speaker','Amplifier','Projector','Screen','LED Panel','Camera','Tripod','Cable','Stand','Laptop','Mixer','Lighting','Other'];
+  const catOpts = categories;
 
   const submitAdd = async () => {
     if (!addForm['Name']) return;
@@ -3318,7 +3321,7 @@ const InventoryModule = React.memo(({
   const tabs = [
     { key: 'all', label: 'All', count: equipment.length },
     { key: 'available', label: 'Available', count: equipment.filter(e => (e['Available Qty'] ?? 0) > 0).length },
-    { key: 'out', label: 'Checked Out', count: equipment.filter(e => (e['Available Qty'] ?? e['Total Qty']) < (e['Total Qty'] ?? 0) || e['Status'] === 'checked-out').length },
+    { key: 'out', label: 'Checked Out', count: equipment.filter(e => e['Status'] !== 'in-repair' && ((e['Available Qty'] ?? e['Total Qty']) < (e['Total Qty'] ?? 0) || e['Status'] === 'checked-out')).length },
     { key: 'repair', label: 'In Repair', count: inRepairCount },
   ] as const;
 
@@ -3701,6 +3704,12 @@ const QRScannerModal = React.memo(({ onClose, equipment, onAction }: {
   const statusLabel = eqStatus === 'available' ? 'Available' : eqStatus === 'checked-out' ? 'Checked Out' : eqStatus === 'in-repair' ? 'In Repair' : eqStatus === 'retired' ? 'Retired' : eqStatus || '—';
   const statusCls = eqStatus === 'available' ? 'bg-green-100 text-green-700' : eqStatus === 'checked-out' ? 'bg-orange-100 text-orange-700' : eqStatus === 'in-repair' ? 'bg-yellow-100 text-yellow-700' : 'bg-slate-100 text-slate-600';
 
+  const avail = Number(scanned?.['Available Qty'] ?? 0);
+  const total = Number(scanned?.['Total Qty'] ?? 0);
+  const isRepair = eqStatus === 'in-repair';
+  const canStockIn = avail < total || isRepair;
+  const canStockOut = avail > 0 && !isRepair;
+
   return createPortal(
     <div className="fixed inset-0 z-[700] flex flex-col bg-black/95" onClick={e => e.stopPropagation()}>
       {/* Header */}
@@ -3759,12 +3768,16 @@ const QRScannerModal = React.memo(({ onClose, equipment, onAction }: {
                 <div><span className="text-slate-400">Serial</span><br /><span className="font-semibold font-mono">{scanned['Serial No'] || '—'}</span></div>
               </div>
               <div className="flex gap-2">
-                <button onClick={() => onAction(scanned, 'stock-in')} className="flex-1 h-10 bg-green-600 hover:bg-green-700 text-white text-[12px] font-black rounded-xl flex items-center justify-center gap-1.5 transition-all">
-                  <ArrowDownToLine className="h-3.5 w-3.5" /> Stock In
-                </button>
-                <button onClick={() => onAction(scanned, 'stock-out')} className="flex-1 h-10 bg-orange-500 hover:bg-orange-600 text-white text-[12px] font-black rounded-xl flex items-center justify-center gap-1.5 transition-all">
-                  <ArrowUpFromLine className="h-3.5 w-3.5" /> Stock Out
-                </button>
+                {canStockIn && (
+                  <button onClick={() => onAction(scanned, 'stock-in')} className="flex-1 h-10 bg-green-600 hover:bg-green-700 text-white text-[12px] font-black rounded-xl flex items-center justify-center gap-1.5 transition-all">
+                    <ArrowDownToLine className="h-3.5 w-3.5" /> Stock In
+                  </button>
+                )}
+                {canStockOut && (
+                  <button onClick={() => onAction(scanned, 'stock-out')} className="flex-1 h-10 bg-orange-500 hover:bg-orange-600 text-white text-[12px] font-black rounded-xl flex items-center justify-center gap-1.5 transition-all">
+                    <ArrowUpFromLine className="h-3.5 w-3.5" /> Stock Out
+                  </button>
+                )}
                 <button onClick={() => onAction(scanned, 'view')} className="flex-1 h-10 bg-slate-800 hover:bg-slate-900 text-white text-[12px] font-black rounded-xl flex items-center justify-center gap-1.5 transition-all">
                   <Eye className="h-3.5 w-3.5" /> View
                 </button>
@@ -3827,10 +3840,18 @@ const StockMovementModal = React.memo(({ onClose, equipmentItem, movementType, e
     const newAvail = isIn
       ? (equipmentItem['Available Qty'] ?? 0) + form.Qty
       : Math.max(0, (equipmentItem['Available Qty'] ?? 0) - form.Qty);
+      
+    let newStatus = newAvail === 0 ? 'checked-out' : 'available';
+    if (!isIn && form.Reason === 'Sent for Repair') {
+      newStatus = 'in-repair';
+    } else if (isIn && form.Reason === 'Return from Repair') {
+      newStatus = newAvail > 0 ? 'available' : 'checked-out';
+    }
+
     const updatedEquipment = {
       ...equipmentItem,
       'Available Qty': newAvail,
-      Status: newAvail === 0 ? 'checked-out' : 'available',
+      Status: newStatus,
     };
     await onSubmit(movement, updatedEquipment);
     setSaving(false);
@@ -6618,8 +6639,8 @@ const updateDraftOnly = (col: string, val: string) => {
                 opts = ['available', 'checked-out', 'in-repair', 'retired'];
               }
               else if (activeTable === 'Equipment' && col === 'Category') {
-                opts = [...new Set(equipmentItems.map((e: any) => e['Category']).filter(Boolean))].sort();
-                if (!opts.length) opts = ['Microphone', 'Speaker', 'Amplifier', 'Projector', 'Screen', 'LED Panel', 'Camera', 'Tripod', 'Cable', 'Stand', 'Laptop', 'Mixer', 'Lighting', 'Other'];
+                const defaults = ['Microphone', 'Speaker', 'Amplifier', 'Projector', 'Screen', 'LED Panel', 'Camera', 'Tripod', 'Cable', 'Stand', 'Laptop', 'Mixer', 'Lighting', 'Other'];
+                opts = [...new Set([...equipmentItems.map((e: any) => e['Category']).filter(Boolean), ...defaults])].sort();
               }
               else if (activeTable === 'EquipmentMovements' && col === 'Movement Type') {
                 opts = ['stock-in', 'stock-out'];
@@ -7237,23 +7258,8 @@ thead.sticky th.sticky {
 
       {activeTable === 'AudioSetup' ? (
         <div className="flex items-center gap-3">
-          <div className="h-8 w-8 bg-indigo-600 rounded flex items-center justify-center relative shadow-sm shrink-0">
-            <Radio className="text-white absolute animate-pulse" size={16} />
-            <Radio className="text-white" size={16} />
-          </div>
-          <div>
-            <div className="flex items-center gap-2 flex-wrap">
-              <h1 className="text-lg font-black text-slate-800 tracking-tighter uppercase italic leading-none">
-                SRMD AV Audio Setup <span className="text-indigo-600">Hub</span>
-              </h1>
-              
-            </div>
-            <p className="text-[10px] text-slate-400 font-bold uppercase tracking-widest leading-none mt-1.5 flex items-center gap-1.5">
-              <span>REVISED DISCOURSE GUIDELINES</span>
-              <span>•</span>
-              <span className="bg-indigo-50 text-indigo-700 px-1 rounded font-mono">S.O.P. MANUAL</span>
-            </p>
-          </div>
+          
+          
         </div>
       ) : (activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements') && (
         <>
@@ -7282,17 +7288,7 @@ thead.sticky th.sticky {
     <div className="flex flex-wrap items-center justify-end gap-1.5 md:gap-2 flex-1 min-w-0">
       {activeTable === 'AudioSetup' ? (
         <div className="flex items-center gap-3.5 text-xs font-mono">
-          <div className="hidden sm:flex bg-slate-50 p-2 border border-slate-200 rounded-md items-center gap-2 font-bold text-slate-600">
-            <Calendar className="text-slate-400" size={13} />
-            <span>SOP REFDATE: 2026-05-28</span>
-          </div>
-          <Button
-            onClick={() => setActiveTable('DyatraChecklist')}
-            className="px-3.5 py-2 bg-indigo-600 hover:bg-indigo-700 text-white rounded-md font-bold flex items-center gap-1.5 transition-all text-[11px] shadow-sm"
-          >
-            <ClipboardCheck size={14} />
-            <span className="hidden sm:inline">Go to Checklist</span>
-          </Button>
+         
         </div>
       ) : (
         <>
@@ -8046,7 +8042,10 @@ thead.sticky th.sticky {
             ) : activeTable === 'UserManagement' ? (
               ['admin', 'owner'].includes(user?.role) ? <UserManagement currentUser={user} onToast={showToast} /> : null
             ) : activeTable === 'AudioSetup' ? (
-              <AudioSetupVisualizer />
+              <AudioSetupVisualizer 
+                currentUser={user} 
+                onReportStored={() => { fetchActiveTable('DyatraChecklist'); fetchActiveTable('AudioSetup'); }} 
+              />
             ) : (activeTable === 'Equipment' || activeTable === 'EquipmentMovements') ? (
               <InventoryModule
                 equipment={equipmentItems}
@@ -10157,9 +10156,8 @@ thead.sticky th.sticky {
     {/* EQUIPMENT FIELDS */}
     {activeTable === 'Equipment' && (() => {
       const nextTag = `EQ-${String(equipmentItems.length + 1).padStart(3, '0')}`;
-      const catOpts = equipmentItems.length
-        ? [...new Set(equipmentItems.map((e: any) => e['Category']).filter(Boolean))].sort()
-        : ['Microphone', 'Speaker', 'Amplifier', 'Projector', 'Screen', 'LED Panel', 'Camera', 'Tripod', 'Cable', 'Stand', 'Laptop', 'Mixer', 'Lighting', 'Other'];
+      const defaults = ['Microphone', 'Speaker', 'Amplifier', 'Projector', 'Screen', 'LED Panel', 'Camera', 'Tripod', 'Cable', 'Stand', 'Laptop', 'Mixer', 'Lighting', 'Other'];
+      const catOpts = [...new Set([...equipmentItems.map((e: any) => e['Category']).filter(Boolean), ...defaults])].sort();
       return (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
