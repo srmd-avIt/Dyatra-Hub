@@ -6867,6 +6867,102 @@ const memoizedData = useMemo(() => getProcessedData(), [
     setIsTyping(false);
   };
 
+// Renders the correct input widget for any column in the Add Record form
+const renderNewRecordField = (col: string): React.ReactNode => {
+  const colType = getColumnType(col);
+  const val = newRecord[col] || '';
+  const setVal = (v: string) => setNewRecord({ ...newRecord, [col]: v });
+  const tableData = getDataForTable(activeTable);
+  const existingOpts = [...new Set(
+    tableData.map((r: any) => r[col]).filter(Boolean)
+      .flatMap((v: any) => typeof v === 'string' ? v.split(',').map((x: string) => x.trim()).filter(Boolean) : [String(v)])
+  )].sort() as string[];
+  const allOpts = [...new Set([...existingOpts, ...(customTags[activeTable]?.[col] || [])])];
+
+  if (colType === 'long_text') {
+    return <Textarea value={val} onChange={e => setVal(e.target.value)} placeholder={`${colLabel(col)}…`} className="bg-brand-bg min-h-[80px]" />;
+  }
+  if (colType === 'date') {
+    return <Input type="date" value={val} onChange={e => setVal(e.target.value)} className="bg-brand-bg" />;
+  }
+  if (colType === 'time') {
+    return <Input type="time" value={val} onChange={e => setVal(e.target.value)} className="bg-brand-bg" />;
+  }
+  if (colType === 'number') {
+    return <Input type="number" value={val} onChange={e => setVal(e.target.value)} className="bg-brand-bg" />;
+  }
+  if (colType === 'yes_no') {
+    return (
+      <div className="flex gap-2">
+        {['Yes', 'No'].map(opt => (
+          <button key={opt} type="button" onClick={() => setVal(opt)}
+            className={`flex-1 h-10 rounded-xl border text-[12px] font-black uppercase tracking-widest transition-all ${val === opt ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>
+            {opt}
+          </button>
+        ))}
+      </div>
+    );
+  }
+  if (colType === 'status') {
+    const statusOpts = allOpts.length > 0 ? allOpts : ['To Do', 'In Progress', 'Done'];
+    return (
+      <div className="flex gap-2 flex-wrap">
+        {statusOpts.map(opt => (
+          <button key={opt} type="button" onClick={() => setVal(opt)}
+            className={`px-3 h-9 rounded-xl border text-[11px] font-black uppercase tracking-widest transition-all ${val === opt ? 'bg-brand-primary text-white border-brand-primary' : 'bg-white text-slate-600 border-slate-200'}`}>
+            {opt}
+          </button>
+        ))}
+      </div>
+    );
+  }
+  if (['badge', 'badge_multi', 'select', 'year'].includes(colType)) {
+    return (
+      <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+        <CellDropdown
+          value={val}
+          options={allOpts}
+          isMulti={colType === 'badge_multi'}
+          onAddOption={(v: string) => handleAddCustomTag(activeTable, col, v)}
+          removableOptions={allOpts}
+          onRemoveOption={(v: string) => handleRemoveTagGlobally(activeTable, col, v)}
+          onCommit={setVal}
+          onCancel={() => {}}
+          placeholder={`${colLabel(col)}…`}
+        />
+      </div>
+    );
+  }
+  if (colType === 'link_to_record') {
+    const meta = columnMeta[activeTable]?.[col];
+    const linkedTable = meta?.linkedTable;
+    const linkedOpts = linkedTable
+      ? (getDataForTable(linkedTable)
+          .map((r: any) => r[getPrimaryField(linkedTable)])
+          .filter((v: any): v is string => typeof v === 'string')
+          .sort() as string[])
+      : [];
+    return (
+      <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+        <CellDropdown value={val} options={linkedOpts} onCommit={setVal} onCancel={() => {}} placeholder={`Select ${colLabel(col)}…`} />
+      </div>
+    );
+  }
+  if (colType === 'lookup') {
+    return <Input value={val} readOnly className="bg-slate-50 text-slate-400 cursor-not-allowed" placeholder="Auto-filled from linked record" />;
+  }
+  return (
+    <Input
+      type={colType === 'email' ? 'email' : colType === 'phone' ? 'tel' : colType === 'url' ? 'url' : 'text'}
+      value={val}
+      onChange={e => setVal(e.target.value)}
+      placeholder={`${colLabel(col)}…`}
+      className="bg-brand-bg"
+      style={colType === 'email' ? { color: '#2563eb', textDecoration: 'underline' } : colType === 'id' ? { fontFamily: 'monospace', fontWeight: 'bold', color: '#2563eb' } : undefined}
+    />
+  );
+};
+
 // 1. FIRST PRIORITY: SHOW LOADING PULSE WHILE INITIALIZING
 // 1. If we are still checking localStorage for an existing session, show a clean loader
 if (loading) {
@@ -10315,6 +10411,20 @@ thead.sticky th.sticky {
     </div>
   </div>
 )}
+    {/* Extra/custom columns for this table */}
+    {(extraColumns[activeTable] || []).length > 0 && (
+      <div className="space-y-4 pt-2">
+        <p className="text-[9px] font-black uppercase tracking-[0.2em] text-slate-400 border-t border-slate-100 pt-4">Additional Fields</p>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {(extraColumns[activeTable] || []).map((col: string) => (
+            <div key={col} className="space-y-1.5">
+              <label className="text-[10px] font-bold uppercase text-slate-500">{colLabel(col)}</label>
+              {renderNewRecordField(col)}
+            </div>
+          ))}
+        </div>
+      </div>
+    )}
   </div>
 </div>
 
@@ -10959,28 +11069,39 @@ thead.sticky th.sticky {
             },
           ];
         } else {
-          // Generic: single step with all visible columns
+          // Generic: single step with all visible columns — respects field types
           wizardSteps = [
             {
               label: 'Details',
               content: (
                 <div className="space-y-5">
-                  {getTableColumns().map((col: string) => {
-                    const colType = getColumnType(col);
-                    return (
+                  {getTableColumns().map((col: string) => (
                     <div key={col}>
                       <label className={labelCls}>{colLabel(col)}</label>
-                      <input type={colType === 'email' ? 'email' : colType === 'phone' ? 'tel' : 'text'} className={inputCls} style={colType === 'email' ? { color: '#2563eb', WebkitTextFillColor: '#2563eb', textDecoration: 'underline' } : colType === 'id' ? { color: '#2563eb', fontFamily: 'monospace', fontWeight: 'bold' } : undefined} value={newRecord[col] || ''} onChange={e => {
-                        let val = e.target.value;
-                        if (colType === 'phone') val = val.replace(/[^\d\s()+-]/g, '');
-                        setNewRecord({...newRecord, [col]: val});
-                      }} placeholder={`${colLabel(col)}…`} />
+                      {renderNewRecordField(col)}
                     </div>
-                  )})}
+                  ))}
                 </div>
               )
             },
           ];
+        }
+
+        // Append extra columns step for named-table wizards that have custom columns
+        if ((extraColumns[activeTable] || []).length > 0) {
+          wizardSteps.push({
+            label: 'More Fields',
+            content: (
+              <div className="space-y-5">
+                {(extraColumns[activeTable] || []).map((col: string) => (
+                  <div key={col}>
+                    <label className={labelCls}>{colLabel(col)}</label>
+                    {renderNewRecordField(col)}
+                  </div>
+                ))}
+              </div>
+            )
+          });
         }
 
         const totalSteps = wizardSteps.length;
