@@ -9790,29 +9790,51 @@ thead.sticky th.sticky {
       const cityOpts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
       const yr = new Date().getFullYear();
       const yearOpts = Array.from({ length: 11 }, (_, k) => String(yr + 2 - k));
+      const lbl = "text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted";
       return (
         <div className="space-y-4">
           <div className="grid grid-cols-2 gap-4">
-            <Input value={newRecord["Event Name"] || ''} onChange={(e) => setNewRecord({...newRecord, "Event Name": e.target.value})} placeholder="Event Name" className="bg-brand-bg" />
-            <Input value={newRecord.Venue || ''} onChange={(e) => setNewRecord({...newRecord, Venue: e.target.value})} placeholder="Venue" className="bg-brand-bg" />
+            <div className="space-y-1">
+              <label className={lbl}>Event Name</label>
+              <Input value={newRecord["Event Name"] || ''} onChange={(e) => setNewRecord({...newRecord, "Event Name": e.target.value})} placeholder="" className="bg-brand-bg" />
+            </div>
+            <div className="space-y-1">
+              <label className={lbl}>Venue</label>
+              <Input value={newRecord.Venue || ''} onChange={(e) => setNewRecord({...newRecord, Venue: e.target.value})} placeholder="" className="bg-brand-bg" />
+            </div>
           </div>
           <div className="grid grid-cols-2 gap-4">
-            <Input type="date" value={newRecord.DateFrom || ''} onChange={(e) => setNewRecord({...newRecord, DateFrom: e.target.value})} className="bg-brand-bg" />
-            <Input type="date" value={newRecord.DateTo || ''} onChange={(e) => setNewRecord({...newRecord, DateTo: e.target.value})} className="bg-brand-bg" />
+            <div className="space-y-1">
+              <label className={lbl}>Date From</label>
+              <Input type="date" value={newRecord.DateFrom || ''} onChange={(e) => setNewRecord({...newRecord, DateFrom: e.target.value})} className="bg-brand-bg" />
+            </div>
+            <div className="space-y-1">
+              <label className={lbl}>Date To</label>
+              <Input type="date" value={newRecord.DateTo || ''} onChange={(e) => setNewRecord({...newRecord, DateTo: e.target.value})} className="bg-brand-bg" />
+            </div>
           </div>
           <div className="grid grid-cols-3 gap-4">
-            <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
-              <CellDropdown value={newRecord.Occasion || ''} options={[...new Set([...occasionOpts, ...(customTags['Events']?.['Occasion'] || [])])]} onAddOption={val => handleAddCustomTag('Events', 'Occasion', val)} removableOptions={[...new Set([...occasionOpts, ...(customTags['Events']?.['Occasion'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Events', 'Occasion', val)} onCommit={val => setNewRecord({...newRecord, Occasion: val})} onCancel={() => {}} placeholder="Occasion…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+            <div className="space-y-1">
+              <label className={lbl}>Occasion</label>
+              <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+                <CellDropdown value={newRecord.Occasion || ''} options={[...new Set([...occasionOpts, ...(customTags['Events']?.['Occasion'] || [])])]} onAddOption={val => handleAddCustomTag('Events', 'Occasion', val)} removableOptions={[...new Set([...occasionOpts, ...(customTags['Events']?.['Occasion'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Events', 'Occasion', val)} onCommit={val => setNewRecord({...newRecord, Occasion: val})} onCancel={() => {}} placeholder="Select…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+              </div>
             </div>
-            <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
-              <CellDropdown value={newRecord.City || ''} options={[...new Set([...cityOpts, ...(customTags['Events']?.['City'] || [])])]} onAddOption={val => handleAddCustomTag('Events', 'City', val)} removableOptions={[...new Set([...cityOpts, ...(customTags['Events']?.['City'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Events', 'City', val)} onCommit={val => setNewRecord({...newRecord, City: val})} onCancel={() => {}} placeholder="City…" tagClass="bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+            <div className="space-y-1">
+              <label className={lbl}>City</label>
+              <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+                <CellDropdown value={newRecord.City || ''} options={[...new Set([...cityOpts, ...(customTags['Events']?.['City'] || [])])]} onAddOption={val => handleAddCustomTag('Events', 'City', val)} removableOptions={[...new Set([...cityOpts, ...(customTags['Events']?.['City'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('Events', 'City', val)} onCommit={val => setNewRecord({...newRecord, City: val})} onCancel={() => {}} placeholder="Select…" tagClass="bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+              </div>
             </div>
-            <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
-              <CellDropdown value={newRecord.Year || ''} options={yearOpts} onCommit={val => setNewRecord({...newRecord, Year: val})} onCancel={() => {}} placeholder="Year…" tagClass="bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20" />
+            <div className="space-y-1">
+              <label className={lbl}>Year</label>
+              <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+                <CellDropdown value={newRecord.Year || ''} options={yearOpts} onCommit={val => setNewRecord({...newRecord, Year: val})} onCancel={() => {}} placeholder="Select…" tagClass="bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20" />
+              </div>
             </div>
           </div>
-          <div className="space-y-2">
-            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Linked Sessions</label>
+          <div className="space-y-1">
+            <label className={lbl}>Linked Sessions</label>
             <SessionPicker value={newRecord.Sessions || ''} allSessions={sessions} onCommit={val => setNewRecord({...newRecord, Sessions: val})} onCancel={() => {}} />
           </div>
         </div>
@@ -9887,13 +9909,20 @@ thead.sticky th.sticky {
 })()}
 
 {/* MUSIC LOG FIELDS - 17 Columns Compact View */}
-{activeTable === 'MusicLog' && (
+{activeTable === 'MusicLog' && (() => {
+  const mlTimeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
+  const mlOccasionOpts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+  const lbl = "text-[9px] font-black uppercase tracking-widest text-slate-500";
+  return (
   <div className="space-y-6">
     <div className="p-3 bg-brand-primary/5 border border-brand-primary/10 rounded-lg">
       <p className="text-[9px] font-black uppercase tracking-widest text-brand-primary mb-3">Event & Session Context</p>
-      <div className="grid grid-cols-2 gap-3">
-        <Input value={newRecord.playId || ''} onChange={(e) => setNewRecord({...newRecord, playId: e.target.value})} placeholder="PlayID" className="bg-brand-bg h-9 text-xs" />
-        <div className="col-span-2 space-y-1">
+      <div className="space-y-3">
+        <div className="space-y-1">
+          <label className={lbl}>Play ID</label>
+          <Input value={newRecord.playId || ''} onChange={(e) => setNewRecord({...newRecord, playId: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
           <label className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Session</label>
           <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
             <CellDropdown
@@ -9911,108 +9940,243 @@ thead.sticky th.sticky {
             />
           </div>
         </div>
-        <Input value={newRecord.parentEvent || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, parentEvent: e.target.value}))} placeholder="Parent Event" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.date || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, date: e.target.value}))} placeholder="Date" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.timeOfDay || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, timeOfDay: e.target.value}))} placeholder="Time of Day" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.occasion || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, occasion: e.target.value}))} placeholder="Occasion" className="bg-brand-bg h-9 text-xs" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className={lbl}>Parent Event</label>
+            <Input value={newRecord.parentEvent || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, parentEvent: e.target.value}))} placeholder="" className="bg-brand-bg h-9 text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className={lbl}>Date</label>
+            <Input type="date" value={newRecord.date || ''} onChange={(e) => setNewRecord((prev: any) => ({...prev, date: e.target.value}))} className="bg-brand-bg h-9 text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className={lbl}>Time of Day</label>
+            <div className="h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
+              <CellDropdown value={newRecord.timeOfDay || ''} options={[...new Set([...mlTimeOpts, ...(customTags['MusicLog']?.['Time Of Day'] || [])])]} onAddOption={val => handleAddCustomTag('MusicLog', 'Time Of Day', val)} removableOptions={[...new Set([...mlTimeOpts, ...(customTags['MusicLog']?.['Time Of Day'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('MusicLog', 'Time Of Day', val)} onCommit={val => setNewRecord((prev: any) => ({...prev, timeOfDay: val}))} onCancel={() => {}} placeholder="Select…" tagClass="bg-orange-500 text-white text-[11px] font-semibold px-2 py-0.5 rounded-sm" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className={lbl}>Occasion</label>
+            <div className="h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
+              <CellDropdown value={newRecord.occasion || ''} options={[...new Set([...mlOccasionOpts, ...(customTags['MusicLog']?.['Occasion'] || [])])]} onAddOption={val => handleAddCustomTag('MusicLog', 'Occasion', val)} removableOptions={[...new Set([...mlOccasionOpts, ...(customTags['MusicLog']?.['Occasion'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('MusicLog', 'Occasion', val)} onCommit={val => setNewRecord((prev: any) => ({...prev, occasion: val}))} onCancel={() => {}} placeholder="Select…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 
     <div className="p-3 bg-brand-accent/5 border border-brand-accent/10 rounded-lg">
       <p className="text-[9px] font-black uppercase tracking-widest text-brand-accent mb-3">Track & Performance Details</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <Input value={newRecord.order || ''} onChange={(e) => setNewRecord({...newRecord, order: e.target.value})} placeholder="Order" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.playedAt || ''} onChange={(e) => setNewRecord({...newRecord, playedAt: e.target.value})} placeholder="PlayedAt" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.trackId || ''} onChange={(e) => setNewRecord({...newRecord, trackId: e.target.value})} placeholder="TrackID Link" className="bg-brand-bg h-9 text-xs" />
+        <div className="space-y-1">
+          <label className={lbl}>Order</label>
+          <Input value={newRecord.order || ''} onChange={(e) => setNewRecord({...newRecord, order: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className={lbl}>Played At</label>
+          <Input value={newRecord.playedAt || ''} onChange={(e) => setNewRecord({...newRecord, playedAt: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className={lbl}>Track ID</label>
+          <Input value={newRecord.trackId || ''} onChange={(e) => setNewRecord({...newRecord, trackId: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
       </div>
       <div className="mt-3 space-y-3">
-        <Input value={newRecord.track || ''} onChange={(e) => setNewRecord({...newRecord, track: e.target.value})} placeholder="Track Name" className="bg-brand-bg h-9 text-xs" />
-        <div className="grid grid-cols-2 gap-3">
-          <Input value={newRecord.theme || ''} onChange={(e) => setNewRecord({...newRecord, theme: e.target.value})} placeholder="Theme" className="bg-brand-bg h-9 text-xs" />
-          <Input value={newRecord.relevance || ''} onChange={(e) => setNewRecord({...newRecord, relevance: e.target.value})} placeholder="Relevance" className="bg-brand-bg h-9 text-xs" />
-          <Input value={newRecord.patrank || ''} onChange={(e) => setNewRecord({...newRecord, patrank: e.target.value})} placeholder="Patrank" className="bg-brand-bg h-9 text-xs" />
-          <Input value={newRecord.cue || ''} onChange={(e) => setNewRecord({...newRecord, cue: e.target.value})} placeholder="Cue" className="bg-brand-bg h-9 text-xs" />
+        <div className="space-y-1">
+          <label className={lbl}>Track Name</label>
+          <Input value={newRecord.track || ''} onChange={(e) => setNewRecord({...newRecord, track: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
         </div>
-        <Input value={newRecord.topic || ''} onChange={(e) => setNewRecord({...newRecord, topic: e.target.value})} placeholder="Pravachan Topic" className="bg-brand-bg h-9 text-xs" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className={lbl}>Theme</label>
+            <Input value={newRecord.theme || ''} onChange={(e) => setNewRecord({...newRecord, theme: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className={lbl}>Relevance</label>
+            <Input value={newRecord.relevance || ''} onChange={(e) => setNewRecord({...newRecord, relevance: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className={lbl}>Patrank</label>
+            <Input value={newRecord.patrank || ''} onChange={(e) => setNewRecord({...newRecord, patrank: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className={lbl}>Cue</label>
+            <Input value={newRecord.cue || ''} onChange={(e) => setNewRecord({...newRecord, cue: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className={lbl}>Pravachan Topic</label>
+          <Input value={newRecord.topic || ''} onChange={(e) => setNewRecord({...newRecord, topic: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
       </div>
     </div>
 
     <div className="space-y-3">
-      <Textarea value={newRecord.notes || ''} onChange={(e) => setNewRecord({...newRecord, notes: e.target.value})} placeholder="Notes" className="bg-brand-bg min-h-[60px] text-xs" />
-      <Input value={newRecord.ppgRemarks || ''} onChange={(e) => setNewRecord({...newRecord, ppgRemarks: e.target.value})} placeholder="PPG Remarks" className="bg-brand-bg h-9 text-xs" />
+      <div className="space-y-1">
+        <label className={lbl}>Notes</label>
+        <Textarea value={newRecord.notes || ''} onChange={(e) => setNewRecord({...newRecord, notes: e.target.value})} placeholder="" className="bg-brand-bg min-h-[60px] text-xs" />
+      </div>
+      <div className="space-y-1">
+        <label className={lbl}>PPG Remarks</label>
+        <Input value={newRecord.ppgRemarks || ''} onChange={(e) => setNewRecord({...newRecord, ppgRemarks: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+      </div>
     </div>
   </div>
-)}
+  );
+})()}
 
 {/* VIDEOLOG FIELDS */}
-{activeTable === 'VideoLog' && (
+{activeTable === 'VideoLog' && (() => {
+  const vlCityOpts = [...new Set([...sessions.map((s: any) => s.City), ...events.map((e: any) => e.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+  const vlTimeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
+  const vlOccasionOpts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+  const vlSessionTypeOpts = [...new Set(sessions.map((s: any) => s.SessionType).filter(Boolean))].sort() as string[];
+  const vlEventOpts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
+  const lbl = "text-[9px] font-black uppercase tracking-widest text-slate-500";
+  return (
   <div className="space-y-6">
     <div className="p-3 bg-brand-primary/5 border border-brand-primary/10 rounded-lg">
       <p className="text-[9px] font-black uppercase tracking-widest text-brand-primary mb-3">Session Context</p>
-      <div className="grid grid-cols-2 gap-3">
-        <Input value={newRecord.VideoPlayId || ''} onChange={(e) => setNewRecord({...newRecord, VideoPlayId: e.target.value})} placeholder="VideoPlayId" className="bg-brand-bg h-9 text-xs" />
-        <div className="col-span-1 space-y-1">
-          <label className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Session</label>
-          <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
-            <CellDropdown
-              value={newRecord.session || ''}
-              options={sessions.map((s: any) => s["Session Name"]).filter(Boolean)}
-              onCommit={val => {
-                const s = sessions.find((x: any) => x["Session Name"] === val);
-                if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], city: s["City"], venue: s["Venue"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"], sessionType: s["SessionType"] });
-                else setNewRecord({ ...newRecord, session: val });
-              }}
-              onCancel={() => {}}
-              placeholder="Select session…"
-              tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20"
-            />
+      <div className="space-y-3">
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className={lbl}>Video Play ID</label>
+            <Input value={newRecord.VideoPlayId || ''} onChange={(e) => setNewRecord({...newRecord, VideoPlayId: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Session</label>
+            <div className="h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
+              <CellDropdown
+                value={newRecord.session || ''}
+                options={sessions.map((s: any) => s["Session Name"]).filter(Boolean)}
+                onCommit={val => {
+                  const s = sessions.find((x: any) => x["Session Name"] === val);
+                  const norm = (d: any) => d ? String(d).split('T')[0] : '';
+                  if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), city: s["City"] || '', venue: s["Venue"] || '', timeOfDay: s["Time Of Day"] || '', occasion: s["Occasion"] || '', sessionType: s["SessionType"] || '' });
+                  else setNewRecord({ ...newRecord, session: val });
+                }}
+                onCancel={() => {}}
+                placeholder="Select session…"
+                tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20"
+              />
+            </div>
           </div>
         </div>
-        <Input value={newRecord.date || ''} onChange={(e) => setNewRecord({...newRecord, date: e.target.value})} placeholder="Date" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.city || ''} onChange={(e) => setNewRecord({...newRecord, city: e.target.value})} placeholder="City" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.venue || ''} onChange={(e) => setNewRecord({...newRecord, venue: e.target.value})} placeholder="Venue" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.parentEvent || ''} onChange={(e) => setNewRecord({...newRecord, parentEvent: e.target.value})} placeholder="Parent Event" className="bg-brand-bg h-9 text-xs" />
+        <div className="grid grid-cols-2 gap-3">
+          <div className="space-y-1">
+            <label className={lbl}>Date</label>
+            <Input type="date" value={newRecord.date || ''} onChange={(e) => setNewRecord({...newRecord, date: e.target.value})} className="bg-brand-bg h-9 text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className={lbl}>City</label>
+            <div className="h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
+              <CellDropdown value={newRecord.city || ''} options={[...new Set([...vlCityOpts, ...(customTags['VideoLog']?.['City'] || [])])]} onAddOption={val => handleAddCustomTag('VideoLog', 'City', val)} removableOptions={[...new Set([...vlCityOpts, ...(customTags['VideoLog']?.['City'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('VideoLog', 'City', val)} onCommit={val => setNewRecord({...newRecord, city: val})} onCancel={() => {}} placeholder="Select…" tagClass="bg-orange-500 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+            </div>
+          </div>
+          <div className="space-y-1">
+            <label className={lbl}>Venue</label>
+            <Input value={newRecord.venue || ''} onChange={(e) => setNewRecord({...newRecord, venue: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+          </div>
+          <div className="space-y-1">
+            <label className={lbl}>Parent Event</label>
+            <div className="h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
+              <CellDropdown value={newRecord.parentEvent || ''} options={[...new Set([...vlEventOpts, ...(customTags['VideoLog']?.['Parent Event'] || [])])]} onAddOption={val => handleAddCustomTag('VideoLog', 'Parent Event', val)} removableOptions={[...new Set([...vlEventOpts, ...(customTags['VideoLog']?.['Parent Event'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('VideoLog', 'Parent Event', val)} onCommit={val => setNewRecord({...newRecord, parentEvent: val})} onCancel={() => {}} placeholder="Select…" />
+            </div>
+          </div>
+        </div>
       </div>
     </div>
     <div className="p-3 bg-brand-accent/5 border border-brand-accent/10 rounded-lg">
       <p className="text-[9px] font-black uppercase tracking-widest text-brand-accent mb-3">Video Details</p>
       <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-        <Input value={newRecord.timeOfDay || ''} onChange={(e) => setNewRecord({...newRecord, timeOfDay: e.target.value})} placeholder="Time of Day" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.occasion || ''} onChange={(e) => setNewRecord({...newRecord, occasion: e.target.value})} placeholder="Occasion" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.sessionType || ''} onChange={(e) => setNewRecord({...newRecord, sessionType: e.target.value})} placeholder="Session Type" className="bg-brand-bg h-9 text-xs" />
+        <div className="space-y-1">
+          <label className={lbl}>Time of Day</label>
+          <div className="h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
+            <CellDropdown value={newRecord.timeOfDay || ''} options={[...new Set([...vlTimeOpts, ...(customTags['VideoLog']?.['Time Of Day'] || [])])]} onAddOption={val => handleAddCustomTag('VideoLog', 'Time Of Day', val)} removableOptions={[...new Set([...vlTimeOpts, ...(customTags['VideoLog']?.['Time Of Day'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('VideoLog', 'Time Of Day', val)} onCommit={val => setNewRecord({...newRecord, timeOfDay: val})} onCancel={() => {}} placeholder="Select…" tagClass="bg-orange-500 text-white text-[11px] font-semibold px-2 py-0.5 rounded-sm" />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className={lbl}>Occasion</label>
+          <div className="h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
+            <CellDropdown value={newRecord.occasion || ''} options={[...new Set([...vlOccasionOpts, ...(customTags['VideoLog']?.['Occasion'] || [])])]} onAddOption={val => handleAddCustomTag('VideoLog', 'Occasion', val)} removableOptions={[...new Set([...vlOccasionOpts, ...(customTags['VideoLog']?.['Occasion'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('VideoLog', 'Occasion', val)} onCommit={val => setNewRecord({...newRecord, occasion: val})} onCancel={() => {}} placeholder="Select…" tagClass="bg-blue-600 text-white text-[12px] font-semibold px-2 py-0.5 rounded-sm" />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className={lbl}>Session Type</label>
+          <div className="h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
+            <CellDropdown value={newRecord.sessionType || ''} options={[...new Set([...vlSessionTypeOpts, ...(customTags['VideoLog']?.['SessionType'] || [])])]} onAddOption={val => handleAddCustomTag('VideoLog', 'SessionType', val)} removableOptions={[...new Set([...vlSessionTypeOpts, ...(customTags['VideoLog']?.['SessionType'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('VideoLog', 'SessionType', val)} onCommit={val => setNewRecord({...newRecord, sessionType: val})} onCancel={() => {}} placeholder="Select…" />
+          </div>
+        </div>
       </div>
       <div className="mt-3 space-y-3">
-        <Input value={newRecord.VideoTitle || ''} onChange={(e) => setNewRecord({...newRecord, VideoTitle: e.target.value})} placeholder="VideoTitle" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord.duration || ''} onChange={(e) => setNewRecord({...newRecord, duration: e.target.value})} placeholder="Duration (MM:SS)" className="bg-brand-bg h-9 text-xs" />
-        <Textarea value={newRecord.proposalsList || ''} onChange={(e) => setNewRecord({...newRecord, proposalsList: e.target.value})} placeholder="Proposals List" className="bg-brand-bg min-h-[60px] text-xs" />
+        <div className="space-y-1">
+          <label className={lbl}>Video Title</label>
+          <Input value={newRecord.VideoTitle || ''} onChange={(e) => setNewRecord({...newRecord, VideoTitle: e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className={lbl}>Duration</label>
+          <Input value={newRecord.duration || ''} onChange={(e) => setNewRecord({...newRecord, duration: e.target.value})} placeholder="MM:SS" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className={lbl}>Proposals List</label>
+          <Textarea value={newRecord.proposalsList || ''} onChange={(e) => setNewRecord({...newRecord, proposalsList: e.target.value})} placeholder="" className="bg-brand-bg min-h-[60px] text-xs" />
+        </div>
       </div>
     </div>
   </div>
-)}
+  );
+})()}
 
 {/* GUIDANCE AND LEARNING FIELDS */}
 {activeTable === 'Guidance & Learning' && (
   <div className="space-y-4">
     <div className="grid grid-cols-2 gap-4">
-      <Input value={newRecord.LearningId || ''} onChange={(e) => setNewRecord({...newRecord, LearningId: e.target.value})} placeholder="Learning Id" className="bg-brand-bg" />
-      <Input value={newRecord.event || ''} onChange={(e) => setNewRecord({...newRecord, event: e.target.value})} placeholder="Event Name" className="bg-brand-bg" />
+      <div className="space-y-1">
+        <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Learning ID</label>
+        <Input value={newRecord.LearningId || ''} onChange={(e) => setNewRecord({...newRecord, LearningId: e.target.value})} placeholder="" className="bg-brand-bg" />
+      </div>
+      <div className="space-y-1">
+        <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Event Name</label>
+        <Input value={newRecord.event || ''} onChange={(e) => setNewRecord({...newRecord, event: e.target.value})} placeholder="" className="bg-brand-bg" />
+      </div>
     </div>
-    <div className="grid grid-cols-2 sm:grid-cols-3 gap-4">
-      <Input type="date" value={newRecord.dateFrom || ''} onChange={(e) => setNewRecord({...newRecord, dateFrom: e.target.value})} placeholder="Start Date" className="bg-brand-bg text-xs" />
-      <Input type="date" value={newRecord.dateTo || ''} onChange={(e) => setNewRecord({...newRecord, dateTo: e.target.value})} placeholder="End Date" className="bg-brand-bg text-xs" />
-      <Input value={newRecord.year || ''} onChange={(e) => setNewRecord({...newRecord, year: e.target.value})} placeholder="Year" className="bg-brand-bg text-xs" />
+    <div className="grid grid-cols-3 gap-4">
+      <div className="space-y-1">
+        <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Date From</label>
+        <Input type="date" value={newRecord.dateFrom || ''} onChange={(e) => setNewRecord({...newRecord, dateFrom: e.target.value})} className="bg-brand-bg text-xs" />
+      </div>
+      <div className="space-y-1">
+        <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Date To</label>
+        <Input type="date" value={newRecord.dateTo || ''} onChange={(e) => setNewRecord({...newRecord, dateTo: e.target.value})} className="bg-brand-bg text-xs" />
+      </div>
+      <div className="space-y-1">
+        <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Year</label>
+        <Input value={newRecord.year || ''} onChange={(e) => setNewRecord({...newRecord, year: e.target.value})} placeholder="" className="bg-brand-bg text-xs" />
+      </div>
     </div>
     <div className="grid grid-cols-2 gap-4">
-      <Input value={newRecord.city || ''} onChange={(e) => setNewRecord({...newRecord, city: e.target.value})} placeholder="City" className="bg-brand-bg" />
-      <Input value={newRecord.guidanceFrom || ''} onChange={(e) => setNewRecord({...newRecord, guidanceFrom: e.target.value})} placeholder="Guidance From" className="bg-brand-bg" />
+      <div className="space-y-1">
+        <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">City</label>
+        <Input value={newRecord.city || ''} onChange={(e) => setNewRecord({...newRecord, city: e.target.value})} placeholder="" className="bg-brand-bg" />
+      </div>
+      <div className="space-y-1">
+        <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Guidance From</label>
+        <Input value={newRecord.guidanceFrom || ''} onChange={(e) => setNewRecord({...newRecord, guidanceFrom: e.target.value})} placeholder="" className="bg-brand-bg" />
+      </div>
     </div>
-    <div className="space-y-2">
-      <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Guidance / Learning content</label>
-      <Textarea value={newRecord.guidanceLearning || ''} onChange={(e) => setNewRecord({...newRecord, guidanceLearning: e.target.value})} placeholder="Enter content..." className="bg-brand-bg min-h-[80px]" />
+    <div className="space-y-1">
+      <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Guidance / Learning Content</label>
+      <Textarea value={newRecord.guidanceLearning || ''} onChange={(e) => setNewRecord({...newRecord, guidanceLearning: e.target.value})} placeholder="" className="bg-brand-bg min-h-[80px]" />
     </div>
     <div className="grid grid-cols-2 gap-4">
-      <Input value={newRecord.category || ''} onChange={(e) => setNewRecord({...newRecord, category: e.target.value})} placeholder="Category" className="bg-brand-bg" />
-      <Input value={newRecord.attachments || ''} onChange={(e) => setNewRecord({...newRecord, attachments: e.target.value})} placeholder="Attachment Link" className="bg-brand-bg" />
+      <div className="space-y-1">
+        <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Category</label>
+        <Input value={newRecord.category || ''} onChange={(e) => setNewRecord({...newRecord, category: e.target.value})} placeholder="" className="bg-brand-bg" />
+      </div>
+      <div className="space-y-1">
+        <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Attachment Link</label>
+        <Input value={newRecord.attachments || ''} onChange={(e) => setNewRecord({...newRecord, attachments: e.target.value})} placeholder="" className="bg-brand-bg" />
+      </div>
     </div>
   </div>
 )}
@@ -10080,42 +10244,104 @@ thead.sticky th.sticky {
 
     {/* CHECKLIST FIELDS */}
     {activeTable === 'DyatraChecklist' && (
-      <>
-        <div className="space-y-2">
+      <div className="space-y-4">
+        <div className="space-y-1">
           <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Task</label>
-          <Input value={newRecord.task || ''} onChange={(e) => setNewRecord({...newRecord, task: e.target.value})} placeholder="Task details" className="bg-brand-bg" />
+          <Input value={newRecord.Task || ''} onChange={(e) => setNewRecord({...newRecord, Task: e.target.value})} placeholder="" className="bg-brand-bg" />
         </div>
-        <Input value={newRecord.category || ''} onChange={(e) => setNewRecord({...newRecord, category: e.target.value})} placeholder="Category (e.g. Audio)" className="bg-brand-bg" />
-      </>
+        <div className="space-y-1">
+          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Details</label>
+          <Textarea value={newRecord.Details || ''} onChange={(e) => setNewRecord({...newRecord, Details: e.target.value})} placeholder="" className="bg-brand-bg min-h-[60px] text-sm" />
+        </div>
+        <div className="grid grid-cols-2 gap-4">
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Task Group</label>
+            <Input value={newRecord.TaskGroup || ''} onChange={(e) => setNewRecord({...newRecord, TaskGroup: e.target.value})} placeholder="" className="bg-brand-bg" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Category</label>
+            <Input value={newRecord.Category || ''} onChange={(e) => setNewRecord({...newRecord, Category: e.target.value})} placeholder="" className="bg-brand-bg" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Period</label>
+            <Input value={newRecord.Period || ''} onChange={(e) => setNewRecord({...newRecord, Period: e.target.value})} placeholder="" className="bg-brand-bg" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Order ID</label>
+            <Input value={newRecord.OrderId || ''} onChange={(e) => setNewRecord({...newRecord, OrderId: e.target.value})} placeholder="" className="bg-brand-bg" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">People Involved</label>
+            <Input value={newRecord["People Involved"] || ''} onChange={(e) => setNewRecord({...newRecord, "People Involved": e.target.value})} placeholder="" className="bg-brand-bg" />
+          </div>
+          <div className="space-y-1">
+            <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Typical Timeline</label>
+            <Input value={newRecord["Typical Timeline"] || ''} onChange={(e) => setNewRecord({...newRecord, "Typical Timeline": e.target.value})} placeholder="" className="bg-brand-bg" />
+          </div>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Attachment</label>
+          <Input value={newRecord.Attachment || ''} onChange={(e) => setNewRecord({...newRecord, Attachment: e.target.value})} placeholder="" className="bg-brand-bg" />
+        </div>
+      </div>
     )}
 
     {/* LED FIELDS */}
-   {/* LED FIELDS */}
 {activeTable === 'LED' && (
   <div className="space-y-6">
     <div className="p-3 bg-brand-primary/5 border border-brand-primary/10 rounded-lg space-y-3">
       <p className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Session & Location Context</p>
       <div className="grid grid-cols-2 gap-3">
-        <Input value={newRecord["LedId"] || ''} onChange={(e) => setNewRecord({...newRecord, "LedId": e.target.value})} placeholder="LedId" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord["🕘 Session"] || ''} onChange={(e) => setNewRecord({...newRecord, "🕘 Session": e.target.value})} placeholder="🕘 Session" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord["Parent Event (from 🕘 Session)"] || ''} onChange={(e) => setNewRecord({...newRecord, "Parent Event (from 🕘 Session)": e.target.value})} placeholder="Parent Event" className="bg-brand-bg h-9 text-xs" />
-        <Input type="date" value={newRecord["Date (from 🕘 Session)"] || ''} onChange={(e) => setNewRecord({...newRecord, "Date (from 🕘 Session)": e.target.value})} className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord["City (from 🕘 Session)"] || ''} onChange={(e) => setNewRecord({...newRecord, "City (from 🕘 Session)": e.target.value})} placeholder="City" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord["Venue (from 🕘 Session)"] || ''} onChange={(e) => setNewRecord({...newRecord, "Venue (from 🕘 Session)": e.target.value})} placeholder="Venue" className="bg-brand-bg h-9 text-xs" />
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">LED ID</label>
+          <Input value={newRecord["LedId"] || ''} onChange={(e) => setNewRecord({...newRecord, "LedId": e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Session</label>
+          <Input value={newRecord["🕘 Session"] || ''} onChange={(e) => setNewRecord({...newRecord, "🕘 Session": e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Parent Event</label>
+          <Input value={newRecord["Parent Event (from 🕘 Session)"] || ''} onChange={(e) => setNewRecord({...newRecord, "Parent Event (from 🕘 Session)": e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Date</label>
+          <Input type="date" value={newRecord["Date (from 🕘 Session)"] || ''} onChange={(e) => setNewRecord({...newRecord, "Date (from 🕘 Session)": e.target.value})} className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">City</label>
+          <Input value={newRecord["City (from 🕘 Session)"] || ''} onChange={(e) => setNewRecord({...newRecord, "City (from 🕘 Session)": e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Venue</label>
+          <Input value={newRecord["Venue (from 🕘 Session)"] || ''} onChange={(e) => setNewRecord({...newRecord, "Venue (from 🕘 Session)": e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
       </div>
     </div>
 
     <div className="p-3 border border-slate-200 rounded-lg space-y-3">
       <p className="text-[9px] font-black uppercase tracking-widest text-slate-500">Core Setup</p>
       <div className="grid grid-cols-2 gap-3">
-        <Input value={newRecord["Vendor"] || ''} onChange={(e) => setNewRecord({...newRecord, "Vendor": e.target.value})} placeholder="Vendor Name" className="bg-brand-bg h-9 text-xs" />
-        <select className="bg-brand-bg border border-slate-200 rounded-lg h-9 text-xs px-2" value={newRecord["Indoor/Outdoor LED?"] || ''} onChange={(e) => setNewRecord({...newRecord, "Indoor/Outdoor LED?": e.target.value})}>
-           <option value="">Indoor/Outdoor?</option>
-           <option value="Indoor">Indoor</option>
-           <option value="Outdoor">Outdoor</option>
-        </select>
-        <Input value={newRecord["is Led Required?"] || ''} onChange={(e) => setNewRecord({...newRecord, "is Led Required?": e.target.value})} placeholder="LED Required (Yes/No)" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord["Stageht"] || ''} onChange={(e) => setNewRecord({...newRecord, "Stageht": e.target.value})} placeholder="Stage Height" className="bg-brand-bg h-9 text-xs" />
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Vendor</label>
+          <Input value={newRecord["Vendor"] || ''} onChange={(e) => setNewRecord({...newRecord, "Vendor": e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Indoor / Outdoor</label>
+          <select className="w-full bg-brand-bg border border-slate-200 rounded-lg h-9 text-xs px-2" value={newRecord["Indoor/Outdoor LED?"] || ''} onChange={(e) => setNewRecord({...newRecord, "Indoor/Outdoor LED?": e.target.value})}>
+             <option value="">Select…</option>
+             <option value="Indoor">Indoor</option>
+             <option value="Outdoor">Outdoor</option>
+          </select>
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">LED Required?</label>
+          <Input value={newRecord["is Led Required?"] || ''} onChange={(e) => setNewRecord({...newRecord, "is Led Required?": e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Stage Height</label>
+          <Input value={newRecord["Stageht"] || ''} onChange={(e) => setNewRecord({...newRecord, "Stageht": e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
       </div>
     </div>
 
@@ -10123,23 +10349,29 @@ thead.sticky th.sticky {
       {/* Centre LED */}
       <div className="p-3 border border-slate-200 rounded-lg space-y-2">
         <p className="text-[9px] font-black uppercase tracking-widest text-blue-500">Centre LED</p>
-        <Input value={newRecord["CentreLed"] || ''} onChange={(e) => setNewRecord({...newRecord, "CentreLed": e.target.value})} placeholder="CentreLed Name" className="bg-brand-bg h-8 text-xs mb-2" />
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Name</label>
+          <Input value={newRecord["CentreLed"] || ''} onChange={(e) => setNewRecord({...newRecord, "CentreLed": e.target.value})} placeholder="" className="bg-brand-bg h-8 text-xs" />
+        </div>
         <div className="grid grid-cols-4 gap-2">
-          <Input value={newRecord["CntrPitch"] || ''} onChange={(e) => setNewRecord({...newRecord, "CntrPitch": e.target.value})} placeholder="Pitch" className="h-8 text-[10px]" />
-          <Input value={newRecord["CntrWdth"] || ''} onChange={(e) => setNewRecord({...newRecord, "CntrWdth": e.target.value})} placeholder="Width" className="h-8 text-[10px]" />
-          <Input value={newRecord["CntrHt"] || ''} onChange={(e) => setNewRecord({...newRecord, "CntrHt": e.target.value})} placeholder="Height" className="h-8 text-[10px]" />
-          <Input value={newRecord["CntrRiser"] || ''} onChange={(e) => setNewRecord({...newRecord, "CntrRiser": e.target.value})} placeholder="Riser" className="h-8 text-[10px]" />
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Pitch</label><Input value={newRecord["CntrPitch"] || ''} onChange={(e) => setNewRecord({...newRecord, "CntrPitch": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Width</label><Input value={newRecord["CntrWdth"] || ''} onChange={(e) => setNewRecord({...newRecord, "CntrWdth": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Height</label><Input value={newRecord["CntrHt"] || ''} onChange={(e) => setNewRecord({...newRecord, "CntrHt": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Riser</label><Input value={newRecord["CntrRiser"] || ''} onChange={(e) => setNewRecord({...newRecord, "CntrRiser": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
         </div>
       </div>
 
       {/* Side LED */}
       <div className="p-3 border border-slate-200 rounded-lg space-y-2">
         <p className="text-[9px] font-black uppercase tracking-widest text-purple-500">Side LED</p>
-        <Input value={newRecord["SideLed"] || ''} onChange={(e) => setNewRecord({...newRecord, "SideLed": e.target.value})} placeholder="SideLed Name" className="bg-brand-bg h-8 text-xs mb-2" />
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-400">Name</label>
+          <Input value={newRecord["SideLed"] || ''} onChange={(e) => setNewRecord({...newRecord, "SideLed": e.target.value})} placeholder="" className="bg-brand-bg h-8 text-xs" />
+        </div>
         <div className="grid grid-cols-3 gap-2">
-          <Input value={newRecord["SidePitch"] || ''} onChange={(e) => setNewRecord({...newRecord, "SidePitch": e.target.value})} placeholder="Pitch" className="h-8 text-[10px]" />
-          <Input value={newRecord["SideWdth"] || ''} onChange={(e) => setNewRecord({...newRecord, "SideWdth": e.target.value})} placeholder="Width" className="h-8 text-[10px]" />
-          <Input value={newRecord["SideHt"] || ''} onChange={(e) => setNewRecord({...newRecord, "SideHt": e.target.value})} placeholder="Height" className="h-8 text-[10px]" />
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Pitch</label><Input value={newRecord["SidePitch"] || ''} onChange={(e) => setNewRecord({...newRecord, "SidePitch": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Width</label><Input value={newRecord["SideWdth"] || ''} onChange={(e) => setNewRecord({...newRecord, "SideWdth": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Height</label><Input value={newRecord["SideHt"] || ''} onChange={(e) => setNewRecord({...newRecord, "SideHt": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
         </div>
       </div>
 
@@ -10147,16 +10379,16 @@ thead.sticky th.sticky {
       <div className="p-3 border border-slate-200 rounded-lg space-y-2">
         <p className="text-[9px] font-black uppercase tracking-widest text-orange-500">Auxiliary LED (Other 1 & 2)</p>
         <div className="grid grid-cols-2 gap-2">
-           <Input value={newRecord["OtherLed1"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherLed1": e.target.value})} placeholder="OtherLed1 Name" className="h-8 text-[10px]" />
-           <Input value={newRecord["OtherLed2"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherLed2": e.target.value})} placeholder="OtherLed2 Name" className="h-8 text-[10px]" />
+          <div className="space-y-1"><label className="text-[9px] text-slate-400 uppercase">Other LED 1</label><Input value={newRecord["OtherLed1"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherLed1": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
+          <div className="space-y-1"><label className="text-[9px] text-slate-400 uppercase">Other LED 2</label><Input value={newRecord["OtherLed2"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherLed2": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
         </div>
         <div className="grid grid-cols-3 gap-2">
-          <Input value={newRecord["OtherPitch"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherPitch": e.target.value})} placeholder="Oth Pitch" className="h-8 text-[10px]" />
-          <Input value={newRecord["OtherWdth"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherWdth": e.target.value})} placeholder="Oth Width" className="h-8 text-[10px]" />
-          <Input value={newRecord["OtherHt"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherHt": e.target.value})} placeholder="Oth Height" className="h-8 text-[10px]" />
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Pitch</label><Input value={newRecord["OtherPitch"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherPitch": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Width</label><Input value={newRecord["OtherWdth"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherWdth": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Height</label><Input value={newRecord["OtherHt"] || ''} onChange={(e) => setNewRecord({...newRecord, "OtherHt": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
           <div className="col-span-1"></div>
-          <Input value={newRecord["Other2Wdth"] || ''} onChange={(e) => setNewRecord({...newRecord, "Other2Wdth": e.target.value})} placeholder="Oth2 Width" className="h-8 text-[10px]" />
-          <Input value={newRecord["Other2Ht"] || ''} onChange={(e) => setNewRecord({...newRecord, "Other2Ht": e.target.value})} placeholder="Oth2 Height" className="h-8 text-[10px]" />
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Width 2</label><Input value={newRecord["Other2Wdth"] || ''} onChange={(e) => setNewRecord({...newRecord, "Other2Wdth": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
+          <div className="space-y-0.5"><label className="text-[9px] text-slate-400 uppercase">Height 2</label><Input value={newRecord["Other2Ht"] || ''} onChange={(e) => setNewRecord({...newRecord, "Other2Ht": e.target.value})} placeholder="" className="h-8 text-[10px]" /></div>
         </div>
       </div>
     </div>
@@ -10164,10 +10396,19 @@ thead.sticky th.sticky {
     <div className="p-3 border border-slate-200 rounded-lg space-y-3">
       <p className="text-[9px] font-black uppercase tracking-widest text-red-500">Power & Media</p>
       <div className="grid grid-cols-2 gap-3">
-        <Input value={newRecord["DGUseedKva"] || ''} onChange={(e) => setNewRecord({...newRecord, "DGUseedKva": e.target.value})} placeholder="DG Use (KVA)" className="bg-brand-bg h-9 text-xs" />
-        <Input value={newRecord["BackupPower"] || ''} onChange={(e) => setNewRecord({...newRecord, "BackupPower": e.target.value})} placeholder="Backup Power" className="bg-brand-bg h-9 text-xs" />
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">DG Use (KVA)</label>
+          <Input value={newRecord["DGUseedKva"] || ''} onChange={(e) => setNewRecord({...newRecord, "DGUseedKva": e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
+        <div className="space-y-1">
+          <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Backup Power</label>
+          <Input value={newRecord["BackupPower"] || ''} onChange={(e) => setNewRecord({...newRecord, "BackupPower": e.target.value})} placeholder="" className="bg-brand-bg h-9 text-xs" />
+        </div>
       </div>
-      <Input value={newRecord["Images"] || ''} onChange={(e) => setNewRecord({...newRecord, "Images": e.target.value})} placeholder="Image URLs (https://...)" className="bg-brand-bg h-9 text-xs" />
+      <div className="space-y-1">
+        <label className="text-[9px] font-black uppercase tracking-widest text-slate-500">Image URLs</label>
+        <Input value={newRecord["Images"] || ''} onChange={(e) => setNewRecord({...newRecord, "Images": e.target.value})} placeholder="https://..." className="bg-brand-bg h-9 text-xs" />
+      </div>
     </div>
   </div>
 )}
