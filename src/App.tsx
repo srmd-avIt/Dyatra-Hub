@@ -2211,13 +2211,14 @@ if (hasDropdown) {
 
   const sidebarContent = (
     <>
+      {/* 1. Equipment QR Section */}
       {tableName === 'Equipment' && draft['Asset Tag'] && (
-        <div className="p-4 border-b border-slate-200">
+        <div className="p-4 border-b border-slate-200 shrink-0">
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] mb-3">QR Code</div>
           <div className="flex flex-col items-center gap-3">
             {qrDataUrl ? (
               <>
-                <img src={qrDataUrl} alt={`QR for ${draft['Asset Tag']}`} className="w-36 h-36 rounded-xl border border-slate-200 shadow-sm" />
+                <img src={qrDataUrl} alt="QR" className="w-32 h-32 rounded-xl border border-slate-200 shadow-sm" />
                 <div className="text-[11px] font-mono font-black text-brand-primary bg-brand-primary/10 px-3 py-1 rounded-lg border border-brand-primary/20">{draft['Asset Tag']}</div>
                 <a href={qrDataUrl} download={`${draft['Asset Tag']}.png`} className="text-[11px] font-black text-brand-primary hover:underline flex items-center gap-1">
                   <Download className="h-3 w-3" /> Download QR
@@ -2229,10 +2230,12 @@ if (hasDropdown) {
           </div>
         </div>
       )}
+
+      {/* 2. Linked Sessions Section - Independent Scroll */}
       {isEv && (
-        <div className="p-4 border-b border-slate-200">
+        <div className="p-4 border-b border-slate-200 max-h-[40%] flex flex-col shrink-0">
           <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] mb-3">Linked Sessions</div>
-          <div className="space-y-2">
+          <div className="space-y-2 overflow-y-auto thin-scrollbar pr-1">
             {linkedSessions.length > 0 ? linkedSessions.map((s: any) => (
               <div key={s["Session Name"]} className="p-2.5 bg-brand-primary/5 rounded-lg border border-brand-primary/10">
                 <div className="text-[11px] font-bold text-brand-primary leading-tight">{s["Session Name"]}</div>
@@ -2245,71 +2248,75 @@ if (hasDropdown) {
           </div>
         </div>
       )}
-      <div className="flex-1 flex flex-col p-4 min-h-0">
-        <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em] mb-3">
-          Activity {comments.length > 0 && <span className="text-brand-primary">({comments.length})</span>}
+
+      {/* 3. Activity Section - Takes remaining space */}
+      <div className="flex-1 flex flex-col min-h-0 bg-white/50">
+        <div className="p-4 pb-2 border-b border-slate-100 bg-slate-50/80 shrink-0">
+          <div className="text-[10px] font-black text-slate-400 uppercase tracking-[0.15em]">
+            Activity {comments.length > 0 && <span className="text-brand-primary">({comments.length})</span>}
+          </div>
         </div>
 
-        {/* Comment list */}
-        <div className="flex-1 overflow-y-auto space-y-3 mb-3 min-h-0 pr-0.5">
+        {/* Message List - Now height is correctly calculated */}
+        <div className="flex-1 overflow-y-auto p-4 space-y-4 thin-scrollbar min-h-0">
           {comments.length === 0 && (
-            <div className="text-[11px] text-slate-400 italic">No comments yet. Start the conversation!</div>
+            <div className="text-[11px] text-slate-400 italic">No comments yet.</div>
           )}
           {comments.map((c: any) => {
             const cid = String(c._id);
             const isOwn = (currentUser?.email && c.authorId === currentUser.email) || (currentUser?.name && c.authorName === currentUser.name);
             return (
-              <div key={cid} className="group flex gap-2">
-                <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[10px] font-black shrink-0 mt-0.5">
+              <div key={cid} className="group flex gap-2.5">
+                <div className="h-7 w-7 rounded-lg bg-gradient-to-br from-brand-primary to-brand-primary/60 flex items-center justify-center text-white text-[10px] font-black shrink-0 mt-0.5 shadow-sm">
                   {(c.authorName || '?')[0].toUpperCase()}
                 </div>
                 <div className="flex-1 min-w-0">
-                  <div className="flex items-baseline gap-2">
-                    <span className="text-[11px] font-black text-slate-800">{c.authorName}</span>
-                    <span className="text-[9px] text-slate-400">{formatCommentTime(c.createdAt)}</span>
-                    {isOwn && (
-                      <button onClick={() => deleteComment(cid)} className="ml-auto opacity-100 sm:opacity-0 sm:group-hover:opacity-100 text-[9px] text-red-400 hover:text-red-600 transition-all shrink-0">
-                        delete
-                      </button>
-                    )}
+                  <div className="flex items-baseline justify-between gap-2">
+                    <span className="text-[11px] font-black text-slate-800 truncate">{c.authorName}</span>
+                    <span className="text-[9px] text-slate-400 whitespace-nowrap">{formatCommentTime(c.createdAt)}</span>
                   </div>
-                  <div className="text-[12px] text-slate-700 leading-snug mt-0.5 break-words">
+                  <div className="text-[12px] text-slate-700 leading-relaxed mt-0.5 break-words">
                     {renderCommentText(c.text)}
                   </div>
+                  {isOwn && (
+                    <button onClick={() => deleteComment(cid)} className="opacity-0 group-hover:opacity-100 text-[9px] text-red-400 hover:text-red-600 transition-all font-bold uppercase tracking-tighter mt-1">
+                      Delete
+                    </button>
+                  )}
                 </div>
               </div>
             );
           })}
         </div>
 
-        {/* Compose box */}
-        <div className="relative shrink-0">
-          {/* @mention dropdown */}
-          {mentionOpen && (
-            <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-[9999]">
-              {filteredMentionUsers.length === 0 ? (
-                <div className="px-3 py-2.5 text-[11px] text-slate-400 italic">
-                  {allUsers.length === 0 ? 'No team members found' : `No match for "@${mentionQuery}"`}
-                </div>
-              ) : filteredMentionUsers.map((u: any) => (
-                <button
-                  key={u._id || u.email}
-                  onMouseDown={e => { e.preventDefault(); selectMention(u); }}
-                  className="w-full flex items-center gap-2 px-3 py-2 hover:bg-brand-primary/5 transition-colors text-left"
-                >
-                  <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-[9px] font-black shrink-0">
-                    {(u.name || u.email || '?')[0].toUpperCase()}
+        {/* Composer Box - Always at the bottom */}
+        <div className="p-4 pt-2 border-t border-slate-100 bg-slate-50/50 shrink-0">
+          <div className="relative">
+            {mentionOpen && (
+              <div className="absolute bottom-full left-0 right-0 mb-1 bg-white border border-slate-200 rounded-xl shadow-lg overflow-hidden z-[9999]">
+                {filteredMentionUsers.length === 0 ? (
+                  <div className="px-3 py-2.5 text-[11px] text-slate-400 italic">
+                    {allUsers.length === 0 ? 'No team members found' : `No match for "@${mentionQuery}"`}
                   </div>
-                  <div className="min-w-0">
-                    <div className="text-[11px] font-bold text-slate-800 truncate">{u.name || u.email}</div>
-                    {u.email && <div className="text-[9px] text-slate-400 truncate">{u.email}</div>}
-                  </div>
-                </button>
-              ))}
-            </div>
-          )}
+                ) : filteredMentionUsers.map((u: any) => (
+                  <button
+                    key={u._id || u.email}
+                    onMouseDown={e => { e.preventDefault(); selectMention(u); }}
+                    className="w-full flex items-center gap-2 px-3 py-2 hover:bg-brand-primary/5 transition-colors text-left"
+                  >
+                    <div className="h-6 w-6 rounded-lg bg-gradient-to-br from-orange-400 to-red-500 flex items-center justify-center text-white text-[9px] font-black shrink-0">
+                      {(u.name || u.email || '?')[0].toUpperCase()}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="text-[11px] font-bold text-slate-800 truncate">{u.name || u.email}</div>
+                      {u.email && <div className="text-[9px] text-slate-400 truncate">{u.email}</div>}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            )}
 
-          <div className="border border-slate-200 rounded-xl bg-white shadow-sm overflow-hidden focus-within:border-brand-primary/40 focus-within:ring-1 focus-within:ring-brand-primary/20 transition-all">
+            <div className="border border-slate-200 rounded-xl bg-white shadow-sm overflow-hidden focus-within:border-brand-primary/40 focus-within:ring-2 focus-within:ring-brand-primary/10 transition-all">
             <textarea
               ref={commentInputRef}
               value={commentText}
@@ -2319,17 +2326,18 @@ if (hasDropdown) {
                 if (e.key === 'Enter' && !e.shiftKey && !mentionOpen) { e.preventDefault(); postComment(); }
               }}
               rows={2}
-              placeholder="Comment… type @ to tag someone"
-              className="w-full text-[12px] bg-transparent outline-none resize-none text-slate-700 placeholder:text-slate-400 px-3 pt-2.5 pb-1"
+                placeholder="Comment…"
+                className="w-full text-[12px] bg-transparent outline-none resize-none text-slate-700 placeholder:text-slate-400 px-3 py-2"
             />
-            <div className="flex justify-end px-3 pb-2">
+              <div className="flex justify-end px-2 pb-2">
               <button
                 onClick={postComment}
                 disabled={!commentText.trim() || commentPosting}
-                className="text-[10px] font-black text-white uppercase tracking-widest bg-brand-primary px-3 py-1.5 rounded-lg hover:bg-brand-primary/90 disabled:opacity-30 transition-colors"
+                  className="text-[9px] font-black text-white uppercase tracking-widest bg-brand-primary px-3 py-1.5 rounded-lg hover:bg-brand-primary/90 disabled:opacity-30 transition-colors shadow-sm"
               >
                 {commentPosting ? '…' : 'Post'}
               </button>
+              </div>
             </div>
           </div>
         </div>
@@ -2560,9 +2568,9 @@ if (hasDropdown) {
               </div>
             ))}
           </div>
-          <div className="w-64 border-l border-slate-200 flex flex-col shrink-0 overflow-y-auto thin-scrollbar bg-slate-50/50">
-            {sidebarContent}
-          </div>
+          <div className="w-64 border-l border-slate-200 flex flex-col shrink-0 bg-slate-50/50 overflow-hidden">
+  {sidebarContent}
+</div>
         </div>
       </div>
     </div>
@@ -2944,6 +2952,7 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], mus
 
 // Change this line to include "Session" and "🕘 Session"
 const sessionFieldNames = ["Sessions", "Imported table", "Session", "🕘 Session"];
+const eventFieldNames = ["Parent Event", "Event", "Linked Event", "Parent Event (from Session)", "Parent Event (from 🕘 Session)"];
 if (sessionFieldNames.includes(col) && typeof val === 'string') {
   return (
     <div className="flex flex-col gap-1.5 mt-1">
@@ -2962,6 +2971,40 @@ if (sessionFieldNames.includes(col) && typeof val === 'string') {
           >
             <span className="flex-1 break-words">{sName}</span>
             {linked && <ArrowUpRight className="h-3 w-3 shrink-0 mt-0.5 opacity-50" />}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// NEW: Handle Event Links
+if (eventFieldNames.includes(col) && typeof val === 'string') {
+  const names = val.split(',').map(s => s.trim()).filter(Boolean);
+  return (
+    <div className="flex flex-col gap-1.5 mt-1">
+      {names.map((eName, i) => {
+        const linkedEv = Array.isArray(event)
+          ? (event as any[]).find((ev: any) => (ev["Event Name"] || ev.EventName) === eName)
+          : undefined;
+        return (
+          <div
+            key={i}
+            onClick={() => {
+              if (linkedEv) {
+                const nameField = getPrimaryField('Events');
+                const fields = Object.keys(linkedEv).filter(k => !['_id', 'id', 'created_at', '__v'].includes(k) && k !== nameField).slice(0, 8);
+                setLinkedRecordPopup({ record: linkedEv, tableName: 'Events', nameField, fields });
+              }
+            }}
+            className={`w-full px-2.5 py-1.5 rounded-lg border text-[11px] font-semibold leading-snug flex items-start gap-1.5 ${
+              linkedEv
+                ? 'bg-blue-50 text-blue-700 border-blue-200 hover:bg-blue-100 cursor-pointer'
+                : 'bg-slate-50 text-slate-600 border-slate-200 cursor-default'
+            }`}
+          >
+            <span className="flex-1 break-words">{eName}</span>
+            {linkedEv && <ArrowUpRight className="h-3 w-3 shrink-0 mt-0.5 opacity-50" />}
           </div>
         );
       })}
@@ -5224,7 +5267,48 @@ const renderRow = (item: any) => {
 
 
       // ── UNIFIED SESSION LINK LOGIC (Covers all tables) ──
-      const sessionFieldNames = ['Sessions', 'Session', 'Imported table', '🕘 Session'];
+     const sessionFieldNames = ['Sessions', 'Session', 'Imported table', '🕘 Session'];
+const eventFieldNames = ["Parent Event", "Event", "Linked Event", "Parent Event (from Session)", "Parent Event (from 🕘 Session)"];
+
+// Handle Event Links in Grid
+if (eventFieldNames.includes(col)) {
+  const val = item[col] || '';
+  const names = typeof val === 'string' ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
+  
+  return (
+    <td key={col} className={`${cellCls} ${isColFrozen ? stickyBg : ''}`} style={style}>
+      <div className="flex flex-wrap gap-1.5 justify-start">
+        {names.length > 0 ? names.map((eName, idx) => {
+          const linkedEv = events.find((ev) => {
+            const eventName = (ev as any)["Event Name"] || (ev as any).EventName;
+            return eventName === eName;
+          });
+          return (
+            <span
+              key={idx}
+              className={`inline-flex items-center gap-0.5 text-[12px] font-semibold px-2.5 py-0.5 rounded-full max-w-full min-w-0 transition-all ${
+                linkedEv
+                  ? 'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100 cursor-pointer'
+                  : 'bg-slate-100 text-slate-700 border border-slate-200 cursor-default'
+              }`}
+              onClick={(e) => { 
+                e.stopPropagation(); 
+                if (linkedEv) {
+                  const nameField = getPrimaryField('Events');
+                  const fields = Object.keys(linkedEv).filter(k => !['_id', 'id', 'created_at', '__v'].includes(k) && k !== nameField).slice(0, 8);
+                  setLinkedRecordPopup({ record: linkedEv, tableName: 'Events', nameField, fields });
+                }
+              }}
+            >
+              <span className="truncate">{eName}</span>
+              {linkedEv && <ArrowUpRight className="shrink-0 h-3 w-3 opacity-60" />}
+            </span>
+          );
+        }) : <span className="text-slate-300 italic text-[12px]">—</span>}
+      </div>
+    </td>
+  );
+}
       if (sessionFieldNames.includes(col)) {
         const val = item[col] || '';
         const names = typeof val === 'string' ? val.split(',').map(s => s.trim()).filter(Boolean) : [];
@@ -5563,7 +5647,12 @@ const fetchActiveTable = async (table = activeTableRef.current) => {
         .then(d => { if (d) entry.setter(d); })
     );
 
-    if (['Events', 'MusicLog', 'VideoLog'].includes(table)) {
+     if (table === 'Tracks') {
+      promises.push(
+        window.fetch('/api/musiclog')
+          .then(r => r.ok ? r.json() : null)
+          .then(d => { if (d) setMusicLogs(d); })
+      );
       promises.push(
         window.fetch('/api/sessions')
           .then(r => r.ok ? r.json() : null)
@@ -6274,13 +6363,31 @@ const handleUpdateRecord = async (draftOverride?: any) => {
   }
 };
 
+// --- Inside App Component ---
+
 const openNotificationRecord = async (tableName: string, collection: string, recordId: string) => {
+  // 1. Switch to the correct table
   setActiveTable(tableName);
-  setViewingRecord(null);
+  
+  // 2. Clear any existing detail view first
+  setViewingRecord(null); 
+  setExpandedRecord(null);
+
   try {
     const res = await window.fetch(`/api/${collection}/${recordId}`);
-    if (res.ok) { const record = await res.json(); setExpandedRecord(record); }
-  } catch { /* silent */ }
+    if (res.ok) {
+      const record = await res.json();
+      
+      // 3. Set viewingRecord to show the Detail View page
+      setViewingRecord(record); 
+      
+      // Ensure the scroll resets to top
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+  } catch (err) {
+    console.error("Failed to fetch notification record:", err);
+    showToast("Could not open record details.");
+  }
 };
 
 const handleStockMovement = async (movement: any, updatedEquipment: any) => {
@@ -6480,22 +6587,22 @@ const updateDraftOnly = (col: string, val: string) => {
             }}
           >
             {(() => {
-              if (activeTable === 'Tracks' && (col === 'PlayID' || col === 'Plays')) {
-                if (isActuallyActive && col === 'Plays') {
-                  return (
-                    <LinkedRecordPicker
-                      value={editDraft[col] || ''}
-                      records={musicLogs}
-                      nameField="PlayID"
-                      displayField="Track"
-                      linkedTable="MusicLog"
-                      onCommit={val => {
-                        commitField(col, val);
-                      }}
-                      onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
-                    />
-                  );
-                }
+            if (activeTable === 'Tracks' && (col === 'PlayID' || col === 'Plays')) {
+  if (isActuallyActive) {
+    return (
+      <LinkedRecordPicker
+        value={editDraft[col] || ''}
+        records={musicLogs}
+        nameField="PlayID"
+        displayField="Track"
+        linkedTable="MusicLog"
+        onCommit={val => {
+          commitField(col, val);
+        }}
+        onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
+      />
+    );
+  }
 
 
                 const rawVal = editDraft[col];
@@ -6669,9 +6776,9 @@ const updateDraftOnly = (col: string, val: string) => {
               else if (activeTable === 'Guidance & Learning' && ['City', 'GuidanceFrom', 'Category'].includes(col)) {
                 opts = [...new Set(guidance.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
               }
-              else if (activeTable === 'DyatraChecklist' && ['Typical Timeline', 'Category', 'Period', 'People Involved'].includes(col)) {
-                opts = [...new Set(checklist.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
-              }
+              else if (activeTable === 'DyatraChecklist' && ['Typical Timeline', 'Category', 'Period', 'People Involved', 'TaskGroup'].includes(col)) {
+  opts = [...new Set(checklist.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
+}
               else if (activeTable === 'MusicLog' && col === 'PlayedAt') {
                 opts = [...new Set(musicLogs.map((item: any) => item[col]).filter(Boolean).map(String).flatMap(val => val.split(',').map(v => v.trim()).filter(Boolean)))].sort();
               }
@@ -6869,6 +6976,21 @@ const memoizedData = useMemo(() => getProcessedData(), [
 
 // Renders the correct input widget for any column in the Add Record form
 const renderNewRecordField = (col: string): React.ReactNode => {
+  if (activeTable === 'Tracks' && (col === 'PlayID' || col === 'Plays')) {
+    const mlOpts = musicLogs.map(m => String(m.PlayID)).sort();
+    return (
+      <div className="h-10 border border-slate-200 rounded-xl overflow-visible bg-white">
+        <CellDropdown
+          value={newRecord[col] || ''}
+          options={mlOpts}
+          isMulti={col === 'Plays'}
+          onCommit={(v) => setNewRecord({ ...newRecord, [col]: v })}
+          onCancel={() => {}}
+          placeholder="Select MusicLog entry..."
+        />
+      </div>
+    );
+  }
   const colType = getColumnType(col);
   const val = newRecord[col] || '';
   const setVal = (v: string) => setNewRecord({ ...newRecord, [col]: v });
