@@ -5,6 +5,7 @@ import dotenv from 'dotenv';
 import { google } from 'googleapis';
 import stream from 'stream';
 import crypto from 'crypto';
+import dns from 'dns';
 
 dotenv.config();
 
@@ -26,6 +27,22 @@ async function getDb() {
   if (cachedDb) return cachedDb;
 
   if (!uri) throw new Error('MONGODB_URI environment variable is missing');
+
+  // If local DNS cannot resolve Atlas SRV records, fall back to public DNS servers.
+  if (dns.getServers().includes('127.0.0.1')) {
+    try {
+      await new Promise<void>((resolve, reject) => {
+        dns.resolveSrv('_mongodb._tcp.atlas-aureolin-bucket.eos7pvn.mongodb.net', (err) => {
+          if (err && err.code === 'ECONNREFUSED') {
+            dns.setServers(['1.1.1.1', '8.8.8.8']);
+          }
+          resolve();
+        });
+      });
+    } catch {
+      dns.setServers(['1.1.1.1', '8.8.8.8']);
+    }
+  }
 
   // Handle unencoded special characters in password (your logic)
   let processedUri = uri;
