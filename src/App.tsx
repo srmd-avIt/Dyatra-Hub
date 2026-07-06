@@ -2862,8 +2862,8 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], mus
       className="w-full space-y-6 pb-20"
     >
       {/* 1. TOP NAVIGATION */}
-      <div className="flex items-center justify-between gap-2 mb-6 px-4 md:px-8 pt-2">
-        <div className="flex flex-col gap-1">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 mb-6 px-4 md:px-8 pt-2">
+        <div className="flex flex-col gap-1 min-w-0">
           <Button
             variant="outline"
             onClick={onBack}
@@ -2872,12 +2872,12 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], mus
             <ChevronLeft className="h-3.5 w-3.5 mr-1" />
             Back to {tableName}
           </Button>
-          <h2 className="text-2xl font-black uppercase tracking-tight flex gap-2 mt-1">
+          <h2 className="text-2xl font-black uppercase tracking-tight flex gap-2 mt-1 break-words">
             <span className="text-black">Record</span>
             <span className="text-brand-primary">Details</span>
           </h2>
         </div>
-        <div className="flex items-center gap-2 shrink-0">
+        <div className="flex flex-wrap items-center gap-2 shrink-0">
           {onEdit && (
             <button onClick={onEdit} className="h-9 px-4 flex items-center gap-1.5 bg-brand-primary text-white rounded-xl text-[12px] font-black uppercase tracking-widest shadow-sm hover:bg-brand-primary/90 transition-colors">
               <Pencil className="h-3.5 w-3.5" />
@@ -3064,7 +3064,7 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], mus
                 <CardTitle className="text-xs font-black text-white uppercase tracking-widest">Media Attachments</CardTitle>
               </CardHeader>
               <CardContent className="p-6">
-                <div className="max-w-md mx-auto">
+                <div className="w-full max-w-full mx-auto">
                   {/* The CardImageGallery now uses the fixed regex internally */}
                   <CardImageGallery imageString={item["Images"] || item["Attachments"] || item["Attachment"]} />
                 </div>
@@ -4036,7 +4036,7 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'visual' | 'grid' | 'card'>('grid');
   const [searchQuery, setSearchQuery] = useState('');
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isMobileView, setIsMobileView] = useState(() => typeof window !== 'undefined' && window.innerWidth < 768);
+  const [isMobileView, setIsMobileView] = useState(() => typeof window !== 'undefined' && window.innerWidth < 640);
   const [addWizardStep, setAddWizardStep] = useState(0);
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
   const [mobileSearchOpen, setMobileSearchOpen] = useState(false);
@@ -4128,7 +4128,7 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const handleResize = () => setIsMobileView(window.innerWidth < 768);
+    const handleResize = () => setIsMobileView(window.innerWidth < 640);
     window.addEventListener('resize', handleResize);
     return () => window.removeEventListener('resize', handleResize);
   }, []);
@@ -7267,13 +7267,13 @@ thead.sticky th.sticky {
 `}} />
 
       <aside
-        className={`fixed inset-y-0 left-0 z-50 bg-[#0f111a] flex flex-col shrink-0 border-r border-slate-800/60 transition-all duration-300 ease-in-out lg:relative ${isSidebarOpen
-          ? 'translate-x-0 w-[260px] shadow-2xl lg:shadow-none'
-          : '-translate-x-full lg:translate-x-0 lg:w-[72px]'
+        className={`fixed inset-y-0 left-0 z-70 bg-[#0f111a] flex flex-col shrink-0 border-r border-slate-800/60 transition-all duration-300 ease-in-out sm:relative ${isSidebarOpen
+          ? 'translate-x-0 w-[260px] shadow-2xl sm:shadow-none'
+          : '-translate-x-full sm:translate-x-0 sm:w-[72px]'
           }`}
       >
-        {/* Mobile close button */}
-        <div className="lg:hidden absolute right-3 top-4 z-10">
+        {/* Mobile/tablet close button */}
+        <div className="sm:hidden absolute right-3 top-4 z-10">
           <Button variant="ghost" size="icon" onClick={() => setIsSidebarOpen(false)} className="text-slate-400 hover:text-white h-10 w-10">
             <X className="h-5 w-5" />
           </Button>
@@ -7312,7 +7312,7 @@ thead.sticky th.sticky {
             {!isSidebarOpen && (
               <button
                 onClick={() => setIsSidebarOpen(true)}
-                className="hidden lg:flex w-full h-10 mb-3 items-center justify-center rounded-xl text-brand-primary bg-brand-primary/10 border border-brand-primary/20 hover:bg-brand-primary hover:text-white transition-all duration-200"
+                className="hidden sm:flex w-full h-10 mb-3 items-center justify-center rounded-xl text-brand-primary bg-brand-primary/10 border border-brand-primary/20 hover:bg-brand-primary hover:text-white transition-all duration-200"
                 title="Expand Sidebar"
               >
                 <PanelLeftOpen className="h-4 w-4" />
@@ -7445,7 +7445,7 @@ thead.sticky th.sticky {
       </aside>
       {isSidebarOpen && (
         <div
-          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-40 lg:hidden"
+          className="fixed inset-0 bg-black/60 backdrop-blur-sm z-60 sm:hidden"
           onClick={() => setIsSidebarOpen(false)}
         />
       )}
@@ -7453,7 +7453,7 @@ thead.sticky th.sticky {
       {/* Main Content */}
       <main className="flex-1 flex flex-col min-w-0 relative bg-brand-bg overflow-hidden">
         {['Events', 'Session', 'Guidance & Learning', 'LED', 'DyatraChecklist', 'DataSharing', 'MusicLog', 'AudioSetup', 'Tracks', 'VideoLog', 'VideoSetup', 'Equipment'].includes(activeTable) && (
-          <div className="w-full bg-gradient-to-r from-white to-slate-50/80 border-b border-slate-200 py-6 md:py-8 px-5 md:px-8 text-left shrink-0 z-50 relative shadow-sm">
+          <div className="w-full bg-gradient-to-r from-white to-slate-50/80 border-b border-slate-200 py-6 md:py-8 px-5 md:px-8 text-left shrink-0 z-10 relative shadow-sm">
             <div className="flex items-center gap-3">
               <div className="w-1.5 h-8 md:h-10 bg-brand-primary rounded-full shadow-md shadow-brand-primary/40"></div>
               <h1 className="text-3xl sm:text-[40px] font-black text-slate-900 tracking-tighter leading-none uppercase">
@@ -7470,12 +7470,12 @@ thead.sticky th.sticky {
             </div>
           </div>
         )}
-        <header className={`sticky top-0 z-40 w-full bg-white border-b border-slate-200 flex flex-col px-4 md:px-8 shrink-0 shadow-sm ${activeTable === 'Home' ? 'lg:hidden' : ''}`}>
+        <header className={`sticky top-0 z-20 w-full bg-white border-b border-slate-200 flex flex-col px-4 md:px-8 shrink-0 shadow-sm ${activeTable === 'Home' ? 'lg:hidden' : ''}`}>
           {/* ── TOP ROW: wraps on smaller screens to prevent squishing ── */}
           <div className="flex flex-wrap sm:flex-nowrap items-center justify-between w-full min-h-[56px] py-1.5 gap-2">
             {/* Left: hamburger + search */}
             <div className={`flex items-center gap-2 shrink-0 min-w-[120px] flex-1 sm:flex-none ${activeTable === 'AudioSetup' || activeTable === 'Equipment' || activeTable === 'EquipmentMovements' ? 'max-w-full sm:max-w-full' : 'sm:max-w-[300px]'}`}>
-              <Button variant="ghost" size="icon" className="lg:hidden text-brand-text-muted h-11 w-11 shrink-0" onClick={() => setIsSidebarOpen(true)}>
+              <Button variant="ghost" size="icon" className="sm:hidden text-brand-text-muted h-11 w-11 shrink-0" onClick={() => setIsSidebarOpen(true)}>
                 <Menu className="h-6 w-6" />
               </Button>
 
