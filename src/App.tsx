@@ -111,6 +111,8 @@ import {
 import { motion, AnimatePresence } from 'motion/react';
 import AudioSetupVisualizer from './AudioSetupVisualizer';
 
+// --- STYLING: Color Palette for Tags ---
+// An array of Tailwind CSS classes used to assign consistent, pseudo-random colors to tags/badges.
 const TAG_COLORS = [
   "bg-indigo-500/20 text-indigo-900 border-indigo-500/30 dark:text-indigo-200",
 
@@ -129,6 +131,8 @@ const TAG_COLORS = [
   "bg-stone-500/20 text-stone-800 border-stone-500/30 dark:text-stone-200",
 ];
 
+// --- HELPER: Google Drive URL Parsing ---
+// Extracts the unique file ID from various Google Drive URL formats.
 const getDriveFileId = (raw: string) => {
   const pathMatch = raw.match(/\/file\/d\/([a-zA-Z0-9_-]+)/);
   if (pathMatch) return pathMatch[1];
@@ -146,6 +150,10 @@ const makeDriveViewUrl = (id: string) => `https://drive.google.com/uc?export=vie
 const makeDriveThumbnailUrl = (id: string) => `https://lh3.googleusercontent.com/u/0/d/${id}=w1200`;
 
 // Replace your existing getDirectUrl function (around line 98)
+// --- HELPER: Google Drive URL Proxy ---
+// This function takes a Google Drive URL and rewrites it to use our own server's
+// proxy endpoint (`/api/drive-proxy/:id`). This is crucial to avoid rate-limiting (429 errors)
+// and to bypass Google's strict browser header requirements when directly embedding images.
 const getDirectUrl = (url?: string) => {
   if (!url) return '';
   const id = getDriveFileId(url);
@@ -154,6 +162,11 @@ const getDirectUrl = (url?: string) => {
   return url.replace('export=download', 'export=view');
 };
 
+// --- HELPER: Google Drive Image Fallback ---
+// This is an `onError` event handler for `<img>` tags. If a direct Google Drive
+// image link fails to load (often due to missing browser headers), this function
+// automatically retries loading the image through our server's proxy endpoint.
+// It uses a `data-drive-fallback` attribute to prevent infinite retry loops.
 const getDriveImageErrorHandler = (url: string) => (event: React.SyntheticEvent<HTMLImageElement>) => {
   const img = event.currentTarget;
   const fallbackStage = Number(img.dataset.driveFallback || '0');
@@ -168,7 +181,12 @@ const getDriveImageErrorHandler = (url: string) => (event: React.SyntheticEvent<
 };
 
 // Robust standardized Regex for [name](url)
+// --- REGEX: Image URL Parser ---
+// This regex is used throughout the app to find and parse markdown-style image
+// links like `name` or just `(url)` from text fields.
 const IMAGE_REGEX = /(?:\[([^\]]*)\])?\((https?:\/\/[^)]+|data:image\/[^;]+;base64,[^)]+)\)/g;
+
+// --- STYLING: Status Badges ---
 // Helper to consistently assign a color to a string
 const STATUS_STYLE: Record<string, string> = {
   'Ready': 'bg-green-100 text-green-700 border-green-200',
@@ -184,6 +202,9 @@ const STATUS_STYLE: Record<string, string> = {
   'Cancelled': 'bg-red-100 text-red-700 border-red-200',
 };
 
+// --- STYLING: Generic Tag/Badge Colors ---
+// This function provides a consistent color for any given string value (like a tag or category).
+// It first checks for predefined status styles, then falls back to a hashed color from the `TAG_COLORS` array.
 const getTagStyle = (val: any) => {
   if (val === null || val === undefined || val === '') {
     return "px-2.5 py-0.5 rounded-md border font-bold text-[12px] bg-slate-900 text-slate-500 border-slate-800 shadow-sm";
@@ -203,8 +224,12 @@ const getTagStyle = (val: any) => {
   return [base, TAG_COLORS[index]].join(' ');
 };
 
+// --- DATA: List of All Tables ---
+// A centralized list of all table/collection names used in the application.
+// This is used for populating permission settings in the User Management module.
 const ALL_TABLES = ['Events', 'Session', 'MusicLog', 'VideoLog', 'Tracks', 'DyatraChecklist', 'Guidance & Learning', 'LED', 'DataSharing', 'VideoSetup', 'AudioSetup', 'Inventory'];
 
+// --- SECURITY: Role-Based Access Control (RBAC) ---
 // RBAC Permission Checker
 const hasPerm = (user: any, table: string, action: 'view' | 'add' | 'edit' | 'delete') => {
   if (!user) return false;
@@ -228,6 +253,10 @@ const hasPerm = (user: any, table: string, action: 'view' | 'add' | 'edit' | 'de
 };
 
 // Admin Dashboard Component
+// --- MODULE: User Management ---
+// This component provides a dashboard for admins and owners to manage all users,
+// their roles (admin, user, guest), and their specific permissions for each table
+// (view, add, edit, delete).
 const UserManagement = React.memo(function UserManagement({ currentUser, onToast }: { currentUser: any, onToast: (m: string, t?: 'error' | 'success') => void }) {
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
@@ -235,12 +264,15 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
   const [editDraft, setEditDraft] = useState<any>({});
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [userSearch, setUserSearch] = useState('');
+  // State for sorting the user list by a specific field and direction.
   const [userSortBy, setUserSortBy] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
+  // State for grouping the user list by a specific field (e.g., 'role' or 'department').
   const [userGroupBy, setUserGroupBy] = useState<string | null>(null);
   const [isSortOpen, setIsSortOpen] = useState(false);
   const [isGroupOpen, setIsGroupOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
 
+  // Fetches all users from the database.
   const fetchUsers = async () => {
     try {
       const res = await window.fetch('/api/users');
@@ -254,6 +286,7 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
 
   useEffect(() => { fetchUsers(); }, []); // eslint-disable-line
 
+  // Handles saving a new or edited user to the database.
   const handleSave = async () => {
     if (!editDraft.email || !editDraft.name || !editDraft.role) {
       onToast('Please fill out all required fields', 'error');
@@ -286,10 +319,12 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
     }
   };
 
+  // Toggles the collapsed state of a user group in the UI.
   const toggleGroup = (group: string) => {
     setCollapsedGroups(prev => prev.includes(group) ? prev.filter(g => g !== group) : [...prev, group]);
   };
 
+  // Handles deleting a user from the database.
   const handleDelete = async (id: string) => {
     if (!window.confirm("Delete this user?")) return;
     try {
@@ -303,6 +338,7 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
     }
   };
 
+  // Toggles a specific permission (view, add, edit, delete) for a table in the user edit modal.
   const togglePermission = (table: string, action: 'view' | 'add' | 'edit' | 'delete') => {
     const perms = editDraft.permissions || {};
     const tablePerms = perms[table] || { view: false, add: false, edit: false, delete: false };
@@ -313,6 +349,7 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
   const standard = users.filter(u => u.role === 'user').length;
   const guests = users.filter(u => u.role === 'guest').length;
 
+  // Memoized calculation to filter and sort the user list based on UI controls.
   const filteredUsers = useMemo(() => {
     const filtered = users.filter(u =>
       (u.name || '').toLowerCase().includes(userSearch.toLowerCase()) ||
@@ -347,6 +384,7 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
     return filtered;
   }, [users, userSearch, userSortBy]);
 
+  // Memoized calculation to group the filtered users based on the `userGroupBy` state.
   const groupedUsers = useMemo(() => {
     if (!userGroupBy) return null;
     const groups: Record<string, any[]> = {};
@@ -358,6 +396,7 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
     return groups;
   }, [filteredUsers, userGroupBy]);
 
+  // Renders a single user row in the management table.
   const renderUserRow = (u: any) => (
     <tr key={u._id} className="hover:bg-slate-50/50 transition-colors">
       <td className="px-5 py-3">
@@ -372,6 +411,7 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
     </tr>
   );
 
+  // The main render method for the User Management dashboard.
   return (
     <div className="p-4 sm:p-8 max-w-[1400px] mx-auto space-y-6 w-full pb-20">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
@@ -547,6 +587,9 @@ const MOBILE_PRIORITY_COLS: Record<string, string[]> = {
 };
 
 
+// --- COMPONENT: Card Image Gallery ---
+// This component renders a swipeable image gallery for card views.
+// It parses a string of markdown image links and displays them in a carousel.
 const CardImageGallery = ({ imageString }: { imageString: string }) => {
   const [currentIndex, setCurrentIndex] = useState(0);
   const [dir, setDir] = useState(1);
@@ -647,6 +690,11 @@ const CardImageGallery = ({ imageString }: { imageString: string }) => {
   );
 };
 
+// --- COMPONENT: Attachment Manager Dialog ---
+// A modal dialog for managing image attachments for a record. It handles:
+// - Displaying existing images from Google Drive.
+// - Uploading new images (with compression) to a shared Google Drive folder via the `/api/upload` endpoint.
+// - Deleting images from a record.
 /** Attachment / image manager dialog — defined OUTSIDE App for stable component identity */
 const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({
   manager,
@@ -978,12 +1026,11 @@ const AttachmentManagerDialog = React.memo(function AttachmentManagerDialog({
   );
 });
 
-/** Airtable-style searchable dropdown with free-type "Create" option */
-/** Airtable-style searchable dropdown with free-type "Create" option */
-/** Airtable-style multi-select: Click cell to see tags, click Plus to see options */
-/** Airtable-style multi-select vs Single-select UI */
-/** Airtable-style multi-select vs Single-select UI with Create Option */
-/** Airtable-style multi-select vs Single-select UI */
+
+// --- COMPONENT: Cell Dropdown ---
+// A highly reusable and complex dropdown component that mimics Airtable's functionality.
+// It supports single/multi-select, search, and creating new options on the fly.
+// It's used for inline grid editing of any field that should be a dropdown.
 const CellDropdown = React.memo(function CellDropdown({
   value, options, onCommit, onCancel, onOutsideClick,
   placeholder = 'Select...', tagClass, isMinimal = false,
@@ -1360,6 +1407,9 @@ const SessionPicker = React.memo(function SessionPicker({
   );
 });
 
+// --- COMPONENT: Linked Record Picker ---
+// A generic version of the SessionPicker that can link records from any table.
+// It's used for custom "Link to Record" fields created by users.
 // Generic linked-record picker — chip-based multi-select from any table's records
 const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
   value, records, nameField, displayField, linkedTable, onCommit, onCancel, onAddLookup
@@ -1531,6 +1581,8 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
   );
 });
 
+// --- HELPER: Column Label Formatting ---
+// A simple helper to clean up raw column names for display in the UI.
 const COL_LABEL_MAP: Record<string, string> = {
   '🕘 Session': 'Session',
   'DateFrom': 'Start Date',
@@ -1550,6 +1602,10 @@ function colLabel(col: string): string {
 }
 
 /** Airtable-style expanded record modal — desktop two-panel + mobile wizard */
+// --- COMPONENT: Record Expand Modal ---
+// The primary modal for viewing and editing a single record's details.
+// It renders as a two-panel layout on desktop and a multi-step bottom-sheet wizard on mobile.
+// It also contains the full "Activity" and "Comments" section for a record.
 const RecordExpandModal = React.memo(function RecordExpandModal({
   item, tableName, columns, sessions, events, columnMeta, columnTypes, allData, onAddLookup, onClose, onSave, currentUser, setLinkedRecordPopup,
   customTags, onAddCustomTag, onRemoveTag, onImageManage
@@ -2579,6 +2635,9 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
 });
 
 // ── InboxPanel ────────────────────────────────────────────────────────────────
+// --- COMPONENT: Inbox Panel ---
+// This component renders the slide-out panel for viewing user notifications.
+// It handles fetching, displaying, marking as read, and clearing notifications.
 const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord, onUnreadChange, isMobileView, currentUser }: {
   email: string;
   onClose: () => void;
@@ -2854,6 +2913,9 @@ const InboxPanel = React.memo(function InboxPanel({ email, onClose, onOpenRecord
   );
 });
 
+// --- COMPONENT: Record Detail View ---
+// A read-only, full-page view for a single record. This is shown when a user
+// clicks to view a record but doesn't have edit permissions, or from the Home dashboard.
 const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], musicLogs = [], onSessionClick, onEdit, onDelete, getPrimaryField, setLinkedRecordPopup, getColumnType }: { item: any, columns: string[], onBack: () => void, tableName: string, sessions?: any[], musicLogs?: any[], onSessionClick?: (s: any) => void, onEdit?: () => void, onDelete?: () => void, getPrimaryField: (table: string) => string, setLinkedRecordPopup: (p: any) => void, getColumnType: (col: string) => string }) => {
   return (
     <motion.div
@@ -3098,6 +3160,9 @@ const FIELD_TYPES = [
 ] as const;
 type FieldType = typeof FIELD_TYPES[number]['id'];
 
+// --- COMPONENT: Empty State ---
+// A reusable component displayed in the grid/card view when there are no records
+// to show, either because the table is empty or because a search query yielded no results.
 const EmptyState = React.memo(function EmptyState({
   searchQuery,
   onClearSearch,
@@ -3141,6 +3206,9 @@ const EmptyState = React.memo(function EmptyState({
   );
 });
 
+// --- FILTERING LOGIC ---
+// These types and functions define the advanced filtering system.
+// A filter is a tree of conditions and groups ('AND'/'OR') that is evaluated against each record.
 type FilterOperator = 'contains' | 'not_contains' | 'equals' | 'not_equals' | 'is_empty' | 'is_not_empty' | 'greater_than' | 'less_than';
 
 interface FilterCondition {
@@ -3183,6 +3251,8 @@ const evaluateGroup = (item: any, group: FilterGroup): boolean => {
   }
 };
 
+// --- COMPONENT: Filter Node UI ---
+// The recursive UI component for building and displaying the advanced filter tree.
 const FilterNodeUI = ({ node, onChange, onDelete, columns, getOptions, depth = 0 }: { node: FilterGroup | FilterCondition, onChange: (node: FilterGroup | FilterCondition) => void, onDelete: () => void, columns: string[], getOptions: (col: string) => string[], depth?: number }) => {
   if (node.type === 'group') {
     const isRoot = node.id === 'root';
@@ -3260,6 +3330,11 @@ const FilterNodeUI = ({ node, onChange, onDelete, columns, getOptions, depth = 0
 };
 
 // ── Inventory Module ─────────────────────────────────────────────────────────
+// --- MODULE: Inventory ---
+// This is a major, self-contained module for managing equipment inventory. It includes:
+// - An inventory list view with tabs for 'All', 'Available', 'Checked Out', and 'In Repair'.
+// - A transaction log view to see all stock movements.
+// - Functionality to add new equipment, and to check items in or out.
 const CATEGORY_ICONS: Record<string, string> = {
   'Microphone': '🎤', 'Speaker': '🔊', 'Amplifier': '🎛️', 'Projector': '📽️',
   'Screen': '🖥️', 'LED Panel': '💡', 'Camera': '📷', 'Tripod': '📐',
@@ -3267,6 +3342,7 @@ const CATEGORY_ICONS: Record<string, string> = {
   'Lighting': '💡', 'Other': '📦',
 };
 
+//InventoryModule manages the equipment 
 const InventoryModule = React.memo(({
   equipment, movements, events: evts, currentUser,
   onCheckOut, onCheckIn, onScanQR, onExpandRecord, onAddEquipment, onDeleteItem,
@@ -3290,6 +3366,7 @@ const InventoryModule = React.memo(({
     setPortalNode(document.getElementById('inventory-controls-portal'));
   }, []);
 
+  // --- INVENTORY: Derived Stats ---
   // ── Derived stats ──────────────────────────────────────────────────────────
   const totalItems = equipment.length;
   const totalUnits = equipment.reduce((s, e) => s + (Number(e['Total Qty']) || 0), 0);
@@ -3297,6 +3374,7 @@ const InventoryModule = React.memo(({
   const checkedOutUnits = totalUnits - availableUnits;
   const inRepairCount = equipment.filter(e => e['Status'] === 'in-repair').length;
 
+  // --- INVENTORY: Logic to find the latest "stock-out" movement for each item ---
   // ── Latest movement per item ────────────────────────────────────────────────
   const latestOut = useMemo(() => {
     const map: Record<string, any> = {};
@@ -3312,6 +3390,7 @@ const InventoryModule = React.memo(({
     return map;
   }, [movements]);
 
+  // --- INVENTORY: Filtering Logic ---
   // ── Filter ─────────────────────────────────────────────────────────────────
   const filtered = useMemo(() => {
     return equipment.filter(eq => {
@@ -3334,6 +3413,7 @@ const InventoryModule = React.memo(({
     return [...new Set([...equipment.map(e => e['Category']).filter(Boolean), ...defaults])].sort();
   }, [equipment]);
 
+  // --- INVENTORY: Add Item Logic ---
   // ── Add form helpers ───────────────────────────────────────────────────────
   const nextTag = `EQ-${String(equipment.length + 1).padStart(3, '0')}`;
   const catOpts = categories;
@@ -3363,6 +3443,7 @@ const InventoryModule = React.memo(({
   const inputCls = "w-full h-10 bg-white border border-slate-200 rounded-xl px-3.5 text-[13px] font-medium text-slate-900 placeholder:text-slate-400 focus:border-brand-primary focus:ring-2 focus:ring-brand-primary/20 outline-none transition-all";
   const labelCls = "text-[10px] font-black text-slate-500 uppercase tracking-[0.15em] mb-1.5 block";
 
+  // --- INVENTORY: UI Configuration for Tabs ---
   // ── Tab config ─────────────────────────────────────────────────────────────
   const tabs = [
     { key: 'all', label: 'All', count: equipment.length },
@@ -3371,6 +3452,7 @@ const InventoryModule = React.memo(({
     { key: 'repair', label: 'In Repair', count: inRepairCount },
   ] as const;
 
+  // --- INVENTORY: Transaction Log Logic ---
   // ── Transaction log (event-linked movements, newest first) ────────────────
   const logMovements = useMemo(() => {
     const sorted = [...movements].sort((a, b) => new Date(b['Date'] || b.created_at).getTime() - new Date(a['Date'] || a.created_at).getTime());
@@ -3397,6 +3479,7 @@ const InventoryModule = React.memo(({
     return Object.entries(groups);
   }, [logMovements]);
 
+  // --- INVENTORY: Main Render ---
   return (
     <div className="flex flex-col h-full min-h-0 bg-slate-50">
       {/* ── Top bar ── */}
@@ -3685,6 +3768,9 @@ const InventoryModule = React.memo(({
 });
 
 // ── QR Scanner Modal ─────────────────────────────────────────────────────────
+// --- COMPONENT: QR Scanner Modal ---
+// This modal uses the device's camera to scan QR codes. It's used in the Inventory
+// module to quickly find equipment by its asset tag.
 const QRScannerModal = React.memo(({ onClose, equipment, onAction }: {
   onClose: () => void;
   equipment: any[];
@@ -3835,6 +3921,9 @@ const QRScannerModal = React.memo(({ onClose, equipment, onAction }: {
 });
 
 // ── Stock Movement Modal ──────────────────────────────────────────────────────
+// --- COMPONENT: Stock Movement Modal ---
+// This modal is used in the Inventory module to record a stock-in (return) or
+// stock-out (dispatch) transaction for a piece of equipment.
 const StockMovementModal = React.memo(({ onClose, equipmentItem, movementType, events: evts, currentUser, onSubmit }: {
   onClose: () => void;
   equipmentItem: any;
@@ -3966,6 +4055,8 @@ const StockMovementModal = React.memo(({ onClose, equipmentItem, movementType, e
   );
 });
 
+// --- MAIN APP COMPONENT ---
+// This is the root component of the entire application. It manages all top-level state, data fetching, and routing between different modules/tables.
 export default function App() {
   const gridContainerRef = useRef<HTMLDivElement>(null);
   const [user, setUser] = useState<any>(null);
@@ -3979,6 +4070,7 @@ export default function App() {
   const [notificationsLoading, setNotificationsLoading] = useState(true);
   const [editingCell, setEditingCell] = useState<string | null>(null);
   // Tracks whether a mousedown happened inside the editing row — suppresses
+  // --- STATE: Editing & UI ---
   // blur-triggered saves when the user is just clicking a different cell in the same row.
   const clickingCellRef = useRef(false);
   const [cellPreview, setCellPreview] = useState<{ label: string; value: string; record: any } | null>(null);
@@ -3988,6 +4080,7 @@ export default function App() {
   const [musicLogs, setMusicLogs] = useState<any[]>([]);
   const [videoLogs, setVideoLogs] = useState<any[]>([]);
   const [media, setMedia] = useState<MediaItem[]>([]);
+  // --- STATE: Data Collections ---
   const [checklist, setChecklist] = useState<ChecklistItem[]>([]);
   const [ledDetails, setLedDetails] = useState<LEDDetail[]>([]);
   const [rentals, setRentals] = useState<RentalItem[]>([]);
@@ -3997,6 +4090,7 @@ export default function App() {
   const [audioSetup, setAudioSetup] = useState<any[]>([]);
   const [equipmentItems, setEquipmentItems] = useState<EquipmentItem[]>([]);
   const [equipmentMovements, setEquipmentMovements] = useState<EquipmentMovement[]>([]);
+  // --- STATE: Inventory Module ---
   const [isQRScannerOpen, setIsQRScannerOpen] = useState(false);
   const [isStockModalOpen, setIsStockModalOpen] = useState(false);
   const [stockModalItem, setStockModalItem] = useState<any>(null);
@@ -4006,6 +4100,7 @@ export default function App() {
   const [frozenUpTo, setFrozenUpTo] = useState<Record<string, number>>({});
   const [dragOverCol, setDragOverCol] = useState<string | null>(null);
   const dragColRef = useRef<string | null>(null);
+  // --- STATE: Grid/Table View Controls ---
   const [groupByFields, setGroupByFields] = useState<string[]>([]);
   const [customTags, setCustomTags] = useState<Record<string, Record<string, string[]>>>({});
   const [advancedFilter, setAdvancedFilter] = useState<FilterGroup>({ id: 'root', type: 'group', logic: 'AND', conditions: [] });
@@ -4018,6 +4113,7 @@ export default function App() {
   const [isTyping, setIsTyping] = useState(false);
   const chatEndRef = useRef<HTMLDivElement>(null);
   const [viewingRecord, setViewingRecord] = useState<any>(null);
+  // --- STATE: UI & Modals ---
   const [editingHeader, setEditingHeader] = useState<{ index: number, value: string } | null>(null);
   // UI Functionality State
   const [isGroupOpen, setIsGroupOpen] = useState(false);
@@ -4050,6 +4146,7 @@ export default function App() {
   const [colWidths, setColWidths] = useState<Record<string, number>>({});
   const [expandedGroups, setExpandedGroups] = useState<string[]>([]);
   const handleMouseDown = (e: React.MouseEvent, columnName: string) => {
+    
     // Prevent text selection while dragging
     e.preventDefault();
 
@@ -4079,6 +4176,7 @@ export default function App() {
     document.body.style.cursor = 'col-resize';
   };
 
+  // --- EFFECT: Initial Load & Health Check ---
   useEffect(() => {
     const params = new URLSearchParams(window.location.search);
     if (params.get('error') === 'access_denied') {
@@ -4127,6 +4225,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, []);
 
+  // --- EFFECT: Mobile View Detection ---
   useEffect(() => {
     const handleResize = () => setIsMobileView(window.innerWidth < 640);
     window.addEventListener('resize', handleResize);
@@ -4135,6 +4234,7 @@ export default function App() {
 
   const isConfigured = health?.mongodb; // Only require MongoDB for general operation
 
+  // --- STATE: Image Attachment Manager ---
   const [imageManager, setImageManager] = useState<{
     item: any;
     column: string;
@@ -4142,6 +4242,7 @@ export default function App() {
     isOpen: boolean;
   } | null>(null);
 
+  // --- HELPER: Get DB collection name from active table name ---
   // Resolve collection name for the current active table
   const getImageCollection = () => {
     switch (activeTable) {
@@ -4162,6 +4263,7 @@ export default function App() {
     }
   };
 
+  // --- CALLBACK: Fired when the AttachmentManager saves changes ---
   // Called by AttachmentManagerDialog after each successful DB save
   const handleImageSaved = (newValue: string) => {
     if (!imageManager?.item) return;
@@ -4199,6 +4301,7 @@ export default function App() {
   const stableOnImageClose = useCallback(() => setImageManager(null), []);
 
 
+  // --- STATE & LOGIC: Bulk Record Selection & Actions ---
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const [isActionToolbarOpen, setIsActionToolbarOpen] = useState(false);
 
@@ -4208,6 +4311,7 @@ export default function App() {
     );
   };
 
+  // Handles deleting multiple selected records from the database.
   const handleBulkDelete = async () => {
     if (!window.confirm(`Are you sure you want to delete ${selectedIds.length} record${selectedIds.length !== 1 ? 's' : ''}?`)) return;
 
@@ -4263,6 +4367,7 @@ export default function App() {
     }
   };
 
+  // Handles deleting a single record, used by the expanded view.
   const handleDeleteRecord = async (record: any) => {
     const id = record._id || record.id;
     if (!id) return;
@@ -4311,6 +4416,7 @@ export default function App() {
     }
   };
 
+  // --- DYNAMIC COLUMNS: Logic for adding, deleting, and reordering columns ---
   const handleDeleteColumn = (colToDelete: string) => {
     // Confirm with user
     if (!window.confirm(`Are you sure you want to remove the column "${colToDelete}"? This will hide the data for this field.`)) {
@@ -4430,6 +4536,7 @@ export default function App() {
       }
     }
   };
+  // --- DATA HELPERS: Functions to get data and metadata for the active table ---
 
   const confirmEditColumnType = () => {
     if (!editColumnModal) return;
@@ -4456,6 +4563,7 @@ export default function App() {
     setEditColumnModal(null);
   };
   // Find getActiveData around line 185 and update the Tracks case:
+  // Returns the data array for the currently active table.
   const getActiveData = () => {
     switch (activeTable) {
       case 'Events': return events;
@@ -4479,6 +4587,7 @@ export default function App() {
     }
   };
 
+  // Returns the data array for any given table name, used by linked record pickers.
   // Returns the data array for a given table name (used by LinkedRecordPicker)
   const getDataForTable = (table: string): any[] => {
     switch (table) {
@@ -4499,6 +4608,7 @@ export default function App() {
     }
   };
 
+  // Returns the primary display field for a given table (e.g., 'Event Name' for 'Events').
   // Returns the display/primary name field for a given table
   const getPrimaryField = (table: string): string => {
     switch (table) {
@@ -4519,6 +4629,7 @@ export default function App() {
     }
   };
 
+  // --- LOOKUP FIELDS: Logic to auto-populate fields from linked records ---
   // For a given link column and new linked-record names, auto-fill all lookup columns
   // that point to the same linkedTable. Uses the first selected record for the values.
   const buildLookupPatch = (
@@ -4550,6 +4661,7 @@ export default function App() {
     return patch;
   };
 
+  // --- SETTINGS: Save user-specific view settings (columns, types, order, etc.) to the database ---
   const saveSettings = async (
     cols: Record<string, string[]>,
     types: Record<string, Record<string, FieldType>>,
@@ -4570,6 +4682,7 @@ export default function App() {
     }
   };
 
+  // --- CUSTOM TAGS: Logic for adding and removing global custom tags for dropdowns ---
   const handleAddCustomTag = (tableName: string, col: string, newTag: string) => {
     const currentTableTags = customTags[tableName] || {};
     const currentFieldTags = currentTableTags[col] || [];
@@ -4639,6 +4752,7 @@ export default function App() {
     return true;
   };
 
+  // --- EFFECT: Load user view settings from the database on login ---
   useEffect(() => {
     const loadColumns = async () => {
       try {
@@ -4664,6 +4778,8 @@ export default function App() {
 
     if (user) loadColumns();
   }, [user]);
+
+  // --- FILTERING & SORTING: Main data processing logic ---
   const filteredData: any[] = getActiveData().filter((item: any) => {
     // --- 1. FILTER BY ACTIVE EVENT ---
     if (selectedEventId) {
@@ -4693,6 +4809,7 @@ export default function App() {
 
     return true;
   });
+  // Memoized calculation to sort and group data for the visual/card views.
   // Sorted + grouped data for visual/card view (respects sortBy and groupByField)
   const sortedVisualData: any[] = (() => {
     const d = [...filteredData];
@@ -4723,6 +4840,8 @@ export default function App() {
     });
     return d;
   })();
+
+  // --- STATE: Column Customization ---
   const [extraColumns, setExtraColumns] = useState<Record<string, string[]>>({});
   const [columnTypes, setColumnTypes] = useState<Record<string, Record<string, FieldType>>>({});
   const [hiddenColumns, setHiddenColumns] = useState<Record<string, string[]>>({});
@@ -4732,6 +4851,7 @@ export default function App() {
   const [addColumnModal, setAddColumnModal] = useState<{ name: string; type: FieldType; linkedTable: string; lookupField: string } | null>(null);
   const [editColumnModal, setEditColumnModal] = useState<{ col: string; type: FieldType; extraIndex: number; linkedTable: string; lookupField: string } | null>(null);
 
+  // --- HELPER: Determines the "type" of a column for rendering and editing ---
   const getColumnType = (col: string): FieldType => {
     // Explicitly stored type always wins
     if (columnTypes[activeTable]?.[col]) return columnTypes[activeTable][col] as FieldType;
@@ -4767,6 +4887,7 @@ export default function App() {
     return 'text';
   };
 
+  // --- HELPER: Gets available options for a dropdown-style column ---
   const getFilterOptions = (col: string): string[] => {
     const type = getColumnType(col);
     const isMulti = type === 'badge_multi' || col === 'Occasion' || col === 'City' || col === 'Tags';
@@ -4799,6 +4920,7 @@ export default function App() {
     return Array.from(uniqueVals).sort();
   };
 
+  // --- GRID: Cell Renderer ---
   const renderCell = (col: string, item: any): React.ReactNode => {
     const val = item[col];
     const type = getColumnType(col);
@@ -4942,6 +5064,7 @@ export default function App() {
     }
   };
 
+  // --- GRID: Column Definitions ---
   const getTableColumns = (includeHidden = false) => {
     let baseCols: string[] = [];
 
@@ -5001,6 +5124,8 @@ export default function App() {
     const hidden = hiddenColumns[activeTable] || [];
     return ordered.filter(col => !hidden.includes(col));
   };
+
+  // --- INTERACTIVITY: Handlers for interactive cells like checkboxes and ratings ---
   const handleToggleYesNo = async (item: any, col: string) => {
     const val = item[col];
     const isChecked = val === 'Yes' || val === true || val === 'true';
@@ -5127,6 +5252,7 @@ export default function App() {
     );
   };
 
+  // --- GRID: Main Row Renderer ---
   const renderRow = (item: any) => {
     const cols = getTableColumns();
     const getWidth = (name: string) => colWidths[name] || 200;
@@ -5483,6 +5609,8 @@ export default function App() {
   };
 
 
+  // --- CRUD: Add Blank Row ---
+  // Adds a new, empty row to the database and then enters inline edit mode for it.
   const handleAddBlankRow = async (initialData: Record<string, any> = {}) => {
     let collection = '';
     const dataToSave: Record<string, any> = {
@@ -5570,6 +5698,7 @@ export default function App() {
       mutationInFlight.current -= 1;
     }
   };
+  // --- DATA FETCHING ---
   // 1. Create a function to fetch all data from MongoDB
   const fetchAllData = async () => {
     try {
@@ -5611,6 +5740,7 @@ export default function App() {
       setIsLoading(false);
     }
   };
+  // Fetches data only for the currently active table to keep it fresh.
   // Fetch only the active table's collection (plus sessions for linked-record tables) concurrently
   const fetchActiveTable = async (table = activeTableRef.current) => {
     type E = { key: string; setter: (d: any[]) => void };
@@ -5658,6 +5788,7 @@ export default function App() {
     }
   };
 
+  // --- EFFECT: Data Polling ---
   // 2. Trigger fetch on mount and every time user logs in
   useEffect(() => {
     if (user) {
@@ -5674,6 +5805,7 @@ export default function App() {
     }
   }, [user, imageManager?.isOpen]); // Add imageManager.isOpen as a dependency
 
+  // --- EFFECT: Notifications Polling ---
   // Dynamically fetch and poll notifications to keep the inbox badge and panel current
   useEffect(() => {
     if (!user?.email) {
@@ -5710,6 +5842,7 @@ export default function App() {
     setInboxUnread(notifications.filter((n: any) => !n.read && !n.cleared).length);
   }, [notifications]);
 
+  // --- CRUD: Add Record (from Modal/Wizard) ---
   const handleAddRecord = async () => {
     for (const col of Object.keys(newRecord)) {
       const actualColName = getTableColumns().find(c => c.toLowerCase() === col.toLowerCase()) || col;
@@ -5724,7 +5857,7 @@ export default function App() {
 
     // Remap camelCase form keys → exact MongoDB field names per table
     const remap = (from: string, to: string) => { if (from in data) { data[to] = data[from]; delete data[from]; } };
-
+// Switch Case  of SideBar
     switch (activeTable) {
       case 'Events': collection = 'events'; break;
       case 'Session':
@@ -5825,6 +5958,7 @@ export default function App() {
       mutationInFlight.current -= 1;
     }
   };
+  // --- STATE: Inline Add Row ---
   const [isInlineAdding, setIsInlineAdding] = useState(false);
   const [inlineRecord, setInlineRecord] = useState<any>({});
   const groupColors = [
@@ -5835,6 +5969,7 @@ export default function App() {
     { main: "#BDB2FF" }, // Periwinkle
     { main: "#FFC6FF" }, // Orchid
   ];
+  // --- STATE: Grouping & Modals ---
   const [collapsedGroups, setCollapsedGroups] = useState<string[]>([]);
   const [linkedSession, setLinkedSession] = useState<any | null>(null);
   const [linkedRecordPopup, setLinkedRecordPopup] = useState<{ record: any; tableName: string; nameField: string; fields: string[] } | null>(null);
@@ -5853,6 +5988,7 @@ export default function App() {
     setIsAddModalOpen(true);
   };
 
+  // --- EFFECT: Save/Load View Settings ---
   const activeTableRefForSave = useRef(activeTable);
 
   useEffect(() => {
@@ -5905,6 +6041,7 @@ export default function App() {
     if (!editingId) setEditingCell(null);
   }, [editingId]);
 
+  // --- EFFECT: Save on Click Outside ---
   useEffect(() => {
     const handleClickOutside = (event: MouseEvent) => {
       // Only proceed if we are currently editing a row
@@ -5928,6 +6065,7 @@ export default function App() {
     };
   }, [editingId, editDraft]);
 
+  // --- EFFECT: Save/Load Column Widths ---
   // Load col widths
   useEffect(() => {
     const savedWidths = localStorage.getItem('dyatra_col_widths');
@@ -5954,6 +6092,7 @@ export default function App() {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
   }, [chatMessages]);
 
+  // --- EFFECT: Google OAuth Handler ---
   useEffect(() => {
     const handleMessage = (event: MessageEvent) => {
       if (event.origin !== window.location.origin) return;
@@ -5969,6 +6108,7 @@ export default function App() {
     return () => window.removeEventListener('message', handleMessage);
   }, []);
 
+  // --- AUTH: Login/Logout Handlers ---
   const handleGoogleLogin = async () => {
     if (!isConfigured) return;
     setLoginError(null);
@@ -6002,6 +6142,7 @@ export default function App() {
     sessionStorage.removeItem('dyatra_user');
   };
 
+  // --- EFFECT: Enforce Permissions on Table Change ---
   useEffect(() => {
     if (user && activeTable && !hasPerm(user, activeTable, 'view')) {
       setActiveTable('Home');
@@ -6009,6 +6150,7 @@ export default function App() {
     }
   }, [user, activeTable]);
 
+  // --- HELPER: Direct Image Upload (Legacy, kept for reference) ---
   const handleDirectImageUpload = (e: React.ChangeEvent<HTMLInputElement>, item: any, collectionName: string, setter: React.Dispatch<React.SetStateAction<any[]>>) => {
     e.stopPropagation();
     const file = e.target.files?.[0];
@@ -6042,6 +6184,7 @@ export default function App() {
   };
 
 
+  // --- DATA PROCESSING: Main function to sort and group data for the grid view ---
   const getProcessedData = (): any[] => {
     let data = [...filteredData];
 
@@ -6114,6 +6257,7 @@ export default function App() {
 
     return finalResult;
   };
+  // --- UTILITY: Export to CSV ---
   const exportToCSV = () => {
     const columns = getTableColumns();
     // Create Header row
@@ -6137,6 +6281,7 @@ export default function App() {
     link.click();
   };
 
+  // --- GRID: Inline Add Row Renderer ---
   const renderEditableRow = () => {
     const cols = getTableColumns();
     const getWidth = (name: string) => colWidths[name] || 200;
@@ -6285,6 +6430,7 @@ export default function App() {
   };
 
 
+  // --- CRUD: Update Record (from Inline Edit) ---
   const handleUpdateRecord = async (draftOverride?: any) => {
     // If a cell mousedown is in-flight (user clicking a different cell in the same row),
     // skip the blur-triggered save — the click will handle saving when needed.
@@ -6356,6 +6502,7 @@ export default function App() {
     }
   };
 
+  // --- NOTIFICATIONS: Handler to open a record from an inbox notification ---
   // --- Inside App Component ---
 
   const openNotificationRecord = async (tableName: string, collection: string, recordId: string) => {
@@ -6383,6 +6530,7 @@ export default function App() {
     }
   };
 
+  // --- INVENTORY: Handler for submitting a stock movement ---
   const handleStockMovement = async (movement: any, updatedEquipment: any) => {
     const isIn = movement['Movement Type'] === 'stock-in';
     try {
@@ -6410,6 +6558,7 @@ export default function App() {
     }
   };
 
+  // --- INVENTORY: Handler for adding a new equipment item ---
   const handleAddEquipmentItem = async (data: any) => {
     try {
       const res = await window.fetch('/api/equipment', {
@@ -6428,6 +6577,7 @@ export default function App() {
     }
   };
 
+  // --- CRUD: Update Record (from Expanded Modal) ---
   const handleExpandedSave = async (newDraft: any) => {
     for (const col of Object.keys(newDraft)) {
       if (getColumnType(col) === 'email' && newDraft[col] && !/^\S+@\S+\.\S+$/.test(newDraft[col])) {
@@ -6475,6 +6625,7 @@ export default function App() {
     }
   };
 
+  // --- GRID: Inline Edit Renderer ---
   const renderEditInputs = (_item: any) => {
     const cols = getTableColumns();
     const gw = (n: string) => colWidths[n] || 200;
@@ -6857,6 +7008,7 @@ export default function App() {
     );
   };
   const startInlineAdd = () => {
+    // --- GRID: Start Inline Add Mode ---
     setInlineRecord({});
     setIsInlineAdding(true);
     // Auto-scroll to bottom
@@ -6866,6 +7018,7 @@ export default function App() {
     }, 100);
   };
 
+  // --- CRUD: Save Inline Add Row ---
   const handleInlineSave = async () => {
     for (const col of Object.keys(inlineRecord)) {
       if (getColumnType(col) === 'email' && inlineRecord[col] && !/^\S+@\S+\.\S+$/.test(inlineRecord[col])) {
@@ -6931,6 +7084,7 @@ export default function App() {
     }
   };
 
+  // --- MEMOIZATION: Memoize processed data to prevent re-renders ---
   const memoizedData = useMemo(() => getProcessedData(), [
     filteredData,
     sortBy,
@@ -6939,6 +7093,7 @@ export default function App() {
     collapsedGroups
   ]);
 
+  // --- AI CHAT: Handler for sending a message to Gemini ---
   const handleSendMessage = async () => {
     if (!chatInput.trim()) return;
 
@@ -6965,6 +7120,7 @@ export default function App() {
     setIsTyping(false);
   };
 
+  // --- UI: Renders the correct input field for the "Add Record" modal/wizard ---
   // Renders the correct input widget for any column in the Add Record form
   const renderNewRecordField = (col: string): React.ReactNode => {
     if (activeTable === 'Tracks' && (col === 'PlayID' || col === 'Plays')) {
@@ -7076,6 +7232,7 @@ export default function App() {
     );
   };
 
+  // --- RENDER LOGIC: Main App Render ---
   // 1. FIRST PRIORITY: SHOW LOADING PULSE WHILE INITIALIZING
   // 1. If we are still checking localStorage for an existing session, show a clean loader
   if (loading) {
@@ -7090,6 +7247,7 @@ export default function App() {
     );
   }
 
+  // --- RENDER LOGIC: Login Gate ---
   // 2. ABSOLUTE GATE: If no user is logged in, ONLY show the Login Page
   if (!user) {
     return (
@@ -7155,6 +7313,7 @@ export default function App() {
     );
   }
 
+  // --- RENDER LOGIC: Database Health Check Gate ---
   // 3. DATABASE HEALTH CHECK: Only show this if the user is authenticated but DB is down
   if (!health?.mongodb) {
     return (
@@ -7177,6 +7336,7 @@ export default function App() {
       </div>
     );
   }
+  // --- RENDER LOGIC: Main Authenticated App ---
   return (
     <div className="flex h-screen bg-[#07080d] overflow-hidden text-slate-200 relative selection:bg-brand-primary/30">
 
@@ -7267,6 +7427,7 @@ thead.sticky th.sticky {
 `}} />
 
       <aside
+        
         className={`fixed inset-y-0 left-0 z-70 bg-[#0f111a] flex flex-col shrink-0 border-r border-slate-800/60 transition-all duration-300 ease-in-out sm:relative ${isSidebarOpen
           ? 'translate-x-0 w-[260px] shadow-2xl sm:shadow-none'
           : '-translate-x-full sm:translate-x-0 sm:w-[72px]'
@@ -7451,6 +7612,7 @@ thead.sticky th.sticky {
       )}
 
       {/* Main Content */}
+      {/* --- UI: Main Content Area --- */}
       <main className="flex-1 flex flex-col min-w-0 relative bg-brand-bg overflow-hidden">
         {['Events', 'Session', 'Guidance & Learning', 'LED', 'DyatraChecklist', 'DataSharing', 'MusicLog', 'AudioSetup', 'Tracks', 'VideoLog', 'VideoSetup', 'Equipment'].includes(activeTable) && (
           <div className="w-full bg-gradient-to-r from-white to-slate-50/80 border-b border-slate-200 py-6 md:py-8 px-5 md:px-8 text-left shrink-0 z-10 relative shadow-sm">
@@ -7470,15 +7632,17 @@ thead.sticky th.sticky {
             </div>
           </div>
         )}
-        <header className={`sticky top-0 z-20 w-full bg-white border-b border-slate-200 flex flex-col px-4 md:px-8 shrink-0 shadow-sm ${activeTable === 'Home' ? 'lg:hidden' : ''}`}>
+        {/* --- UI: Top Header Bar --- */}
+        <header className={`sticky top-0 z-40 w-full bg-white border-b border-slate-200 flex flex-col px-4 md:px-8 shrink-0 shadow-sm ${activeTable === 'Home' ? 'lg:hidden' : ''}`}>
           {/* ── TOP ROW: wraps on smaller screens to prevent squishing ── */}
           <div className="flex flex-wrap sm:flex-nowrap items-center justify-between w-full min-h-[56px] py-1.5 gap-2">
             {/* Left: hamburger + search */}
-            <div className={`flex items-center gap-2 shrink-0 min-w-[120px] flex-1 sm:flex-none ${activeTable === 'AudioSetup' || activeTable === 'Equipment' || activeTable === 'EquipmentMovements' ? 'max-w-full sm:max-w-full' : 'sm:max-w-[300px]'}`}>
+            <div className={`flex items-center gap-2 shrink-0 min-w-[120px] flex-1 sm:flex-none ${activeTable === 'AudioSetup' || activeTable === 'Equipment' || activeTable === 'EquipmentMovements' ? 'max-w-full sm:max-w-full' : 'sm:max-w-[450px]'}`}>
               <Button variant="ghost" size="icon" className="sm:hidden text-brand-text-muted h-11 w-11 shrink-0" onClick={() => setIsSidebarOpen(true)}>
                 <Menu className="h-6 w-6" />
               </Button>
 
+              {/* --- MODULE: Audio Setup Header --- */}
               {activeTable === 'AudioSetup' ? (
                 <div className="flex items-center gap-3 w-full overflow-x-auto scrollbar-hide">
                   <nav className="flex items-center gap-1 bg-slate-100 p-1 rounded-2xl border border-slate-200 w-max shrink-0">
@@ -7495,12 +7659,13 @@ thead.sticky th.sticky {
                     ))}
                   </nav>
                 </div>
+              // --- MODULE: Inventory Header ---
               ) : (activeTable === 'Equipment' || activeTable === 'EquipmentMovements') ? (
                 <div id="inventory-controls-portal" className="flex items-center gap-3 w-full overflow-x-auto scrollbar-hide py-1"></div>
               ) : (activeTable !== 'Home' && activeTable !== 'UserManagement') && (
                 <>
                   {/* Desktop search */}
-                  <div className="relative hidden sm:block shrink min-w-[120px] flex-1 max-w-[240px]">
+                  <div className="relative hidden sm:block shrink min-w-[120px] flex-1 max-w-[380px]">
                     <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3 w-3 text-slate-500" />
                     <Input
                       placeholder="Search..."
@@ -7523,6 +7688,7 @@ thead.sticky th.sticky {
             {/* Right: desktop toolbar items + inbox (inbox always visible here) */}
             <div className="flex flex-wrap items-center justify-end gap-1.5 md:gap-2 flex-1 min-w-0">
               {activeTable === 'AudioSetup' ? (
+                // Placeholder for any future actions specific to the Audio Setup module header.
                 <div className="flex items-center gap-3.5 text-xs font-mono">
 
                 </div>
@@ -7530,6 +7696,7 @@ thead.sticky th.sticky {
                 <>
                   {/* Desktop view switcher */}
                   {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && (
+                    
                     <div className="hidden sm:flex bg-slate-100 p-0.5 rounded-xl border border-slate-300 h-11 items-center">
                       <Button
                         size="sm"
@@ -7554,6 +7721,7 @@ thead.sticky th.sticky {
 
                   {/* Desktop Filter button */}
                   {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && (
+                   
                     <div className="relative hidden sm:block shrink min-w-[80px] flex-1 max-w-[130px]">
                       <button
                         onClick={() => {
@@ -7610,6 +7778,7 @@ thead.sticky th.sticky {
 
                   {/* Desktop Group By + Sort By */}
                   {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && (viewMode === 'grid' || viewMode === 'visual') && <>
+                    
                     <div className="relative hidden sm:block shrink min-w-[100px] flex-1 max-w-[180px]">
                       <button
                         onClick={() => { setIsGroupOpen(!isGroupOpen); setIsSortOpen(false); }}
@@ -7655,6 +7824,7 @@ thead.sticky th.sticky {
                       </AnimatePresence>
                     </div>
 
+                   
                     <div className="relative hidden sm:block shrink min-w-[100px] flex-1 max-w-[180px]">
                       <button
                         onClick={() => { setIsSortOpen(!isSortOpen); setIsGroupOpen(false); }}
@@ -7701,6 +7871,7 @@ thead.sticky th.sticky {
 
                   {/* Desktop Hide Fields */}
                   {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && viewMode === 'grid' && (
+                    
                     <div className="relative hidden sm:block shrink min-w-[90px] flex-1 max-w-[140px]">
                       <button
                         onClick={() => { setIsFieldsOpen(!isFieldsOpen); setIsGroupOpen(false); setIsSortOpen(false); }}
@@ -7749,6 +7920,7 @@ thead.sticky th.sticky {
 
                   {/* Add Record — desktop only in top row */}
                   {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && hasPerm(user, activeTable, 'add') && (
+                   
                     <Button
                       onClick={openAddModal}
                       className="hidden sm:flex bg-brand-primary hover:bg-brand-primary/90 text-white h-10 px-3 xl:px-4 shadow-md items-center gap-1.5 xl:gap-2 transition-transform active:scale-95 ml-0.5 xl:ml-1 shrink-0"
@@ -7760,6 +7932,7 @@ thead.sticky th.sticky {
 
                   {/* Export CSV — desktop only in top row */}
                   {activeTable !== 'Home' && activeTable !== 'UserManagement' && (
+                    
                     <Button
                       variant="ghost"
                       onClick={exportToCSV}
@@ -7771,6 +7944,7 @@ thead.sticky th.sticky {
                   )}
                 </>
               )}
+              {/* --- UI: Inbox Button --- */}
               {/* Inbox — conditionally hide on Home page as it's moved to the dashboard */}
               {user && activeTable !== 'Home' && (
                 <>
@@ -7794,6 +7968,7 @@ thead.sticky th.sticky {
 
           {/* ── MOBILE TOOLBAR ROW (sm:hidden, non-home pages only) ── */}
           {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && (
+           
             <div className="sm:hidden flex items-center gap-1.5 pb-2.5 w-full">
               {/* View switcher */}
               {(viewMode === 'grid' || viewMode === 'visual') && (
@@ -8106,6 +8281,7 @@ thead.sticky th.sticky {
         <div className="flex-1 overflow-y-auto bg-brand-bg p-3 md:p-8">
           <div className="max-w-[1400px] mx-auto space-y-6 lg:space-y-8">
 
+            {/* --- MODULE: Home Dashboard --- */}
             {activeTable === 'Home' ? (
               /* --- HOME DASHBOARD --- */
               (() => {
@@ -8288,6 +8464,7 @@ thead.sticky th.sticky {
                 );
               })()
             ) : viewingRecord ? (
+             
               <RecordDetailView
                 item={viewingRecord}
                 columns={getTableColumns()}
@@ -8296,12 +8473,14 @@ thead.sticky th.sticky {
                 sessions={sessions}
                 musicLogs={musicLogs}
                 onSessionClick={(s) => setLinkedSession(s)}
+                // If user has edit perms, show an "Edit" button which opens the full RecordExpandModal
                 onEdit={hasPerm(user, activeTable, 'edit') ? () => setExpandedRecord(viewingRecord) : undefined}
                 onDelete={hasPerm(user, activeTable, 'delete') ? () => { handleDeleteRecord(viewingRecord); setViewingRecord(null); } : undefined}
                 getPrimaryField={getPrimaryField}
                 setLinkedRecordPopup={setLinkedRecordPopup}
                 getColumnType={getColumnType}
               />
+            // --- MODULE: User Management ---
             ) : activeTable === 'UserManagement' ? (
               ['admin', 'owner'].includes(user?.role) ? <UserManagement currentUser={user} onToast={showToast} /> : null
             ) : activeTable === 'AudioSetup' ? (
@@ -8311,6 +8490,7 @@ thead.sticky th.sticky {
                 activeTab={audioSetupTab}
                 setActiveTab={setAudioSetupTab}
               />
+            // --- MODULE: Inventory ---
             ) : (activeTable === 'Equipment' || activeTable === 'EquipmentMovements') ? (
               <InventoryModule
                 equipment={equipmentItems}
@@ -8328,6 +8508,7 @@ thead.sticky th.sticky {
               <>
 
 
+                {/* --- UI: Visual/Card View --- */}
                 {viewMode === 'visual' ? (
                   activeTable === 'Events' ? (
                     /* --- RESPONSIVE EVENTS GALLERY (Airtable Style) --- */
@@ -8635,6 +8816,7 @@ thead.sticky th.sticky {
                       );
                     })()
                   ) :
+                    // --- CARD VIEW: Sessions ---
                     activeTable === 'Session' ? (
                       /* --- SESSION CARD VIEW --- */
                       (() => {
@@ -8738,6 +8920,7 @@ thead.sticky th.sticky {
                         );
                       })()
                     ) : activeTable === 'MusicLog' ? (
+                      // --- CARD VIEW: Music Log ---
                       /* --- MUSIC LOG CARD VIEW --- */
                       (() => {
                         const mlExpandedData = filteredData.flatMap((item: any) => {
@@ -8905,6 +9088,7 @@ thead.sticky th.sticky {
                         );
                       })()
                     ) : activeTable === 'VideoLog' ? (
+                      // --- CARD VIEW: Video Log ---
                       /* --- VIDEO LOG CARD VIEW --- */
                       (() => {
                         const vlExpandedData = filteredData.flatMap((item: any) => {
@@ -9037,6 +9221,7 @@ thead.sticky th.sticky {
                         );
                       })()
                     ) : (
+                      // --- CARD VIEW: Generic Fallback ---
                       /* --- 2. STANDARD GRID VIEW --- */
                       (() => {
                         const renderGenericCard = (item: any) => (
@@ -9239,12 +9424,14 @@ thead.sticky th.sticky {
                       })()
                     )
                 ) : (
+                  // --- UI: Grid/Table View ---
                   /* --- 3. DATA GRID VIEW (Table) --- */
                   /* --- 3. WHITE EXCEL / AIRTABLE STYLE GRID VIEW --- */
                   <div className="bg-white border border-slate-200 rounded-xl overflow-hidden shadow-sm flex flex-col h-[calc(100vh-200px)]">
                     <div className="md:hidden bg-blue-50 text-[10px] text-center py-1 text-blue-600 font-bold uppercase">
                       ← Scroll horizontally to see all columns →
                     </div>
+                    {/* --- UI: Main Data Grid Container --- */}
                     <div
                       ref={gridContainerRef}
                       className="overflow-auto thin-scrollbar flex-1 bg-white min-w-0 relative"
@@ -9255,12 +9442,14 @@ thead.sticky th.sticky {
                         style={{ width: 'max-content' }}
                       >
                         <thead className="sticky top-0 z-30 bg-slate-50 border-b border-slate-200">
+                          {/* --- UI: Grid Header Row --- */}
                           <tr>
                             <th className={`w-12 border-r border-b border-slate-200 px-2 py-3 text-center bg-slate-100 ${(frozenUpTo[activeTable] ?? -1) >= 0 ? 'sticky left-0 z-40' : ''}`} style={(frozenUpTo[activeTable] ?? -1) >= 0 ? FROZEN_STYLE : undefined}>
                               <span className="text-[11px] font-black text-slate-500">#</span>
                             </th>
                             {(() => {
                               const allCols = getTableColumns();
+                              // --- UI: Column Header Rendering Logic ---
                               const frozen = frozenUpTo[activeTable] ?? -1;
                               const leftOffsets: number[] = [];
                               let acc = 48;
@@ -9274,6 +9463,7 @@ thead.sticky th.sticky {
                                 const isSticky = i <= frozen;
                                 const isFreezeEdge = i === frozen;
 
+                                // Each header cell handles drag/drop for reordering, sorting, and an actions menu.
                                 return (
                                   <th
                                     key={i}
@@ -9378,6 +9568,7 @@ thead.sticky th.sticky {
                               });
                             })()}
 
+                            {/* --- UI: Add Column Button --- */}
                             {/* The Dynamic Column PLUS button (Only visible with edit permissions) */}
                             {hasPerm(user, activeTable, 'edit') && (
                               <th className="w-12 border-b border-slate-200 bg-slate-50 hover:bg-slate-100 cursor-pointer" title="Add Field">
@@ -9394,6 +9585,7 @@ thead.sticky th.sticky {
                           </tr>
                         </thead>
 
+                        {/* --- UI: Grid Body --- */}
                         <tbody className="bg-white">
 
                           {(() => {
@@ -9406,6 +9598,7 @@ thead.sticky th.sticky {
                               // Use optional chaining (row.data?._id) to prevent the crash
                               const isEditing = row.type === 'row' && editingId === (row.data?._id || row.data?.id);
 
+                              // --- RENDERER: Inline Add Row ---
                               // --- A. RENDER INLINE EDITOR (ADD NEW) ---
                               if (row.type === 'edit-row') {
                                 return (
@@ -9423,6 +9616,7 @@ thead.sticky th.sticky {
                                 );
                               }
 
+                              // --- RENDERER: Group Header Row ---
                               // B. RENDER GROUP HEADERS
                               if (row.type === 'header') {
                                 const isCollapsed = collapsedGroups.includes(row.id);
@@ -9457,6 +9651,7 @@ thead.sticky th.sticky {
                                 );
                               }
 
+                              // --- RENDERER: Data Row (Read-only or Edit mode) ---
                               // C. RENDER DATA ROWS
                               const nextItem = _rows[idx + 1];
                               const isDeepestLevel = row.ancestorIds?.length === groupByFields.length;
@@ -9478,6 +9673,7 @@ thead.sticky th.sticky {
                                       }`}
                                     style={!selectedIds.includes(row.data?._id || row.data?.id) && row.groupColor ? { backgroundColor: row.groupColor + '22' } : undefined}
                                   >
+                                    {/* --- UI: Row Selection/Actions Column (Sticky) --- */}
                                     {/* CHECKBOX + EXPAND COLUMN (Sticky Left) */}
                                     <td className={`w-12 border-r border-slate-200 text-center px-1 py-0 ${(frozenUpTo[activeTable] ?? -1) >= 0 ? 'sticky left-0 z-20' : ''}`} style={(frozenUpTo[activeTable] ?? -1) >= 0 ? FROZEN_STYLE : undefined}>
                                       <div className="relative flex items-center justify-center h-full">
@@ -9514,6 +9710,7 @@ thead.sticky th.sticky {
                                       </div>
                                     </td>
 
+                                    {/* --- RENDERER: Main data cells for the row --- */}
                                     {isEditing ? (
                                       renderEditInputs(row.data)
                                     ) : (
@@ -9566,6 +9763,7 @@ thead.sticky th.sticky {
                                       </div>
                                     )}
                                   </tr>
+                                  {/* --- UI: "Add record to group" button --- */}
                                   {isLastInGroup && hasPerm(user, activeTable, 'add') && (
                                     <tr
                                       className="hover:bg-slate-50/80 cursor-pointer border-b border-slate-100 group/addrow"
@@ -9592,6 +9790,7 @@ thead.sticky th.sticky {
                             });
                           })()}
 
+                          {/* --- UI: Empty State (No records or no search results) --- */}
                           {filteredData.length === 0 && !isInlineAdding && (
                             <tr>
                               <td colSpan={getTableColumns().length + 2}>
@@ -9600,6 +9799,7 @@ thead.sticky th.sticky {
                             </tr>
                           )}
 
+                          {/* --- UI: "Add new record" button at the bottom of the grid --- */}
                           {filteredData.length > 0 && !isInlineAdding && hasPerm(user, activeTable, 'add') && (
                             <tr
                               className="hover:bg-slate-50 cursor-pointer group border-b border-slate-200"
@@ -9620,6 +9820,7 @@ thead.sticky th.sticky {
                       </table>
                     </div>
 
+                    {/* --- UI: Grid Footer --- */}
                     {/* FOOTER BAR */}
                     <div className="bg-slate-50 border-t border-slate-200 px-6 py-2 flex items-center justify-between text-[11px] text-slate-500 font-medium z-20">
                       <div className="flex items-center gap-4">
@@ -9639,6 +9840,7 @@ thead.sticky th.sticky {
 
             {/* THIS CLOSES THE viewingRecord TERNARY */}
 
+            {/* --- UI: Bulk Action Toolbar --- */}
             {selectedIds.length > 0 && (
               <motion.div
                 initial={{ y: 20, opacity: 0 }}
@@ -9693,6 +9895,7 @@ thead.sticky th.sticky {
         </div>
       </main>
 
+      {/* --- MODAL: Add Custom Column --- */}
       {/* ADD COLUMN MODAL */}
       {addColumnModal && (
         <>
@@ -9801,6 +10004,7 @@ thead.sticky th.sticky {
         </>
       )}
 
+      {/* --- MODAL: Edit Column Type --- */}
       {/* EDIT COLUMN TYPE MODAL */}
       {editColumnModal && (
         <>
@@ -9899,6 +10103,7 @@ thead.sticky th.sticky {
         </>
       )}
 
+      {/* --- MODAL: Add Record (Desktop) --- */}
       {/* Add Record Modal - Desktop only */}
       {!isMobileView && <Dialog open={isAddModalOpen} onOpenChange={(open, details) => {
         if (!open) {
@@ -10822,6 +11027,7 @@ thead.sticky th.sticky {
         </DialogContent>
       </Dialog>}
 
+      {/* --- WIZARD: Add Record (Mobile) --- */}
       {/* Mobile Add Wizard - bottom sheet wizard for new records */}
       {isMobileView && isAddModalOpen && (() => {
         const inputCls = "w-full h-11 bg-white border border-slate-200 rounded-xl px-3.5 text-[13px] font-medium text-slate-900 placeholder:text-slate-400 focus:border-blue-400 focus:ring-2 focus:ring-blue-100 outline-none transition-all";
@@ -11544,6 +11750,7 @@ thead.sticky th.sticky {
         );
       })()}
 
+      {/* --- MODAL: Attachment Manager --- */}
       <AttachmentManagerDialog
         manager={imageManager}
         onClose={stableOnImageClose}
@@ -11551,6 +11758,7 @@ thead.sticky th.sticky {
       />
 
       {expandedRecord && (
+        // --- MODAL: Expanded Record View (for Editing) ---
         <RecordExpandModal
           item={expandedRecord}
           tableName={activeTable}
@@ -11588,6 +11796,7 @@ thead.sticky th.sticky {
         />
       )}
 
+      {/* --- MODAL: QR Code Scanner --- */}
       {/* QR SCANNER MODAL */}
       {isQRScannerOpen && (
         <QRScannerModal
@@ -11601,6 +11810,7 @@ thead.sticky th.sticky {
         />
       )}
 
+      {/* --- MODAL: Stock Movement (Inventory) --- */}
       {/* STOCK MOVEMENT MODAL */}
       {isStockModalOpen && stockModalItem && (
         <StockMovementModal
@@ -11613,6 +11823,7 @@ thead.sticky th.sticky {
         />
       )}
 
+      {/* --- UI: Toast Notifications --- */}
       {/* TOAST NOTIFICATIONS */}
       {toast && (
         <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[9999] flex items-center gap-3 px-5 py-3.5 rounded-2xl shadow-2xl text-[13px] font-semibold pointer-events-none transition-all ${toast.type === 'error' ? 'bg-red-600 text-white' : 'bg-green-600 text-white'
@@ -11622,6 +11833,7 @@ thead.sticky th.sticky {
         </div>
       )}
 
+      {/* --- UI: Inbox Panel --- */}
       <AnimatePresence>
         {inboxOpen && user?.email && (
           <InboxPanel
@@ -11635,6 +11847,7 @@ thead.sticky th.sticky {
         )}
       </AnimatePresence>
 
+      {/* --- MODAL: Linked Session Details --- */}
       {linkedSession && (
         <div
           className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4"
@@ -11675,6 +11888,7 @@ thead.sticky th.sticky {
         </div>
       )}
 
+      {/* --- MODAL: Linked Record Popup --- */}
       {linkedRecordPopup && (
         <div
           className="fixed inset-0 bg-black/50 z-[200] flex items-center justify-center p-4"

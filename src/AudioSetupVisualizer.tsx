@@ -17,7 +17,10 @@ import { Card, CardContent } from '@/components/ui/card';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
-// --- 1. GENERAL INSTRUCTIONS (FLAW ANALYSIS - TABLE FORMAT) ---
+// --- 1. DATA: FLAW ANALYSIS GUIDE ---
+// This constant holds the data for the "General Instructions" tab.
+// It's a static list of common audio setup flaws, their risks, and corrections.
+// This serves as an educational guide for sevaks.
 const FLAW_TABLE = [
   {
     id: 1,
@@ -141,7 +144,10 @@ const FLAW_TABLE = [
   }
 ];
 
-// --- 2. EQUIPMENT REFERENCE DATA (Catalog) ---
+// --- 2. DATA: EQUIPMENT LIBRARY ---
+// This constant serves as a static database for the "Equipment Library" tab.
+// It categorizes various audio gear, providing models, specs, and usage notes.
+// This helps in standardizing equipment choices.
 const EQUIPMENT_CATALOG = {
   'GURUDEV MICS (DPA-TYPE) — MAIN & BACKUP': [
     {
@@ -510,7 +516,10 @@ Self-amalgam tape for ALL outdoor connector joints.`,
   ]
 };
 
-// --- 3. THE 7 AUDIO SETUP TEMPLATES ---
+// --- 3. DATA: SETUP TEMPLATES ---
+// This constant defines the core audio setup blueprints for the "Setup Templates" tab.
+// Each object represents a template for a specific venue size, detailing the required
+// equipment and a basic channel patch list.
 const SETUP_TEMPLATES = [
   { id: 'small', title: 'Small Community Room', pax: '30-80', mixer: 'Yamaha MG12XU', mics: 'Hand-held / DPA 4066', pa: '2x QSC K8.2', monitors: '1x Wedge (Aux 1)', cable: '15m XLR Snake', rec: 'Field Recorder (Zoom)',
     patch: [ { ch: 1, label: 'GD MAIN', gear: 'DPA 4066' }, { ch: 7, label: 'PB-L', gear: 'Radial DI' } ] },
@@ -528,7 +537,10 @@ const SETUP_TEMPLATES = [
     patch: [ { ch: 1, label: 'GD MAIN', gear: 'Boundary' } ] }
 ];
 
-// --- 4. PRE-EVENT CHECKLIST ---
+// --- 4. DATA: PRE-EVENT AUDIT CHECKLIST ---
+// This constant provides the structure and tasks for the "Pre-Event Audit" tab.
+// It's a multi-section checklist that users can fill out to ensure setup consistency
+// and quality control before an event.
 const AUDIT_STEPS = [
   {
     section: 'DAY BEFORE EVENT',
@@ -604,8 +616,10 @@ const AUDIT_STEPS = [
   }
 ];
 
+// --- MAIN COMPONENT: AudioSetupHub ---
+// This component renders the entire "Audio Setup" module, including all its tabs and functionality.
 export default function AudioSetupHub({ currentUser, onReportStored, activeTab: externalActiveTab, setActiveTab: externalSetActiveTab }: { currentUser?: any, onReportStored?: () => void, activeTab?: string, setActiveTab?: (tab: string) => void } = {}) {
-  const [localActiveTab, setLocalActiveTab] = useState('templates');
+  const [localActiveTab, setLocalActiveTab] = useState('templates'); // Default tab
   const activeTab = externalActiveTab || localActiveTab;
   const setActiveTab = externalSetActiveTab || setLocalActiveTab;
   const [activeVenue, setActiveVenue] = useState('medium');
@@ -619,6 +633,7 @@ export default function AudioSetupHub({ currentUser, onReportStored, activeTab: 
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [selectedLog, setSelectedLog] = useState<any | null>(null);
 
+  // Fetches past audit logs from the database for the 'Log' tab.
   const fetchLogs = async () => {
     setLoadingLogs(true);
     try {
@@ -634,12 +649,14 @@ export default function AudioSetupHub({ currentUser, onReportStored, activeTab: 
     }
   };
 
+  // Effect to fetch logs only when the 'log' tab becomes active.
   useEffect(() => {
     if (activeTab === 'log') {
       fetchLogs();
     }
   }, [activeTab]);
 
+  // Memoized calculation to group fetched logs by date for display.
   const logByDate = useMemo(() => {
     const groups: Record<string, any[]> = {};
     logs.forEach(m => {
@@ -651,11 +668,13 @@ export default function AudioSetupHub({ currentUser, onReportStored, activeTab: 
     return Object.entries(groups).sort((a, b) => new Date(b[0]).getTime() - new Date(a[0]).getTime());
   }, [logs]);
 
+  // Memoized calculation to get the currently selected venue template.
   const venue = SETUP_TEMPLATES.find(v => v.id === activeVenue)!;
 
   const allTasksCount = AUDIT_STEPS.reduce((acc, section) => acc + section.tasks.length, 0);
   const completedTasksCount = Object.values(checkedTasks).filter(Boolean).length;
 
+  // Handles submitting the completed audit checklist to the database.
   const submitAuditReport = async () => {
     setIsSubmitting(true);
     try {
@@ -696,9 +715,6 @@ export default function AudioSetupHub({ currentUser, onReportStored, activeTab: 
 
   return (
     <div className="flex flex-col h-screen bg-[#f1f5f9] overflow-hidden font-sans">
-      
-
-
       {/* --- MAIN CONTENT AREA --- */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 scrollbar-hide">
         <div className="max-w-7xl mx-auto">
@@ -722,7 +738,7 @@ export default function AudioSetupHub({ currentUser, onReportStored, activeTab: 
                     ))}
                   </div>
 
-                  {/* Main: Template Blueprint */}
+                  {/* Main Content: Template Blueprint */}
                   <div className="lg:col-span-9 space-y-6">
                     {/* Console hub */}
                     <div className="relative overflow-hidden rounded-[40px] bg-slate-900 p-10 text-white shadow-2xl">
@@ -758,7 +774,7 @@ export default function AudioSetupHub({ currentUser, onReportStored, activeTab: 
                       </div>
                     </div>
 
-                    {/* Mixer Patch Map */}
+                    {/* Mixer Patch Map Table */}
                     <Card className="rounded-[32px] border-none shadow-xl ring-1 ring-slate-200 overflow-hidden bg-white">
                        <div className="px-8 py-5 bg-slate-50 border-b border-slate-100 flex items-center justify-between">
                          <div className="flex items-center gap-2">
@@ -835,6 +851,7 @@ export default function AudioSetupHub({ currentUser, onReportStored, activeTab: 
                    </div>
                    <div className="p-4 sm:p-6">
                      <div className="grid grid-cols-1 xl:grid-cols-[1fr_1.5fr] gap-5">
+                       {/* Left Panel: List of all flaws */}
                        <div className="space-y-3">
                          {FLAW_TABLE.map(f => (
                            <button
@@ -857,6 +874,7 @@ export default function AudioSetupHub({ currentUser, onReportStored, activeTab: 
                            </button>
                          ))}
                        </div>
+                       {/* Right Panel: Details of the selected flaw */}
                        <div className="rounded-[32px] overflow-hidden bg-slate-950 text-white ring-1 ring-slate-200 shadow-xl">
                          <div className="p-6 bg-slate-900/95 border-b border-slate-800">
                            <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -1032,7 +1050,7 @@ export default function AudioSetupHub({ currentUser, onReportStored, activeTab: 
         </div>
       </div>
 
-  {/* --- GEAR INSPECTOR MODAL (DATASHEET VIEW) --- */}
+  {/* --- MODAL: GEAR INSPECTOR (DATASHEET VIEW) --- */}
 <AnimatePresence>
   {inspectGear && (
     <div className="fixed inset-0 z-[500] flex items-start sm:items-center justify-center p-4 sm:p-6 overflow-y-auto">
@@ -1153,7 +1171,7 @@ export default function AudioSetupHub({ currentUser, onReportStored, activeTab: 
   )}
 </AnimatePresence>
 
-      {/* --- AUDIT LOG DETAILS MODAL --- */}
+      {/* --- MODAL: AUDIT LOG DETAILS --- */}
       <AnimatePresence>
         {selectedLog && (
           <div className="fixed inset-0 z-[600] flex items-center justify-center p-4 sm:p-6" onClick={() => setSelectedLog(null)}>
