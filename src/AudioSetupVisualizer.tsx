@@ -717,7 +717,7 @@ export default function AudioSetupHub({ currentUser, onReportStored, activeTab: 
     <div className="flex flex-col h-screen bg-[#f1f5f9] overflow-hidden font-sans">
       {/* --- MAIN CONTENT AREA --- */}
       <div className="flex-1 overflow-y-auto p-4 sm:p-6 md:p-8 scrollbar-hide">
-        <div className="max-w-7xl mx-auto">
+        <div className="w-full mx-auto">
           <AnimatePresence mode="wait">
             <motion.div key={activeTab} initial={{ opacity: 0, y: 10 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -5 }}>
               

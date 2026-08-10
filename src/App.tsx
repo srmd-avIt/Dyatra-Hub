@@ -131,6 +131,23 @@ const TAG_COLORS = [
   "bg-stone-500/20 text-stone-800 border-stone-500/30 dark:text-stone-200",
 ];
 
+// --- REVERSE LINKS: Reflect other tables' forward links back onto Events/Session ---
+// Guidance & Learning links TO Events via its own "Event" field; MusicLog/VideoLog/LED
+// link TO Session via their own "Session"/"🕘 Session" fields. Rather than duplicating
+// that as a second manually-maintained field (like Events["Sessions"]), these are
+// computed, read-only reflections — always in sync with the source table's own field,
+// no write-sync needed. Extend this list if another table adds a link to Events/Session.
+const REVERSE_LINK_COLUMNS: Record<string, { col: string; sourceTable: string; sourceCol: string }[]> = {
+  'Events': [
+    { col: 'Linked Guidance & Learning', sourceTable: 'Guidance & Learning', sourceCol: 'Event' },
+  ],
+  'Session': [
+    { col: 'Linked MusicLog', sourceTable: 'MusicLog', sourceCol: 'Session' },
+    { col: 'Linked VideoLog', sourceTable: 'VideoLog', sourceCol: 'Session' },
+    { col: 'Linked LED', sourceTable: 'LED', sourceCol: '🕘 Session' },
+  ],
+};
+
 // --- HELPER: Google Drive URL Parsing ---
 // Extracts the unique file ID from various Google Drive URL formats.
 const getDriveFileId = (raw: string) => {
@@ -1601,6 +1618,30 @@ function colLabel(col: string): string {
   return label;
 }
 
+// Normalizes any stored date value (ISO string, M/D/YYYY, etc.) to YYYY-MM-DD.
+// This is the storage/input format — native <input type="date"> elements and the
+// database both require YYYY-MM-DD, so anything that feeds a draft/newRecord field
+// (i.e. gets saved) must go through this, never formatDateDisplay() below.
+// Uses local date components (not toISOString()) to avoid shifting the date in timezones east of UTC.
+function toISODate(raw: any): string {
+  if (!raw) return '';
+  const s = String(raw);
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+  if (s.includes('T')) return s.split('T')[0];
+  const d = new Date(s);
+  if (isNaN(d.getTime())) return s;
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+}
+
+// Formats any stored date value as DD-MM-YYYY for read-only display only.
+// Never feed this into a draft/newRecord field that gets saved or into a native
+// date input's value — use toISODate() for that.
+function formatDateDisplay(raw: any): string {
+  const iso = toISODate(raw);
+  const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+  return m ? `${m[3]}-${m[2]}-${m[1]}` : iso;
+}
+
 /** Airtable-style expanded record modal — desktop two-panel + mobile wizard */
 // --- COMPONENT: Record Expand Modal ---
 // The primary modal for viewing and editing a single record's details.
@@ -1627,11 +1668,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     const d = { ...raw };
     ['DateFrom', 'DateTo', 'Date'].forEach(k => {
       if (!d[k]) return;
-      const s = String(d[k]);
-      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return;
-      if (s.includes('T')) { d[k] = s.split('T')[0]; return; }
-      const p = new Date(s);
-      if (!isNaN(p.getTime())) d[k] = `${p.getFullYear()}-${String(p.getMonth() + 1).padStart(2, '0')}-${String(p.getDate()).padStart(2, '0')}`;
+      d[k] = toISODate(d[k]);
     });
     if (!d['Sessions'] && d['Imported table']) d['Sessions'] = d['Imported table'];
     return d;
@@ -1704,7 +1741,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
       const sTimeOfDay = s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '';
       const sOccasion = s["Occasion"] || s["occasion"] || '';
       patch["Parent Event (from Session)"] = s["Parent Event"] || '';
-      patch["Date (from Session)"] = sDate ? String(sDate).split('T')[0] : '';
+      patch["Date (from Session)"] = toISODate(sDate);
       patch["TimeOfDay (from Session)"] = sTimeOfDay;
       patch["Occasion (from Session)"] = sOccasion;
     }
@@ -1715,7 +1752,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     }
     if (isLED) {
       patch["Parent Event (from 🕘 Session)"] = s["Parent Event"] || '';
-      patch["Date (from 🕘 Session)"] = s["Date"] ? String(s["Date"]).split('T')[0] : '';
+      patch["Date (from 🕘 Session)"] = toISODate(s["Date"]);
       patch["City (from 🕘 Session)"] = s["City"] || '';
       patch["Venue (from 🕘 Session)"] = s["Venue"] || '';
     }
@@ -1924,6 +1961,37 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
   const recordTitle = draft[getModalPrimaryField(tableName)] || "Record";
 
   const renderField = (col: string) => {
+    // Computed reverse-link fields — e.g. Events' "Linked Guidance & Learning",
+    // reflecting the source table's own forward link with no stored/synced field needed.
+    const reverseLinkCfg = (REVERSE_LINK_COLUMNS[tableName] || []).find(r => r.col === col);
+    if (reverseLinkCfg) {
+      const ownName = item[getModalPrimaryField(tableName)];
+      const nameField = getModalPrimaryField(reverseLinkCfg.sourceTable);
+      const matches = ownName
+        ? (allData[reverseLinkCfg.sourceTable] || []).filter((r: any) =>
+          String(r[reverseLinkCfg.sourceCol] || '').split(',').map((s: string) => s.trim()).includes(ownName)
+        )
+        : [];
+      if (matches.length === 0) return <div className={readonlyCls}>—</div>;
+      return (
+        <div className="flex flex-wrap gap-1.5">
+          {matches.map((rec: any, idx: number) => (
+            <span
+              key={idx}
+              onClick={(e) => {
+                e.stopPropagation();
+                const fields = Object.keys(rec).filter(k => !['_id', 'id', 'created_at', '__v'].includes(k) && k !== nameField).slice(0, 8);
+                setLinkedRecordPopup({ record: rec, tableName: reverseLinkCfg.sourceTable, nameField, fields });
+              }}
+              className="inline-flex items-center gap-0.5 bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 cursor-pointer text-[12px] font-semibold px-2.5 py-0.5 rounded-full"
+            >
+              <span className="truncate max-w-[200px]">{rec[nameField]}</span>
+              <ArrowUpRight className="h-3 w-3 opacity-60 shrink-0" />
+            </span>
+          ))}
+        </div>
+      );
+    }
     if (tableName === 'Tracks' && col === 'Plays') {
       return (
         <LinkedRecordPicker
@@ -1968,9 +2036,11 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
       col.toLowerCase().includes('(from event)'); // <--- Added this
 
     if (isAutoFilled) {
+      const isAutoFilledDate = col.startsWith('Date (') || col.startsWith('DateFrom (') || col.startsWith('DateTo (');
+      const autoFilledVal = isAutoFilledDate ? formatDateDisplay(draft[col]) : draft[col];
       return (
         <div className="w-full h-10 bg-slate-100 border border-slate-200 rounded-xl px-3.5 text-[13px] font-semibold text-slate-500 flex items-center gap-2 group/readonly">
-          <span className="truncate">{draft[col] || '—'}</span>
+          <span className="truncate">{autoFilledVal || '—'}</span>
           <div className="ml-auto opacity-0 group-hover/readonly:opacity-100 transition-opacity">
             <Badge variant="outline" className="text-[10px] border-slate-300 text-slate-500 uppercase">
               Auto-Filled
@@ -2038,7 +2108,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
           options={sessions.map((s: any) => s["Session Name"])}
           onCommit={val => {
             const s = sessions.find((x: any) => x["Session Name"] === val);
-            const norm = (d: any) => d ? String(d).split('T')[0] : '';
+            const norm = (d: any) => toISODate(d);
             const patch: any = { Session: val };
             if (s) {
               const sDate = s["Date"] || s["date"] || '';
@@ -2297,7 +2367,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
             {linkedSessions.length > 0 ? linkedSessions.map((s: any) => (
               <div key={s["Session Name"]} className="p-2.5 bg-brand-primary/5 rounded-lg border border-brand-primary/10">
                 <div className="text-[11px] font-bold text-brand-primary leading-tight">{s["Session Name"]}</div>
-                {s["Date"] && <div className="text-[10px] text-slate-500 mt-0.5">{String(s["Date"]).split('T')[0]}</div>}
+                {s["Date"] && <div className="text-[10px] text-slate-500 mt-0.5">{formatDateDisplay(s["Date"])}</div>}
                 {s["City"] && <div className="text-[10px] text-slate-500">{s["City"]}</div>}
               </div>
             )) : (
@@ -3110,6 +3180,7 @@ const RecordDetailView = ({ item, columns, onBack, tableName, sessions = [], mus
                         // Default rendering
                         if (!val || val === 'undefined') return <span className="text-slate-300 italic font-normal">—</span>;
                         if (colType === 'id') return <span className="font-mono font-bold text-brand-primary">{String(val)}</span>;
+                        if (colType === 'date' || col.startsWith('Date (') || col.startsWith('DateFrom (') || col.startsWith('DateTo (')) return <span className="font-mono">{formatDateDisplay(val)}</span>;
                         return typeof val === 'object' ? JSON.stringify(val) : String(val);
                       })()}
                     </div>
@@ -4069,12 +4140,17 @@ export default function App() {
   const [notifications, setNotifications] = useState<any[]>([]);
   const [notificationsLoading, setNotificationsLoading] = useState(true);
   const [editingCell, setEditingCell] = useState<string | null>(null);
+  // Mirrors editingCell synchronously (state updates are batched/async, but a blur
+  // fired by React unmounting the outgoing cell happens immediately during commit —
+  // this ref lets that blur handler see the just-set "next column" instead of stale state).
+  const editingCellRef = useRef<string | null>(null);
+  const setEditingCellSynced = (col: string | null) => { editingCellRef.current = col; setEditingCell(col); };
   // Tracks whether a mousedown happened inside the editing row — suppresses
   // --- STATE: Editing & UI ---
   // blur-triggered saves when the user is just clicking a different cell in the same row.
   const clickingCellRef = useRef(false);
   const [cellPreview, setCellPreview] = useState<{ label: string; value: string; record: any } | null>(null);
-  const [events, setEvents] = useState<Event[]>([]);
+  const [events, setEvents] = useState<any[]>([]);
   const [selectedEventId, setSelectedEventId] = useState<string | null>(null);
   const [sessions, setSessions] = useState<any[]>([]);
   const [musicLogs, setMusicLogs] = useState<any[]>([]);
@@ -4346,6 +4422,12 @@ export default function App() {
     if (setter) setter(prev => prev.filter(r => !selectedIds.includes(r._id || r.id)));
 
     const originalSelectedIds = [...selectedIds];
+    const deletedSessions = collection === 'sessions'
+      ? sessions.filter(s => originalSelectedIds.includes(s._id || s.id))
+      : [];
+    const deletedEvents = collection === 'events'
+      ? events.filter(e => originalSelectedIds.includes(e._id || e.id))
+      : [];
     setSelectedIds([]);
 
     mutationInFlight.current += 1;
@@ -4358,6 +4440,13 @@ export default function App() {
       await Promise.all(promises);
       showToast(`${originalSelectedIds.length} record(s) deleted successfully.`, 'success');
       await fetchActiveTable();
+      for (const s of deletedSessions) {
+        if (s['Parent Event']) await syncSessionToEvent(s['Session Name'], undefined, s['Parent Event']);
+      }
+      for (const e of deletedEvents) {
+        const linked = e['Sessions'] || e['Imported table'];
+        if (linked) await syncEventToSessions(e['Event Name'], undefined, linked);
+      }
     } catch (e) {
       console.error('Delete failed', e);
       showToast('Failed to delete some records. Reverting changes.');
@@ -4407,6 +4496,11 @@ export default function App() {
       if (!res.ok) throw new Error('Server returned an error');
       showToast('Record deleted successfully.', 'success');
       await fetchActiveTable();
+      if (activeTable === 'Session' && record['Parent Event']) {
+        await syncSessionToEvent(record['Session Name'], undefined, record['Parent Event']);
+      } else if (activeTable === 'Events' && (record['Sessions'] || record['Imported table'])) {
+        await syncEventToSessions(record['Event Name'], undefined, record['Sessions'] || record['Imported table']);
+      }
     } catch (e) {
       console.error('Delete failed', e);
       showToast('Failed to delete record. Reverting changes.');
@@ -4926,12 +5020,38 @@ export default function App() {
     const type = getColumnType(col);
     const empty = <span className="text-slate-400 italic text-[12px]">—</span>;
 
+    // Computed reverse-link columns — e.g. Events' "Linked Guidance & Learning",
+    // reflecting Guidance's own "Event" field back with no stored/synced field needed.
+    const reverseLinkCfg = getReverseLinkConfig(col);
+    if (reverseLinkCfg) {
+      const matches = getReverseLinkMatches(col, item);
+      const nameField = getPrimaryField(reverseLinkCfg.sourceTable);
+      return matches.length > 0 ? (
+        <div className="flex flex-wrap gap-1.5 justify-start">
+          {matches.map((rec: any, idx: number) => (
+            <span
+              key={idx}
+              className="inline-flex items-center gap-0.5 bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 cursor-pointer text-[12px] font-semibold px-2.5 py-0.5 rounded-full max-w-full min-w-0 transition-all"
+              onClick={(e) => {
+                e.stopPropagation();
+                const fields = Object.keys(rec).filter(k => !['_id', 'id', 'created_at', '__v'].includes(k) && k !== nameField).slice(0, 8);
+                setLinkedRecordPopup({ record: rec, tableName: reverseLinkCfg.sourceTable, nameField, fields });
+              }}
+            >
+              <span className="truncate">{rec[nameField]}</span>
+              <ArrowUpRight className="shrink-0 h-3 w-3 opacity-60" />
+            </span>
+          ))}
+        </div>
+      ) : empty;
+    }
+
     switch (type) {
       case 'id':
         return <span className="font-mono text-[13px] font-bold text-brand-primary">{val || empty}</span>;
 
       case 'date':
-        return <span className="font-mono text-slate-700 text-[13px]">{val || empty}</span>;
+        return <span className="font-mono text-slate-700 text-[13px]">{val ? formatDateDisplay(val) : empty}</span>;
 
       case 'time':
         return <span className="font-mono text-slate-700 text-[13px]">{val || empty}</span>;
@@ -5052,7 +5172,8 @@ export default function App() {
 
       case 'lookup': {
         if (!val) return empty;
-        return <span className="text-[12px] text-slate-600">{String(val)}</span>;
+        const isDateLookup = col.startsWith('Date (') || col.startsWith('DateFrom (') || col.startsWith('DateTo (');
+        return <span className={isDateLookup ? "font-mono text-slate-700 text-[13px]" : "text-[12px] text-slate-600"}>{isDateLookup ? formatDateDisplay(val) : String(val)}</span>;
       }
 
       default:
@@ -5114,7 +5235,8 @@ export default function App() {
     }
 
     const added = extraColumns[activeTable] || [];
-    const all = [...baseCols, ...added];
+    const reflected = (REVERSE_LINK_COLUMNS[activeTable] || []).map(r => r.col);
+    const all = [...baseCols, ...reflected, ...added];
     // Apply saved column order (drag-and-drop reordering)
     const savedOrder = columnOrder[activeTable];
     const ordered = savedOrder && savedOrder.length
@@ -5123,6 +5245,21 @@ export default function App() {
     if (includeHidden) return ordered;
     const hidden = hiddenColumns[activeTable] || [];
     return ordered.filter(col => !hidden.includes(col));
+  };
+
+  const getReverseLinkConfig = (col: string) =>
+    (REVERSE_LINK_COLUMNS[activeTable] || []).find(r => r.col === col) || null;
+
+  // Computed, read-only reverse lookup — finds every record in the source table whose
+  // own link field names this record, without touching (or needing) any stored field.
+  const getReverseLinkMatches = (col: string, item: any): any[] => {
+    const cfg = getReverseLinkConfig(col);
+    if (!cfg) return [];
+    const ownName = item[getPrimaryField(activeTable)];
+    if (!ownName) return [];
+    return getDataForTable(cfg.sourceTable).filter((r: any) =>
+      String(r[cfg.sourceCol] || '').split(',').map((s: string) => s.trim()).includes(ownName)
+    );
   };
 
   // --- INTERACTIVITY: Handlers for interactive cells like checkboxes and ratings ---
@@ -5461,14 +5598,6 @@ export default function App() {
               </td>
             );
           }
-          // MusicLog: Track — brand-accent bold
-          if (activeTable === 'MusicLog' && col === 'Track') {
-            return (
-              <td key={col} className={`${cellCls} font-bold text-brand-accent ${isColFrozen ? stickyBg : ''}`} style={style}>
-                {item["Track"] || <span className="text-slate-300 italic text-[12px]">—</span>}
-              </td>
-            );
-          }
 
           // Images/Attachments — thumbnail gallery cell
           if (col === 'Images' || col === 'Attachments' || col === 'Attachment') {
@@ -5680,7 +5809,7 @@ export default function App() {
           setEditingId(realId);
           setEditDraft(d);
           const cols = getTableColumns();
-          if (cols.length > 0) setEditingCell(cols[0]);
+          if (cols.length > 0) setEditingCellSynced(cols[0]);
           setTimeout(() => {
             const rowEl = document.getElementById(`record-${realId}`);
             if (rowEl) rowEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
@@ -5842,6 +5971,123 @@ export default function App() {
     setInboxUnread(notifications.filter((n: any) => !n.read && !n.cleared).length);
   }, [notifications]);
 
+  // --- SYNC: Keep Events["Sessions"] in sync with Session["Parent Event"] ---
+  // A session names its parent event; the event's "Sessions" link list is derived
+  // from that, so adding/moving a session's Parent Event auto-links it on the event
+  // side without the user having to separately edit the event's Sessions field.
+  //
+  // Session Name and Event Name are NOT guaranteed unique in this data (several
+  // events/sessions share a display name). Matching by name alone risks silently
+  // mutating the wrong record, so every lookup below requires an UNAMBIGUOUS match
+  // before writing — ambiguous cases are skipped (logged) rather than guessed at.
+  const syncSessionToEvent = async (sessionName: string, newParentEvent?: string, oldParentEvent?: string) => {
+    if (!sessionName) return;
+    let changed = false;
+    if (oldParentEvent && oldParentEvent !== newParentEvent) {
+      // Removing: disambiguate by which same-named event actually lists this session.
+      const candidates = events.filter((e: any) =>
+        e['Event Name'] === oldParentEvent &&
+        String(e['Sessions'] || e['Imported table'] || '').split(',').map((s: string) => s.trim()).includes(sessionName)
+      );
+      if (candidates.length === 1) {
+        const ev = candidates[0];
+        const evId = ev._id || ev.id;
+        const nextList = String(ev['Sessions'] || ev['Imported table'] || '').split(',').map((s: string) => s.trim()).filter(Boolean).filter((n: string) => n !== sessionName);
+        try {
+          await window.fetch(`/api/events/${evId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ Sessions: nextList.join(', ') })
+          });
+          changed = true;
+        } catch (e) {
+          console.error('Failed to sync session-event link', e);
+        }
+      } else if (candidates.length > 1) {
+        console.warn(`Skipped un-linking "${sessionName}" from "${oldParentEvent}" — ambiguous, multiple events share that name.`);
+      }
+    }
+    if (newParentEvent) {
+      const candidates = events.filter((e: any) => e['Event Name'] === newParentEvent);
+      if (candidates.length === 1) {
+        const ev = candidates[0];
+        const evId = ev._id || ev.id;
+        const current = String(ev['Sessions'] || ev['Imported table'] || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+        if (!current.includes(sessionName)) {
+          try {
+            await window.fetch(`/api/events/${evId}`, {
+              method: 'PUT',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ Sessions: [...current, sessionName].join(', ') })
+            });
+            changed = true;
+          } catch (e) {
+            console.error('Failed to sync session-event link', e);
+          }
+        }
+      } else if (candidates.length > 1) {
+        console.warn(`Skipped linking "${sessionName}" to "${newParentEvent}" — ambiguous, multiple events share that name.`);
+      }
+    }
+    if (changed) fetchActiveTable('Events');
+  };
+
+  // --- SYNC: Keep Session["Parent Event"] in sync with Events["Sessions"] ---
+  // Mirror of syncSessionToEvent — editing an event's linked-sessions list (add or
+  // remove a chip) auto-updates each affected session's Parent Event, so the link
+  // shows up from the session side too without a separate manual edit there.
+  // Same name-ambiguity guard as above, applied to session-name lookups.
+  const syncEventToSessions = async (eventName: string, newSessionsRaw?: string, oldSessionsRaw?: string) => {
+    if (!eventName) return;
+    const newList = String(newSessionsRaw || '').split(',').map(s => s.trim()).filter(Boolean);
+    const oldList = String(oldSessionsRaw || '').split(',').map(s => s.trim()).filter(Boolean);
+    const added = newList.filter(n => !oldList.includes(n));
+    const removed = oldList.filter(n => !newList.includes(n));
+    let changed = false;
+    for (const sessionName of added) {
+      const candidates = sessions.filter((x: any) => x['Session Name'] === sessionName);
+      if (candidates.length > 1) {
+        console.warn(`Skipped linking "${sessionName}" to "${eventName}" — ambiguous, multiple sessions share that name.`);
+        continue;
+      }
+      const s = candidates[0];
+      const sId = s?._id || s?.id;
+      if (!s || !sId || s['Parent Event'] === eventName) continue;
+      try {
+        await window.fetch(`/api/sessions/${sId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 'Parent Event': eventName })
+        });
+        changed = true;
+      } catch (e) {
+        console.error('Failed to sync event-session link', e);
+      }
+    }
+    for (const sessionName of removed) {
+      // Disambiguate by which same-named session actually still points at this event.
+      const candidates = sessions.filter((x: any) => x['Session Name'] === sessionName && x['Parent Event'] === eventName);
+      if (candidates.length > 1) {
+        console.warn(`Skipped un-linking "${sessionName}" from "${eventName}" — ambiguous, multiple sessions share that name.`);
+        continue;
+      }
+      const s = candidates[0];
+      const sId = s?._id || s?.id;
+      if (!s || !sId) continue;
+      try {
+        await window.fetch(`/api/sessions/${sId}`, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ 'Parent Event': '' })
+        });
+        changed = true;
+      } catch (e) {
+        console.error('Failed to sync event-session link', e);
+      }
+    }
+    if (changed) fetchActiveTable('Session');
+  };
+
   // --- CRUD: Add Record (from Modal/Wizard) ---
   const handleAddRecord = async () => {
     for (const col of Object.keys(newRecord)) {
@@ -5947,6 +6193,11 @@ export default function App() {
 
       if (response.ok) {
         await fetchActiveTable();
+        if (activeTable === 'Session' && data['Parent Event']) {
+          await syncSessionToEvent(data['Session Name'], data['Parent Event']);
+        } else if (activeTable === 'Events' && data['Sessions']) {
+          await syncEventToSessions(data['Event Name'], data['Sessions']);
+        }
       } else {
         showToast('Failed to save record to database.');
       }
@@ -6038,7 +6289,7 @@ export default function App() {
   }, [groupByFields, sortBy, viewMode, collapsedGroups, searchQuery, advancedFilter, activeTable]);
 
   useEffect(() => {
-    if (!editingId) setEditingCell(null);
+    if (!editingId) setEditingCellSynced(null);
   }, [editingId]);
 
   // --- EFFECT: Save on Click Outside ---
@@ -6185,8 +6436,24 @@ export default function App() {
 
 
   // --- DATA PROCESSING: Main function to sort and group data for the grid view ---
+  // Finds this table's primary date column (DateFrom takes priority over Date,
+  // matching Events' start-date-first convention), used to auto-sort grouped views
+  // chronologically when the user hasn't picked an explicit sort.
+  const getPrimaryDateField = (): string | null => {
+    const cols = getTableColumns();
+    if (cols.includes('DateFrom')) return 'DateFrom';
+    if (cols.includes('Date')) return 'Date';
+    return cols.find(c => c === 'DateFrom' || c === 'Date' || c.startsWith('Date (') || c.startsWith('DateFrom (')) || null;
+  };
+
   const getProcessedData = (): any[] => {
     let data = [...filteredData];
+    const dateField = !sortBy && groupByFields.length > 0 ? getPrimaryDateField() : null;
+    const dateTime = (item: any) => {
+      const raw = dateField ? item[dateField] : null;
+      const t = raw ? new Date(raw).getTime() : NaN;
+      return isNaN(t) ? Infinity : t;
+    };
 
     // 1. Sort Data
     if (sortBy) {
@@ -6197,6 +6464,10 @@ export default function App() {
         if (valA > valB) return sortBy.direction === 'asc' ? 1 : -1;
         return 0;
       });
+    } else if (dateField) {
+      // Grouping is active with no explicit sort — default to chronological order
+      // so both the rows inside each group and the groups themselves read top-to-bottom by date.
+      data.sort((a, b) => dateTime(a) - dateTime(b));
     }
 
     let finalResult: any[] = [];
@@ -6222,7 +6493,17 @@ export default function App() {
           if (!groups[key]) groups[key] = [];
           groups[key].push(item);
         });
-        Object.entries(groups).sort((a, b) => a[0].localeCompare(b[0])).forEach(([name, groupItems], gIdx) => {
+        // Items within each group are already date-sorted above (when dateField is set),
+        // so the group's first item's date is its earliest — use that to order the groups
+        // themselves chronologically instead of alphabetically.
+        Object.entries(groups).sort((a, b) => {
+          if (dateField) {
+            const da = dateTime(a[1][0]);
+            const db = dateTime(b[1][0]);
+            if (da !== db) return da - db;
+          }
+          return a[0].localeCompare(b[0]);
+        }).forEach(([name, groupItems], gIdx) => {
           const theme = groupColors[fieldIdx % groupColors.length];
           const gid = ancestorIds.length > 0 ? `${ancestorIds[ancestorIds.length - 1]}-${name}` : `group-${name}`;
           const currentAncestors = [...ancestorIds, gid];
@@ -6290,7 +6571,7 @@ export default function App() {
     const handleInlineSessionSelect = (sessionName: string) => {
       const s = sessions.find(s => s["Session Name"] === sessionName);
       if (!s) { setInlineRecord({ ...inlineRecord, Session: sessionName }); return; }
-      const norm = (d: any) => d ? String(d).split('T')[0] : '';
+      const norm = (d: any) => toISODate(d);
       const sDate = s["Date"] || s["date"] || '';
       const sTimeOfDay = s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '';
       const sOccasion = s["Occasion"] || s["occasion"] || '';
@@ -6431,7 +6712,7 @@ export default function App() {
 
 
   // --- CRUD: Update Record (from Inline Edit) ---
-  const handleUpdateRecord = async (draftOverride?: any) => {
+  const handleUpdateRecord = async (draftOverride?: any, nextCol?: string) => {
     // If a cell mousedown is in-flight (user clicking a different cell in the same row),
     // skip the blur-triggered save — the click will handle saving when needed.
     if (clickingCellRef.current && draftOverride === undefined) return;
@@ -6468,6 +6749,9 @@ export default function App() {
     // Optimistic update — apply immediately so the UI shows the new value
     // with no flash; background fetch reconciles any server-side transforms.
     const id = draft._id || draft.id;
+    const priorSessionParentEvent = collection === 'sessions' ? sessions.find(s => (s._id || s.id) === id)?.['Parent Event'] : undefined;
+    const priorEventRecord = collection === 'events' ? events.find(e => (e._id || e.id) === id) : undefined;
+    const priorEventSessions = priorEventRecord ? (priorEventRecord['Sessions'] || priorEventRecord['Imported table']) : undefined;
     const optimisticSetter: Record<string, React.Dispatch<React.SetStateAction<any[]>>> = {
       'events': setEvents as any, 'sessions': setSessions as any,
       'musiclog': setMusicLogs, 'videolog': setVideoLogs,
@@ -6480,8 +6764,13 @@ export default function App() {
     if (setter) setter((prev: any[]) => prev.map(r => (r._id === id || r.id === id) ? { ...r, ...draft } : r));
 
     clickingCellRef.current = false;
-    setEditingId(null);
-    setEditDraft(null);
+    if (nextCol) {
+      // Tab pressed — stay in edit mode on this row, just move the active cell.
+      setEditingCellSynced(nextCol);
+    } else {
+      setEditingId(null);
+      setEditDraft(null);
+    }
 
     try {
       const response = await window.fetch(`/api/${collection}/${id}`, {
@@ -6492,6 +6781,11 @@ export default function App() {
 
       if (response.ok) {
         fetchActiveTable();
+        if (activeTable === 'Session') {
+          await syncSessionToEvent(draft['Session Name'], draft['Parent Event'], priorSessionParentEvent);
+        } else if (activeTable === 'Events' && 'Sessions' in draft) {
+          await syncEventToSessions(draft['Event Name'], draft['Sessions'], priorEventSessions);
+        }
       } else {
         alert("Failed to update record");
         fetchActiveTable(); // revert to server state on failure
@@ -6607,6 +6901,9 @@ export default function App() {
     }
     const updateData = { ...newDraft, _modifiedBy: user?.name || user?.email || 'Someone' };
     delete updateData._id;
+    const priorSessionParentEvent = collection === 'sessions' ? sessions.find(s => (s._id || s.id) === id)?.['Parent Event'] : undefined;
+    const priorEventRecord = collection === 'events' ? events.find(e => (e._id || e.id) === id) : undefined;
+    const priorEventSessions = priorEventRecord ? (priorEventRecord['Sessions'] || priorEventRecord['Imported table']) : undefined;
     try {
       const res = await window.fetch(`/api/${collection}/${id}`, {
         method: 'PUT',
@@ -6619,6 +6916,11 @@ export default function App() {
         setViewingRecord({ ...newDraft, _id: id });
       }
       fetchActiveTable();
+      if (activeTable === 'Session') {
+        await syncSessionToEvent(newDraft['Session Name'], newDraft['Parent Event'], priorSessionParentEvent);
+      } else if (activeTable === 'Events' && 'Sessions' in newDraft) {
+        await syncEventToSessions(newDraft['Event Name'], newDraft['Sessions'], priorEventSessions);
+      }
     } catch (e) {
       console.error("Expand save error", e);
       showToast('Save failed — please try again.');
@@ -6642,9 +6944,26 @@ export default function App() {
     const inputCls = () =>
       `w-full h-full bg-transparent border-none focus:border-none focus:ring-0
    px-2 py-0 text-[13px] font-normal text-slate-700 outline-none shadow-none`;
-    const saveKeys = (e: React.KeyboardEvent) => {
+    // Auto-filled/lookup columns render as read-only (no input) — Tab skips past them
+    // to the next column that actually has an editor.
+    const isColAutoFilled = (c: string) =>
+      c.includes('(from Session)') || c.includes('(from 🕘 Session)') || c.toLowerCase().includes('(from event)') || getColumnType(c) === 'lookup';
+    const getNextEditableCol = (fromCol: string): string | null => {
+      const idx = cols.indexOf(fromCol);
+      for (let i = idx + 1; i < cols.length; i++) {
+        if (!isColAutoFilled(cols[i])) return cols[i];
+      }
+      return null;
+    };
+    const saveKeys = (e: React.KeyboardEvent, col: string) => {
       if (e.key === 'Enter') handleUpdateRecord();
-      if (e.key === 'Escape') { setEditingId(null); setEditDraft(null); setEditingCell(null); }
+      if (e.key === 'Escape') { setEditingId(null); setEditDraft(null); setEditingCellSynced(null); }
+      if (e.key === 'Tab') {
+        e.preventDefault();
+        const nextCol = getNextEditableCol(col);
+        if (nextCol) handleUpdateRecord(editDraft, nextCol);
+        else handleUpdateRecord();
+      }
     };
 
     const commitField = (col: string, val: string) => {
@@ -6658,7 +6977,7 @@ export default function App() {
     const commitSession = (sessionName: string) => {
       const s = sessions.find((x: any) => x["Session Name"] === sessionName);
       const patch: any = { Session: sessionName };
-      const norm = (d: any) => d ? String(d).split('T')[0] : '';
+      const norm = (d: any) => toISODate(d);
       if (s) {
         const sDate = s["Date"] || s["date"] || '';
         const sTimeOfDay = s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '';
@@ -6701,7 +7020,7 @@ export default function App() {
               </td>
             );
           }
-          const isAutoFilled = col.includes('(from Session)') || col.includes('(from 🕘 Session)') || col.toLowerCase().includes('(from event)');
+          const isAutoFilled = col.includes('(from Session)') || col.includes('(from 🕘 Session)') || col.toLowerCase().includes('(from event)') || !!getReverseLinkConfig(col);
           const isActuallyActive = editingCell === col && !isAutoFilled;
           const colType = getColumnType(col);
           const isMulti = colType === 'badge_multi';
@@ -6726,7 +7045,7 @@ export default function App() {
               onMouseDown={() => { if (!isAutoFilled && colType !== 'lookup') clickingCellRef.current = true; }}
               onClick={() => {
                 clickingCellRef.current = false;
-                if (!isAutoFilled && colType !== 'lookup') setEditingCell(col);
+                if (!isAutoFilled && colType !== 'lookup') setEditingCellSynced(col);
               }}
             >
               {(() => {
@@ -6742,7 +7061,7 @@ export default function App() {
                         onCommit={val => {
                           commitField(col, val);
                         }}
-                        onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
+                        onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCellSynced(null); }}
                       />
                     );
                   }
@@ -6810,7 +7129,7 @@ export default function App() {
                         setEditDraft(nd);
                         handleUpdateRecord(nd);
                       }}
-                      onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
+                      onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCellSynced(null); }}
                       onAddLookup={hasPerm(user, activeTable, 'edit') ? lt => {
                         const currentExtras = extraColumns[activeTable] || [];
                         setAddColumnModal({ name: '', type: 'lookup', linkedTable: lt, lookupField: '' });
@@ -6861,13 +7180,19 @@ export default function App() {
                       className={`${inputCls()} h-24 py-2 resize-none whitespace-normal text-left align-top`}
                       value={editDraft[col] || ''}
                       onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })}
-                      onBlur={() => handleUpdateRecord()}
+                      onBlur={() => { if (editingCellRef.current === col) handleUpdateRecord(); }}
                       onKeyDown={(e) => {
                         if (e.key === 'Enter' && !e.shiftKey) {
                           e.preventDefault();
                           handleUpdateRecord();
                         }
-                        if (e.key === 'Escape') { setEditingId(null); setEditingCell(null); }
+                        if (e.key === 'Escape') { setEditingId(null); setEditingCellSynced(null); }
+                        if (e.key === 'Tab') {
+                          e.preventDefault();
+                          const nextCol = getNextEditableCol(col);
+                          if (nextCol) handleUpdateRecord(editDraft, nextCol);
+                          else handleUpdateRecord();
+                        }
                       }}
                     />
                   );
@@ -6955,7 +7280,7 @@ export default function App() {
                       onAddOption={(hasPerm(user, activeTable, 'edit') || hasPerm(user, activeTable, 'add')) ? val => handleAddCustomTag(activeTable, col, val) : undefined}
                       removableOptions={(hasPerm(user, activeTable, 'edit') || hasPerm(user, activeTable, 'add')) ? opts : []}
                       onRemoveOption={(hasPerm(user, activeTable, 'edit') || hasPerm(user, activeTable, 'add')) ? val => handleRemoveTagGlobally(activeTable, col, val) : undefined}
-                      onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCell(null); }}
+                      onCancel={() => { setEditingId(null); setEditDraft(null); setEditingCellSynced(null); }}
                       onOutsideClick={() => handleUpdateRecord()}
                       placeholder={`Select ${col}…`}
                       tagClass={colType === 'year' ? "bg-brand-primary/10 text-brand-primary text-[12px] font-black px-3 py-0.5 rounded-sm border border-brand-primary/20" : undefined}
@@ -6966,11 +7291,11 @@ export default function App() {
                 }
 
                 if (colType === 'date') {
-                  return <input type="date" className={inputCls()} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => handleUpdateRecord()} onKeyDown={saveKeys} autoFocus />;
+                  return <input type="date" className={inputCls()} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => { if (editingCellRef.current === col) handleUpdateRecord(); }} onKeyDown={e => saveKeys(e, col)} autoFocus />;
                 }
 
                 if (colType === 'time') {
-                  return <input type="time" step="1" className={inputCls()} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => handleUpdateRecord()} onKeyDown={saveKeys} autoFocus />;
+                  return <input type="time" step="1" className={inputCls()} value={editDraft[col] || ''} onChange={e => setEditDraft({ ...editDraft, [col]: e.target.value })} onBlur={() => { if (editingCellRef.current === col) handleUpdateRecord(); }} onKeyDown={e => saveKeys(e, col)} autoFocus />;
                 }
 
                 return (
@@ -6996,8 +7321,8 @@ export default function App() {
                       if (colType === 'phone') val = val.replace(/[^\d\s()+-]/g, '');
                       setEditDraft({ ...editDraft, [col]: val });
                     }}
-                    onBlur={() => handleUpdateRecord()}
-                    onKeyDown={saveKeys}
+                    onBlur={() => { if (editingCellRef.current === col) handleUpdateRecord(); }}
+                    onKeyDown={e => saveKeys(e, col)}
                   />
                 );
               })()}
@@ -7076,6 +7401,11 @@ export default function App() {
         setIsInlineAdding(false);
         setInlineRecord({});
         fetchActiveTable();
+        if (activeTable === 'Session' && data['Parent Event']) {
+          await syncSessionToEvent(data['Session Name'], data['Parent Event']);
+        } else if (activeTable === 'Events' && data['Sessions']) {
+          await syncEventToSessions(data['Event Name'], data['Sessions']);
+        }
       } else {
         alert("Error saving record");
       }
@@ -8279,7 +8609,7 @@ thead.sticky th.sticky {
         )}
 
         <div className="flex-1 overflow-y-auto bg-brand-bg p-3 md:p-8">
-          <div className="max-w-[1400px] mx-auto space-y-6 lg:space-y-8">
+          <div className="w-full mx-auto space-y-6 lg:space-y-8">
 
             {/* --- MODULE: Home Dashboard --- */}
             {activeTable === 'Home' ? (
@@ -8425,7 +8755,7 @@ thead.sticky th.sticky {
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="text-[13px] font-bold text-slate-800 group-hover:text-brand-primary transition-colors truncate">{ev["Event Name"] || ev.EventName || '—'}</div>
-                                    <div className="text-[10px] text-slate-400">{ev.DateFrom || '—'}{ev.City ? ` · ${ev.City}` : ''}</div>
+                                    <div className="text-[10px] text-slate-400">{ev.DateFrom ? formatDateDisplay(ev.DateFrom) : '—'}{ev.City ? ` · ${ev.City}` : ''}</div>
                                   </div>
                                   {ev.Year && <Badge className="bg-slate-100 text-slate-500 border-none text-[10px] font-black shrink-0">{ev.Year}</Badge>}
                                 </div>
@@ -8449,7 +8779,7 @@ thead.sticky th.sticky {
                                   </div>
                                   <div className="flex-1 min-w-0">
                                     <div className="text-[13px] font-bold text-slate-800 group-hover:text-brand-primary transition-colors truncate">{s["Session Name"] || '—'}</div>
-                                    <div className="text-[10px] text-slate-400">{s["Parent Event"] || ''}{s["Date"] ? ` · ${s["Date"]}` : ''}</div>
+                                    <div className="text-[10px] text-slate-400">{s["Parent Event"] || ''}{s["Date"] ? ` · ${formatDateDisplay(s["Date"])}` : ''}</div>
                                   </div>
                                   {s["SessionType"] && <Badge className="bg-violet-50 text-violet-500 border border-violet-100 text-[10px] font-black shrink-0">{s["SessionType"]}</Badge>}
                                 </div>
@@ -8526,11 +8856,11 @@ thead.sticky th.sticky {
                           <div className="space-y-2 sm:space-y-4 flex-1">
                             <div className="space-y-0.5">
                               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">{colLabel('DateFrom')}</label>
-                              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateFrom || "—"}</div>
+                              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateFrom ? formatDateDisplay(item.DateFrom) : "—"}</div>
                             </div>
                             <div className="space-y-0.5">
                               <label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">{colLabel('DateTo')}</label>
-                              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateTo || "—"}</div>
+                              <div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item.DateTo ? formatDateDisplay(item.DateTo) : "—"}</div>
                             </div>
                             {(item.Sessions || item["Imported table"]) && (
                               <div className="space-y-0.5">
@@ -8854,7 +9184,7 @@ thead.sticky th.sticky {
                               </div>
                               <div className="space-y-2 sm:space-y-4 flex-1">
                                 <div className="grid grid-cols-2 gap-3">
-                                  <div className="space-y-0.5"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Date</label><div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item["Date"] || "—"}</div></div>
+                                  <div className="space-y-0.5"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Date</label><div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item["Date"] ? formatDateDisplay(item["Date"]) : "—"}</div></div>
                                   <div className="space-y-0.5"><label className="text-[9px] font-bold text-slate-400 uppercase tracking-widest block">Time Of Day</label><div className="text-[11px] sm:text-[13px] font-bold text-slate-800">{item["Time Of Day"] || "—"}</div></div>
                                 </div>
                                 <div className="grid grid-cols-2 gap-3">
@@ -8968,7 +9298,7 @@ thead.sticky th.sticky {
                               </div>
                               <div className="text-right shrink-0">
                                 <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Date</div>
-                                <div className="text-[11px] font-bold text-slate-700 font-mono">{item["Date (from Session)"] || "—"}</div>
+                                <div className="text-[11px] font-bold text-slate-700 font-mono">{item["Date (from Session)"] ? formatDateDisplay(item["Date (from Session)"]) : "—"}</div>
                               </div>
                             </div>
 
@@ -9135,7 +9465,7 @@ thead.sticky th.sticky {
                               </div>
                               <div className="text-right shrink-0">
                                 <div className="text-[9px] font-black text-slate-500 uppercase tracking-widest">Date</div>
-                                <div className="text-[11px] font-bold text-slate-700 font-mono">{item["Date (from Session)"] || "—"}</div>
+                                <div className="text-[11px] font-bold text-slate-700 font-mono">{item["Date (from Session)"] ? formatDateDisplay(item["Date (from Session)"]) : "—"}</div>
                               </div>
                             </div>
                             <div className="p-4 space-y-3 flex-1">
@@ -9298,7 +9628,7 @@ thead.sticky th.sticky {
                                     </div>
                                   </div>
                                   <div className="pt-2 border-t border-slate-100">
-                                    <Badge className="bg-brand-primary/10 text-brand-primary border-none text-[9px] font-black px-2 py-0.5 rounded">Date: {item["Date (from 🕘 Session)"]}</Badge>
+                                    <Badge className="bg-brand-primary/10 text-brand-primary border-none text-[9px] font-black px-2 py-0.5 rounded">Date: {formatDateDisplay(item["Date (from 🕘 Session)"])}</Badge>
                                   </div>
                                 </div>
                               ) : activeTable === 'DyatraChecklist' ? (
@@ -9374,7 +9704,7 @@ thead.sticky th.sticky {
                                   </div>
                                 </div>
                               ) : (
-                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{item.city || item.artist || item.category || item.DateFrom || "—"}</p>
+                                <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest truncate">{item.city || item.artist || item.category || (item.DateFrom ? formatDateDisplay(item.DateFrom) : "—")}</p>
                               )}
                             </div>
                           </motion.div>
@@ -9745,16 +10075,12 @@ thead.sticky th.sticky {
                                           }
                                         }
                                         const rowId = row.data?._id || row.data?.id;
-                                        if (clickedCol) setEditingCell(clickedCol);
+                                        if (clickedCol) setEditingCellSynced(clickedCol);
                                         setEditingId(rowId);
                                         const d: any = { ...row.data };
                                         ['DateFrom', 'DateTo', 'Date'].forEach(k => {
                                           if (!d[k]) return;
-                                          const raw: string = String(d[k]);
-                                          if (/^\d{4}-\d{2}-\d{2}$/.test(raw)) return;
-                                          if (raw.includes('T')) { d[k] = raw.split('T')[0]; return; }
-                                          const parsed = new Date(raw);
-                                          if (!isNaN(parsed.getTime())) d[k] = `${parsed.getFullYear()}-${String(parsed.getMonth() + 1).padStart(2, '0')}-${String(parsed.getDate()).padStart(2, '0')}`;
+                                          d[k] = toISODate(d[k]);
                                         });
                                         if (!d['Sessions'] && d['Imported table']) d['Sessions'] = d['Imported table'];
                                         setEditDraft(d);
@@ -10252,6 +10578,7 @@ thead.sticky th.sticky {
               {activeTable === 'MusicLog' && (() => {
                 const mlTimeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
                 const mlOccasionOpts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
+                const mlPlayedAtOpts = [...new Set(musicLogs.map((m: any) => m.PlayedAt).filter(Boolean))].sort() as string[];
                 const lbl = "text-[9px] font-black uppercase tracking-widest text-slate-500";
                 return (
                   <div className="space-y-6">
@@ -10270,7 +10597,7 @@ thead.sticky th.sticky {
                               options={sessions.map((s: any) => s["Session Name"]).filter(Boolean)}
                               onCommit={val => {
                                 const s = sessions.find((x: any) => x["Session Name"] === val);
-                                const norm = (d: any) => d ? String(d).split('T')[0] : '';
+                                const norm = (d: any) => toISODate(d);
                                 if (s) setNewRecord((prev: any) => ({ ...prev, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), timeOfDay: s["Time Of Day"] || '', occasion: s["Occasion"] || '' }));
                                 else setNewRecord((prev: any) => ({ ...prev, session: val }));
                               }}
@@ -10314,7 +10641,9 @@ thead.sticky th.sticky {
                         </div>
                         <div className="space-y-1">
                           <label className={lbl}>Played At</label>
-                          <Input value={newRecord.playedAt || ''} onChange={(e) => setNewRecord({ ...newRecord, playedAt: e.target.value })} placeholder="" className="bg-brand-bg h-9 text-xs" />
+                          <div className="h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
+                            <CellDropdown value={newRecord.playedAt || ''} options={[...new Set([...mlPlayedAtOpts, ...(customTags['MusicLog']?.['PlayedAt'] || [])])]} onAddOption={val => handleAddCustomTag('MusicLog', 'PlayedAt', val)} removableOptions={[...new Set([...mlPlayedAtOpts, ...(customTags['MusicLog']?.['PlayedAt'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('MusicLog', 'PlayedAt', val)} onCommit={val => setNewRecord((prev: any) => ({ ...prev, playedAt: val }))} onCancel={() => { }} placeholder="Select…" tagClass="bg-brand-accent/10 text-brand-accent text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-accent/20" />
+                          </div>
                         </div>
                         <div className="space-y-1">
                           <label className={lbl}>Track ID</label>
@@ -10324,7 +10653,16 @@ thead.sticky th.sticky {
                       <div className="mt-3 space-y-3">
                         <div className="space-y-1">
                           <label className={lbl}>Track Name</label>
-                          <Input value={newRecord.track || ''} onChange={(e) => setNewRecord({ ...newRecord, track: e.target.value })} placeholder="" className="bg-brand-bg h-9 text-xs" />
+                          <div className="min-h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
+                            <LinkedRecordPicker
+                              value={newRecord.track || ''}
+                              records={getDataForTable('Tracks')}
+                              nameField="Title"
+                              linkedTable="Tracks"
+                              onCommit={val => setNewRecord((prev: any) => ({ ...prev, track: val }))}
+                              onCancel={() => { }}
+                            />
+                          </div>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
@@ -10391,7 +10729,7 @@ thead.sticky th.sticky {
                                 options={sessions.map((s: any) => s["Session Name"]).filter(Boolean)}
                                 onCommit={val => {
                                   const s = sessions.find((x: any) => x["Session Name"] === val);
-                                  const norm = (d: any) => d ? String(d).split('T')[0] : '';
+                                  const norm = (d: any) => toISODate(d);
                                   if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), city: s["City"] || '', venue: s["Venue"] || '', timeOfDay: s["Time Of Day"] || '', occasion: s["Occasion"] || '', sessionType: s["SessionType"] || '' });
                                   else setNewRecord({ ...newRecord, session: val });
                                 }}
@@ -11186,6 +11524,7 @@ thead.sticky th.sticky {
             },
           ];
         } else if (activeTable === 'MusicLog') {
+          const mlPlayedAtOpts = [...new Set(musicLogs.map((m: any) => m.PlayedAt).filter(Boolean))].sort() as string[];
           wizardSteps = [
             {
               label: 'Session Context',
@@ -11195,7 +11534,7 @@ thead.sticky th.sticky {
                     <label className={labelCls}>Session</label>
                     <CellDropdown value={newRecord.session || ''} options={sessionOpts} onCommit={val => {
                       const s = sessions.find((x: any) => x["Session Name"] === val);
-                      const norm = (d: any) => d ? String(d).split('T')[0] : '';
+                      const norm = (d: any) => toISODate(d);
                       if (s) setNewRecord((prev: any) => ({ ...prev, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), timeOfDay: s["Time Of Day"] || '', occasion: s["Occasion"] || '' }));
                       else setNewRecord((prev: any) => ({ ...prev, session: val }));
                     }} onCancel={() => { }} placeholder="Select session…" tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20" />
@@ -11204,7 +11543,7 @@ thead.sticky th.sticky {
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Auto-filled</div>
                       <div className="text-[12px] font-semibold text-slate-700">{newRecord.parentEvent}</div>
-                      {newRecord.date && <div className="text-[11px] text-slate-500">{String(newRecord.date).split('T')[0]}</div>}
+                      {newRecord.date && <div className="text-[11px] text-slate-500">{formatDateDisplay(newRecord.date)}</div>}
                     </div>
                   )}
                   <div>
@@ -11220,7 +11559,9 @@ thead.sticky th.sticky {
                 <div className="space-y-5">
                   <div>
                     <label className={labelCls}>Track Name</label>
-                    <input className={inputCls} value={newRecord.track || ''} onChange={e => setNewRecord({ ...newRecord, track: e.target.value })} placeholder="Track name…" />
+                    <div className="min-h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
+                      <LinkedRecordPicker value={newRecord.track || ''} records={getDataForTable('Tracks')} nameField="Title" linkedTable="Tracks" onCommit={val => setNewRecord({ ...newRecord, track: val })} onCancel={() => { }} />
+                    </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
                     <div>
@@ -11229,7 +11570,7 @@ thead.sticky th.sticky {
                     </div>
                     <div>
                       <label className={labelCls}>Played At</label>
-                      <input className={inputCls} value={newRecord.playedAt || ''} onChange={e => setNewRecord({ ...newRecord, playedAt: e.target.value })} placeholder="Timestamp" />
+                      <CellDropdown value={newRecord.playedAt || ''} options={[...new Set([...mlPlayedAtOpts, ...(customTags['MusicLog']?.['PlayedAt'] || [])])]} onAddOption={val => handleAddCustomTag('MusicLog', 'PlayedAt', val)} removableOptions={[...new Set([...mlPlayedAtOpts, ...(customTags['MusicLog']?.['PlayedAt'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('MusicLog', 'PlayedAt', val)} onCommit={val => setNewRecord({ ...newRecord, playedAt: val })} onCancel={() => { }} placeholder="Select…" tagClass="bg-brand-accent/10 text-brand-accent text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-accent/20" />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -11283,7 +11624,7 @@ thead.sticky th.sticky {
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Auto-filled</div>
                       <div className="text-[12px] font-semibold text-slate-700">{newRecord.parentEvent}</div>
-                      {newRecord.date && <div className="text-[11px] text-slate-500">{String(newRecord.date).split('T')[0]}</div>}
+                      {newRecord.date && <div className="text-[11px] text-slate-500">{formatDateDisplay(newRecord.date)}</div>}
                       {newRecord.city && <div className="text-[11px] text-slate-500">{newRecord.city}</div>}
                     </div>
                   )}
@@ -11505,7 +11846,7 @@ thead.sticky th.sticky {
                     <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
                       <div className="text-[10px] font-black text-slate-400 uppercase tracking-widest">Auto-filled</div>
                       <div className="text-[12px] font-semibold text-slate-700">{newRecord["Parent Event (from 🕘 Session)"]}</div>
-                      {newRecord["Date (from 🕘 Session)"] && <div className="text-[11px] text-slate-500">{String(newRecord["Date (from 🕘 Session)"]).split('T')[0]}</div>}
+                      {newRecord["Date (from 🕘 Session)"] && <div className="text-[11px] text-slate-500">{formatDateDisplay(newRecord["Date (from 🕘 Session)"])}</div>}
                       {newRecord["City (from 🕘 Session)"] && <div className="text-[11px] text-slate-500">{newRecord["City (from 🕘 Session)"]}</div>}
                     </div>
                   )}
