@@ -137,13 +137,13 @@ const TAG_COLORS = [
 // that as a second manually-maintained field (like Events["Sessions"]), these are
 // computed, read-only reflections — always in sync with the source table's own field,
 // no write-sync needed. Extend this list if another table adds a link to Events/Session.
-const REVERSE_LINK_COLUMNS: Record<string, { col: string; sourceTable: string; sourceCol: string }[]> = {
+const REVERSE_LINK_COLUMNS: Record<string, { col: string; sourceTable: string; sourceCol: string; displayField?: string }[]> = {
   'Events': [
     { col: 'Linked Guidance & Learning', sourceTable: 'Guidance & Learning', sourceCol: 'Event' },
   ],
   'Session': [
-    { col: 'Linked MusicLog', sourceTable: 'MusicLog', sourceCol: 'Session' },
-    { col: 'Linked VideoLog', sourceTable: 'VideoLog', sourceCol: 'Session' },
+    { col: 'Linked MusicLog', sourceTable: 'MusicLog', sourceCol: 'Session', displayField: 'Track' },
+    { col: 'Linked VideoLog', sourceTable: 'VideoLog', sourceCol: 'Session', displayField: 'VideoTitle' },
     { col: 'Linked LED', sourceTable: 'LED', sourceCol: '🕘 Session' },
   ],
 };
@@ -1985,7 +1985,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
               }}
               className="inline-flex items-center gap-0.5 bg-teal-50 text-teal-700 border border-teal-200 hover:bg-teal-100 cursor-pointer text-[12px] font-semibold px-2.5 py-0.5 rounded-full"
             >
-              <span className="truncate max-w-[200px]">{rec[nameField]}</span>
+              <span className="truncate max-w-[200px]">{(reverseLinkCfg.displayField && rec[reverseLinkCfg.displayField]) || rec[nameField]}</span>
               <ArrowUpRight className="h-3 w-3 opacity-60 shrink-0" />
             </span>
           ))}
@@ -5038,7 +5038,7 @@ export default function App() {
                 setLinkedRecordPopup({ record: rec, tableName: reverseLinkCfg.sourceTable, nameField, fields });
               }}
             >
-              <span className="truncate">{rec[nameField]}</span>
+              <span className="truncate">{(reverseLinkCfg.displayField && rec[reverseLinkCfg.displayField]) || rec[nameField]}</span>
               <ArrowUpRight className="shrink-0 h-3 w-3 opacity-60" />
             </span>
           ))}
