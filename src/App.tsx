@@ -1,4 +1,4 @@
-
+﻿
 import React, { useState, useEffect, useRef, useMemo, useCallback } from 'react';
 import { createPortal } from 'react-dom';
 import {
@@ -410,8 +410,26 @@ const UserManagement = React.memo(function UserManagement({ currentUser, onToast
       if (!groups[key]) groups[key] = [];
       groups[key].push(u);
     });
+
+    // If a user sort is active, sort items within each group to keep ordering consistent.
+    if (userSortBy) {
+      Object.keys(groups).forEach(k => {
+        groups[k].sort((a, b) => {
+          let valA: any = a[userSortBy.field] || '';
+          let valB: any = b[userSortBy.field] || '';
+          if (userSortBy.field === 'created_at') {
+            valA = new Date(valA).getTime();
+            valB = new Date(valB).getTime();
+            return userSortBy.direction === 'asc' ? valA - valB : valB - valA;
+          }
+          const cmp = String(valA).localeCompare(String(valB));
+          return userSortBy.direction === 'asc' ? cmp : -cmp;
+        });
+      });
+    }
+
     return groups;
-  }, [filteredUsers, userGroupBy]);
+  }, [filteredUsers, userGroupBy, userSortBy]);
 
   // Renders a single user row in the management table.
   const renderUserRow = (u: any) => (
@@ -4182,7 +4200,8 @@ export default function App() {
   const [advancedFilter, setAdvancedFilter] = useState<FilterGroup>({ id: 'root', type: 'group', logic: 'AND', conditions: [] });
   const [pendingFilter, setPendingFilter] = useState<FilterGroup>({ id: 'root', type: 'group', logic: 'AND', conditions: [] });
   const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
-  const [sortBy, setSortBy] = useState<{ field: string; direction: 'asc' | 'desc' } | null>(null);
+  // Multi-level sort: earlier entries take priority, later ones break ties.
+  const [sortBy, setSortBy] = useState<{ field: string; direction: 'asc' | 'desc' }[]>([]);
   // AI Chat State
   const [chatInput, setChatInput] = useState('');
   const [chatMessages, setChatMessages] = useState<{ role: 'user' | 'ai', content: string }[]>([]);
@@ -4903,38 +4922,6 @@ export default function App() {
 
     return true;
   });
-  // Memoized calculation to sort and group data for the visual/card views.
-  // Sorted + grouped data for visual/card view (respects sortBy and groupByField)
-  const sortedVisualData: any[] = (() => {
-    const d = [...filteredData];
-    d.sort((a, b) => {
-      // Primary: group fields
-      if (groupByFields.length > 0) {
-        for (const field of groupByFields) {
-          const ga = String(a[field] ?? '');
-          const gb = String(b[field] ?? '');
-          if (ga !== gb) return ga.localeCompare(gb);
-        }
-      }
-      // Secondary: explicit sort
-      if (sortBy) {
-        const va = String(a[sortBy.field] ?? '');
-        const vb = String(b[sortBy.field] ?? '');
-        return sortBy.direction === 'asc' ? va.localeCompare(vb) : vb.localeCompare(va);
-      }
-      // Default for Events: chronological
-      if (groupByFields.length === 0 && !sortBy && activeTable === 'Events') {
-        const ta = a.DateFrom ? new Date(a.DateFrom).getTime() : Number.MAX_SAFE_INTEGER;
-        const tb = b.DateFrom ? new Date(b.DateFrom).getTime() : Number.MAX_SAFE_INTEGER;
-        const valA = isNaN(ta) ? Number.MAX_SAFE_INTEGER : ta;
-        const valB = isNaN(tb) ? Number.MAX_SAFE_INTEGER : tb;
-        return valA - valB;
-      }
-      return 0;
-    });
-    return d;
-  })();
-
   // --- STATE: Column Customization ---
   const [extraColumns, setExtraColumns] = useState<Record<string, string[]>>({});
   const [columnTypes, setColumnTypes] = useState<Record<string, Record<string, FieldType>>>({});
@@ -6249,14 +6236,15 @@ export default function App() {
       try {
         const parsed = JSON.parse(saved);
         setGroupByFields(parsed.groupByFields !== undefined ? parsed.groupByFields : (parsed.groupByField ? [parsed.groupByField] : []));
-        setSortBy(parsed.sortBy !== undefined ? parsed.sortBy : null);
+        // Back-compat: older saves stored sortBy as a single {field, direction} object.
+        setSortBy(Array.isArray(parsed.sortBy) ? parsed.sortBy : (parsed.sortBy?.field ? [parsed.sortBy] : []));
         setViewMode(parsed.viewMode || 'grid');
         setCollapsedGroups(parsed.collapsedGroups || []);
         setSearchQuery(parsed.searchQuery || '');
         setAdvancedFilter(parsed.advancedFilter || { id: 'root', type: 'group', logic: 'AND', conditions: [] });
       } catch (e) {
         setGroupByFields([]);
-        setSortBy(null);
+        setSortBy([]);
         setCollapsedGroups([]);
         setSearchQuery('');
         setViewMode('grid');
@@ -6264,7 +6252,7 @@ export default function App() {
       }
     } else {
       setGroupByFields([]);
-      setSortBy(null);
+      setSortBy([]);
       setCollapsedGroups([]);
       setSearchQuery('');
       setViewMode('grid');
@@ -6446,27 +6434,117 @@ export default function App() {
     return cols.find(c => c === 'DateFrom' || c === 'Date' || c.startsWith('Date (') || c.startsWith('DateFrom (')) || null;
   };
 
-  const getProcessedData = (): any[] => {
-    let data = [...filteredData];
-    const dateField = !sortBy && groupByFields.length > 0 ? getPrimaryDateField() : null;
+  // Compares two records on a single sort rule — date-type fields compare chronologically,
+  // everything else compares as case-insensitive text. Used to build multi-level sorts,
+  // where each rule in `sortBy` breaks ties left by the rules before it.
+  const compareBySortRule = (a: any, b: any, rule: { field: string; direction: 'asc' | 'desc' }): number => {
+    const dir = rule.direction === 'desc' ? -1 : 1;
+    if (getColumnType(rule.field) === 'date') {
+      const parse = (item: any) => {
+        const raw = item[rule.field];
+        const t = raw ? new Date(raw).getTime() : NaN;
+        return isNaN(t) ? (rule.direction === 'desc' ? -Infinity : Infinity) : t;
+      };
+      return (parse(a) - parse(b)) * dir;
+    }
+    const va = (a[rule.field] ?? '').toString().toLowerCase();
+    const vb = (b[rule.field] ?? '').toString().toLowerCase();
+    if (va < vb) return -1 * dir;
+    if (va > vb) return 1 * dir;
+    return 0;
+  };
+
+  // The first date-type rule in a multi-sort — used to keep whole groups ordered
+  // chronologically (rather than alphabetically) when the user has sorted by date.
+  const getDateSortRule = (rules: { field: string; direction: 'asc' | 'desc' }[]) =>
+    rules.find(r => getColumnType(r.field) === 'date') || null;
+
+  // Memoized calculation to sort and group data for the visual/card views.
+  // Sorted + grouped data for visual/card view (respects sortBy and groupByField)
+  const sortedVisualData: any[] = (() => {
+    const d = [...filteredData];
+    // A date-type rule anywhere in the multi-sort still drives chronological group
+    // ordering; with no sort at all, fall back to the table's primary date field.
+    const dateRule = getDateSortRule(sortBy);
+    const dateField = dateRule ? dateRule.field : (sortBy.length === 0 ? getPrimaryDateField() : null);
+    const dateDirection = dateRule?.direction === 'desc' ? -1 : 1;
     const dateTime = (item: any) => {
       const raw = dateField ? item[dateField] : null;
       const t = raw ? new Date(raw).getTime() : NaN;
-      return isNaN(t) ? Infinity : t;
+      return isNaN(t) ? Number.MAX_SAFE_INTEGER : t;
+    };
+    const groupKey = (item: any) => groupByFields.map(f => String(item[f] ?? '')).join(' ');
+    // Each group's earliest (or, when sorting that field descending, latest) date —
+    // lets whole groups be ordered chronologically instead of alphabetically by group name.
+    let groupMinDate: Record<string, number> | null = null;
+    if (groupByFields.length > 0 && dateField) {
+      groupMinDate = {};
+      d.forEach(item => {
+        const key = groupKey(item);
+        const t = dateTime(item);
+        const cur = groupMinDate![key];
+        if (cur === undefined || (dateDirection === 1 ? t < cur : t > cur)) groupMinDate![key] = t;
+      });
+    }
+    d.sort((a, b) => {
+      // Primary: group fields — ordered chronologically by the group's extreme date
+      // (earliest for ascending, latest for descending) when a date is available, else alphabetically.
+      if (groupByFields.length > 0) {
+        const keyA = groupKey(a);
+        const keyB = groupKey(b);
+        if (keyA !== keyB) {
+          if (groupMinDate) {
+            const da = groupMinDate[keyA];
+            const db = groupMinDate[keyB];
+            if (da !== db) return (da - db) * dateDirection;
+          }
+          for (const field of groupByFields) {
+            const ga = String(a[field] ?? '');
+            const gb = String(b[field] ?? '');
+            if (ga !== gb) return ga.localeCompare(gb);
+          }
+        }
+      }
+      // Secondary: explicit multi-level sort — each rule breaks ties left by the one before it.
+      for (const rule of sortBy) {
+        const c = compareBySortRule(a, b, rule);
+        if (c !== 0) return c;
+      }
+      // Default: chronological — applies across the whole dataset, and as the
+      // tie-breaker within each group when grouping is active and no sort is set.
+      if (sortBy.length === 0 && dateField) {
+        return dateTime(a) - dateTime(b);
+      }
+      return 0;
+    });
+    return d;
+  })();
+
+  const getProcessedData = (): any[] => {
+    const data = [...filteredData];
+    // A date-type rule anywhere in the multi-sort still drives chronological group
+    // order — only when there's no date rule at all does grouping fall back to alphabetical.
+    const dateRule = getDateSortRule(sortBy);
+    const dateField = dateRule ? dateRule.field : (sortBy.length === 0 ? getPrimaryDateField() : null);
+    const dateDirection = dateRule?.direction === 'desc' ? -1 : 1;
+    const dateTime = (item: any) => {
+      const raw = dateField ? item[dateField] : null;
+      const t = raw ? new Date(raw).getTime() : NaN;
+      // For ascending sort, put invalid dates at the end. For descending, at the beginning.
+      return isNaN(t) ? (dateRule?.direction === 'desc' ? -Infinity : Infinity) : t;
     };
 
-    // 1. Sort Data
-    if (sortBy) {
+    // 1. Sort Data — each rule breaks ties left by the one before it.
+    if (sortBy.length > 0) {
       data.sort((a, b) => {
-        const valA = (a[sortBy.field] ?? "").toString().toLowerCase();
-        const valB = (b[sortBy.field] ?? "").toString().toLowerCase();
-        if (valA < valB) return sortBy.direction === 'asc' ? -1 : 1;
-        if (valA > valB) return sortBy.direction === 'asc' ? 1 : -1;
+        for (const rule of sortBy) {
+          const c = compareBySortRule(a, b, rule);
+          if (c !== 0) return c;
+        }
         return 0;
       });
     } else if (dateField) {
-      // Grouping is active with no explicit sort — default to chronological order
-      // so both the rows inside each group and the groups themselves read top-to-bottom by date.
+      // Default to chronological sort if no user sort is active.
       data.sort((a, b) => dateTime(a) - dateTime(b));
     }
 
@@ -6494,13 +6572,13 @@ export default function App() {
           groups[key].push(item);
         });
         // Items within each group are already date-sorted above (when dateField is set),
-        // so the group's first item's date is its earliest — use that to order the groups
-        // themselves chronologically instead of alphabetically.
+        // so the group's first item is its chronological extreme in the current sort
+        // direction — use that to order the groups themselves instead of alphabetically.
         Object.entries(groups).sort((a, b) => {
           if (dateField) {
             const da = dateTime(a[1][0]);
             const db = dateTime(b[1][0]);
-            if (da !== db) return da - db;
+            if (da !== db) return (da - db) * dateDirection;
           }
           return a[0].localeCompare(b[0]);
         }).forEach(([name, groupItems], gIdx) => {
@@ -8163,20 +8241,10 @@ thead.sticky th.sticky {
                         <div className="flex items-center min-w-0 flex-1">
                           <ArrowUpDown className="h-4 w-4 text-slate-500 mr-1.5 xl:mr-2 shrink-0" />
                           <span className="text-xs font-bold text-slate-800 uppercase tracking-wide truncate">
-                            {sortBy ? colLabel(sortBy.field) : "No Sort"}
+                            {sortBy.length > 0 ? sortBy.map(r => colLabel(r.field)).join(', ') : "No Sort"}
                           </span>
                         </div>
-                        <div className="flex items-center shrink-0 ml-1">
-                          {sortBy && (
-                            <button
-                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); setSortBy({ ...sortBy, direction: sortBy.direction === 'asc' ? 'desc' : 'asc' }); }}
-                              className="h-5 w-5 hover:bg-slate-100 rounded transition-colors flex items-center justify-center mr-0.5 border border-slate-200 shadow-sm z-10"
-                            >
-                              <span className="text-[10px] text-brand-primary font-bold leading-none">{sortBy.direction === 'asc' ? '↑' : '↓'}</span>
-                            </button>
-                          )}
-                          <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform ${isSortOpen ? 'rotate-180' : ''}`} />
-                        </div>
+                        <ChevronDown className={`h-4 w-4 text-slate-400 transition-transform shrink-0 ml-1 ${isSortOpen ? 'rotate-180' : ''}`} />
                       </button>
                       <AnimatePresence>
                         {isSortOpen && (
@@ -8186,12 +8254,33 @@ thead.sticky th.sticky {
                               initial={{ opacity: 0, y: 5 }}
                               animate={{ opacity: 1, y: 0 }}
                               exit={{ opacity: 0, y: 5 }}
-                              className="absolute top-full right-0 mt-2 w-full min-w-[180px] bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
+                              className="absolute top-full right-0 mt-2 w-full min-w-[220px] bg-white border border-slate-200 rounded-xl shadow-xl z-50 overflow-y-auto max-h-80 scrollbar-hide py-2"
                             >
-                              <button onClick={() => { setSortBy(null); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Sort</button>
-                              {getTableColumns().map(col => (
-                                <button key={col} onClick={() => { setSortBy({ field: col, direction: 'asc' }); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-700 hover:bg-brand-primary hover:text-white uppercase transition-colors">{colLabel(col)}</button>
-                              ))}
+                              <button onClick={() => { setSortBy([]); setIsSortOpen(false); }} className="w-full text-left px-4 py-2.5 text-sm font-semibold text-slate-400 hover:bg-slate-50 uppercase">No Sort</button>
+                              {getTableColumns().map(col => {
+                                const idx = sortBy.findIndex(r => r.field === col);
+                                const isActive = idx >= 0;
+                                return (
+                                  <button key={col} onClick={() => {
+                                    if (isActive) setSortBy(sortBy.filter(r => r.field !== col));
+                                    else setSortBy([...sortBy, { field: col, direction: 'asc' }]);
+                                  }} className={`w-full flex items-center gap-2 px-4 py-2.5 text-sm font-semibold transition-colors uppercase ${isActive ? 'text-brand-primary bg-brand-primary/5' : 'text-slate-700 hover:bg-slate-50'}`}>
+                                    <div className={`h-4 w-4 rounded border flex items-center justify-center shrink-0 ${isActive ? 'bg-brand-primary border-brand-primary' : 'border-slate-300'}`}>
+                                      {isActive && <span className="text-[10px] text-white font-black">{idx + 1}</span>}
+                                    </div>
+                                    <span className="truncate flex-1 text-left">{colLabel(col)}</span>
+                                    {isActive && (
+                                      <span
+                                        role="button"
+                                        onClick={(e) => { e.stopPropagation(); setSortBy(sortBy.map(r => r.field === col ? { ...r, direction: r.direction === 'asc' ? 'desc' as const : 'asc' as const } : r)); }}
+                                        className="shrink-0 text-[11px] font-black opacity-80 hover:opacity-100 px-1"
+                                      >
+                                        {sortBy[idx].direction === 'asc' ? '↑ ASC' : '↓ DESC'}
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
                             </motion.div>
                           </>
                         )}
@@ -8335,11 +8424,11 @@ thead.sticky th.sticky {
                   </button>
                   <button
                     onClick={() => setMobileSortOpen(true)}
-                    className={`relative p-2 rounded-lg border bg-white transition-colors shrink-0 ${sortBy ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500'}`}
+                    className={`relative p-2 rounded-lg border bg-white transition-colors shrink-0 ${sortBy.length > 0 ? 'border-brand-primary/50 text-brand-primary' : 'border-slate-200 text-slate-500'}`}
                     title="Sort By"
                   >
                     <ArrowUpDown className="h-4 w-4" />
-                    {sortBy && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
+                    {sortBy.length > 0 && <span className="absolute -top-1 -right-1 h-2 w-2 bg-brand-primary rounded-full" />}
                   </button>
                   <button
                     onClick={() => setMobileFieldsOpen(true)}
@@ -8396,7 +8485,7 @@ thead.sticky th.sticky {
         )}
 
         {/* Mobile-only active filter bar */}
-        {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && (groupByFields.length > 0 || sortBy) && (
+        {activeTable !== 'Home' && activeTable !== 'UserManagement' && activeTable !== 'AudioSetup' && activeTable !== 'Equipment' && activeTable !== 'EquipmentMovements' && (groupByFields.length > 0 || sortBy.length > 0) && (
           <div className="sm:hidden flex items-center gap-2 px-4 py-2 bg-white border-b border-slate-200 overflow-x-auto shrink-0">
             <span className="text-[10px] font-black text-slate-400 uppercase tracking-widest shrink-0">Active:</span>
             {groupByFields.length > 0 && (
@@ -8409,13 +8498,13 @@ thead.sticky th.sticky {
                 <X className="h-3 w-3" />
               </button>
             )}
-            {sortBy && (
+            {sortBy.length > 0 && (
               <button
-                onClick={() => setSortBy(null)}
+                onClick={() => setSortBy([])}
                 className="flex items-center gap-1 bg-slate-100 text-slate-700 text-[10px] font-black uppercase px-2 py-1 rounded-lg border border-slate-200 shrink-0"
               >
                 <ArrowUpDown className="h-3 w-3" />
-                {colLabel(sortBy.field)} {sortBy.direction === 'asc' ? '↑' : '↓'}
+                {sortBy.map(r => `${colLabel(r.field)} ${r.direction === 'asc' ? '↑' : '↓'}`).join(', ')}
                 <X className="h-3 w-3" />
               </button>
             )}
@@ -8495,30 +8584,43 @@ thead.sticky th.sticky {
               </div>
               <div className="flex-1 overflow-y-auto overscroll-contain px-5 py-4 space-y-2">
                 <button
-                  onClick={() => setSortBy(null)}
-                  className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center px-4 gap-3 ${!sortBy ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+                  onClick={() => setSortBy([])}
+                  className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center px-4 gap-3 ${sortBy.length === 0 ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
                 >
-                  <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${!sortBy ? 'border-white bg-white' : 'border-slate-300'}`}>
-                    {!sortBy && <span className="h-2 w-2 rounded-full bg-slate-800 block" />}
+                  <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${sortBy.length === 0 ? 'border-white bg-white' : 'border-slate-300'}`}>
+                    {sortBy.length === 0 && <span className="h-2 w-2 rounded-full bg-slate-800 block" />}
                   </span>
                   None
                 </button>
-                {getTableColumns().map(col => (
-                  <button key={col}
-                    onClick={() => setSortBy(s => s?.field === col ? { field: col, direction: s.direction === 'asc' ? 'desc' : 'asc' } : { field: col, direction: 'asc' })}
-                    className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center justify-between px-4 gap-3 ${sortBy?.field === col ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className={`h-4 w-4 rounded-full border-2 shrink-0 flex items-center justify-center ${sortBy?.field === col ? 'border-white bg-white' : 'border-slate-300'}`}>
-                        {sortBy?.field === col && <span className="h-2 w-2 rounded-full bg-slate-800 block" />}
-                      </span>
-                      <span className="truncate">{colLabel(col)}</span>
-                    </div>
-                    {sortBy?.field === col && (
-                      <span className="shrink-0 text-[11px] font-black opacity-80">{sortBy.direction === 'asc' ? '↑ ASC' : '↓ DESC'}</span>
-                    )}
-                  </button>
-                ))}
+                {getTableColumns().map(col => {
+                  const idx = sortBy.findIndex(r => r.field === col);
+                  const isActive = idx >= 0;
+                  return (
+                    <button key={col}
+                      onClick={() => {
+                        if (isActive) setSortBy(sortBy.filter(r => r.field !== col));
+                        else setSortBy([...sortBy, { field: col, direction: 'asc' }]);
+                      }}
+                      className={`w-full h-11 rounded-xl text-[12px] font-black uppercase tracking-wide border transition-all flex items-center justify-between px-4 gap-3 ${isActive ? 'bg-slate-800 text-white border-slate-800 shadow-md' : 'bg-slate-50 text-slate-600 border-slate-200'}`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        <span className={`h-4 w-4 rounded border-2 shrink-0 flex items-center justify-center ${isActive ? 'border-white bg-transparent' : 'border-slate-300'}`}>
+                          {isActive && <span className="text-[10px] text-white font-black leading-none">{idx + 1}</span>}
+                        </span>
+                        <span className="truncate">{colLabel(col)}</span>
+                      </div>
+                      {isActive && (
+                        <span
+                          role="button"
+                          onClick={(e) => { e.stopPropagation(); setSortBy(sortBy.map(r => r.field === col ? { ...r, direction: r.direction === 'asc' ? 'desc' as const : 'asc' as const } : r)); }}
+                          className="shrink-0 text-[11px] font-black opacity-80"
+                        >
+                          {sortBy[idx].direction === 'asc' ? '↑ ASC' : '↓ DESC'}
+                        </span>
+                      )}
+                    </button>
+                  );
+                })}
               </div>
               <div className="px-5 py-4 border-t border-slate-100 shrink-0" style={{ paddingBottom: 'max(16px, env(safe-area-inset-bottom))' }}>
                 <button onClick={() => setMobileSortOpen(false)} className="w-full py-3.5 bg-slate-800 text-white rounded-2xl text-[13px] font-black uppercase tracking-widest shadow-lg active:scale-95 transition-all">Apply</button>
@@ -9785,7 +9887,7 @@ thead.sticky th.sticky {
                               let acc = 48;
                               allCols.forEach((c, idx) => { leftOffsets[idx] = acc; if (idx <= frozen) acc += (colWidths[c] || 200); });
                               return allCols.map((col, i) => {
-                                const isSorted = sortBy?.field === col;
+                                const isSorted = sortBy.some(r => r.field === col);
                                 const extraIndex = (extraColumns[activeTable] || []).indexOf(col);
                                 const isExtraColumn = extraIndex >= 0;
                                 const fieldType = getColumnType(col);
@@ -9841,7 +9943,11 @@ thead.sticky th.sticky {
                                       <div className="relative flex items-center h-full">
                                         {/* Main Sort/Label Area */}
                                         <div
-                                          onClick={() => setSortBy({ field: col, direction: sortBy?.field === col && sortBy.direction === 'asc' ? 'desc' : 'asc' })}
+                                          onClick={() => setSortBy(
+                                            sortBy.length === 1 && sortBy[0].field === col
+                                              ? [{ field: col, direction: sortBy[0].direction === 'asc' ? 'desc' : 'asc' }]
+                                              : [{ field: col, direction: 'asc' }]
+                                          )}
                                           onDoubleClick={() => isExtraColumn && hasPerm(user, activeTable, 'edit') && setEditingHeader({ index: i, value: col })}
                                           className="flex items-center gap-2 px-4 py-3 h-full w-full cursor-grab active:cursor-grabbing hover:bg-black/5 transition-colors truncate pr-16"
                                         >
@@ -10152,7 +10258,7 @@ thead.sticky th.sticky {
                       <div className="flex items-center gap-4">
                         <span className="flex items-center gap-1.5"><Grid className="h-3 w-3" /> {filteredData.length} records</span>
                         <div className="w-px h-3 bg-slate-400" />
-                        <span>{sortBy ? `Sorted by ${colLabel(sortBy.field)}` : 'Default Sort'}</span>
+                        <span>{sortBy.length > 0 ? `Sorted by ${sortBy.map(r => colLabel(r.field)).join(', ')}` : 'Default Sort'}</span>
                       </div>
                       <div className="flex items-center gap-2">
                         <div className={`h-2 w-2 rounded-full ${groupByFields.length > 0 ? 'bg-green-500 shadow-sm animate-pulse' : 'bg-slate-300'}`} />
