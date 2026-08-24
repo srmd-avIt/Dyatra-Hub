@@ -1447,7 +1447,7 @@ const SessionPicker = React.memo(function SessionPicker({
 // It's used for custom "Link to Record" fields created by users.
 // Generic linked-record picker — chip-based multi-select from any table's records
 const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
-  value, records, nameField, displayField, linkedTable, onCommit, onCancel, onAddLookup
+  value, records, nameField, displayField, linkedTable, onCommit, onCancel, onAddLookup, single = false
 }: {
   value: string;
   records: any[];
@@ -1457,6 +1457,7 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
   onCommit: (v: string) => void;
   onCancel: () => void;
   onAddLookup?: (linkedTable: string) => void;
+  single?: boolean;
 }) {
   const [localSel, setLocalSel] = useState<string[]>(() => value ? value.split(',').map(s => s.trim()).filter(Boolean) : []);
   const [open, setOpen] = useState(false);
@@ -1504,9 +1505,12 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
   }, [open, onCommit]);
 
   const toggle = (name: string) => {
-    const next = localSel.includes(name) ? localSel.filter(s => s !== name) : [...localSel, name];
+    const next = single
+      ? (localSel.includes(name) ? [] : [name])
+      : (localSel.includes(name) ? localSel.filter(s => s !== name) : [...localSel, name]);
     setLocalSel(next);
     onCommit(next.join(', '));
+    if (single) setOpen(false);
   };
 
   const remove = (name: string, e: React.MouseEvent) => {
@@ -1555,14 +1559,16 @@ const LinkedRecordPicker = React.memo(function LinkedRecordPicker({
               <button onMouseDown={e => remove(name, e)} className="ml-0.5 text-brand-primary/60 hover:text-red-500 leading-none text-[13px] font-bold shrink-0">&times;</button>
             </span>
           )
-        }) : <span className="text-[12px] text-slate-400">Link {linkedTable} records…</span>}
-        <button
-          onMouseDown={toggleOpen}
-          className="inline-flex items-center justify-center h-5 w-5 rounded border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 hover:border-brand-primary hover:text-brand-primary transition-colors ml-0.5 shrink-0"
-          title={`Add linked ${linkedTable} record`}
-        >
-          <Plus className="h-3 w-3" />
-        </button>
+        }) : <span className="text-[12px] text-slate-400">{single ? `Select ${linkedTable} record…` : `Link ${linkedTable} records…`}</span>}
+        {(!single || localSel.length === 0) && (
+          <button
+            onMouseDown={toggleOpen}
+            className="inline-flex items-center justify-center h-5 w-5 rounded border border-slate-300 bg-white text-slate-500 hover:bg-slate-100 hover:border-brand-primary hover:text-brand-primary transition-colors ml-0.5 shrink-0"
+            title={single ? `Select ${linkedTable} record` : `Add linked ${linkedTable} record`}
+          >
+            <Plus className="h-3 w-3" />
+          </button>
+        )}
       </div>
       {open && panelPos && typeof document !== 'undefined' ? createPortal(
         <div data-floating-panel ref={panelRef} className="fixed z-[9999] bg-white border border-slate-200 rounded-xl shadow-2xl overflow-hidden" style={{ top: panelPos.top, left: panelPos.left, width: panelPos.width, minWidth: 288 }}>
@@ -1654,7 +1660,12 @@ function toISODate(raw: any): string {
 // Formats any stored date value as DD-MM-YYYY for read-only display only.
 // Never feed this into a draft/newRecord field that gets saved or into a native
 // date input's value — use toISODate() for that.
+// Some legacy lookup records (e.g. a VideoLog row linked to multiple sessions)
+// store this as several dates joined by a comma — format each one individually
+// rather than showing the raw, unformatted value.
 function formatDateDisplay(raw: any): string {
+  const s = String(raw ?? '');
+  if (s.includes(',')) return s.split(',').map(part => formatDateDisplay(part.trim())).join(', ');
   const iso = toISODate(raw);
   const m = iso.match(/^(\d{4})-(\d{2})-(\d{2})$/);
   return m ? `${m[3]}-${m[2]}-${m[1]}` : iso;
@@ -2043,6 +2054,19 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
         >
           <span className="truncate">{displayLabel}</span>
           {musicLogRecord && <ArrowUpRight className="h-3.5 w-3.5 opacity-60 shrink-0" />}
+        </div>
+      );
+    }
+
+    if ((tableName === 'MusicLog' && col === 'PlayID') || (tableName === 'VideoLog' && col === 'VideoPlayId')) {
+      return (
+        <div className="w-full h-10 bg-slate-100 border border-slate-200 rounded-xl px-3.5 text-[13px] font-mono font-bold text-slate-500 flex items-center gap-2 group/readonly">
+          <span className="truncate">{draft[col] ?? '—'}</span>
+          <div className="ml-auto opacity-0 group-hover/readonly:opacity-100 transition-opacity">
+            <Badge variant="outline" className="text-[10px] border-slate-300 text-slate-500 uppercase">
+              Auto-Number
+            </Badge>
+          </div>
         </div>
       );
     }
@@ -6102,7 +6126,7 @@ export default function App() {
         break;
       case 'MusicLog':
         collection = 'musiclog';
-        remap('playId', 'PlayID'); remap('session', 'Session');
+        remap('session', 'Session');
         remap('parentEvent', 'Parent Event (from Session)');
         remap('date', 'Date (from Session)'); remap('timeOfDay', 'TimeOfDay (from Session)');
         remap('occasion', 'Occasion (from Session)'); remap('notes', 'Notes');
@@ -6434,12 +6458,24 @@ export default function App() {
     return cols.find(c => c === 'DateFrom' || c === 'Date' || c.startsWith('Date (') || c.startsWith('DateFrom (')) || null;
   };
 
+  // Whether a column holds date values worth comparing chronologically. Covers both
+  // real 'date'-typed columns and lookup columns storing a session/event date — those
+  // are explicitly typed 'lookup' (for the Auto-Filled display treatment) rather than
+  // 'date', so getColumnType() alone can't tell; fall back to the same "Date (…)" /
+  // "DateFrom (…)" / "DateTo (…)" naming convention renderCell's lookup case already uses.
+  const isDateColumn = (col: string): boolean => {
+    const type = getColumnType(col);
+    if (type === 'date') return true;
+    if (type === 'lookup') return col.startsWith('Date (') || col.startsWith('DateFrom (') || col.startsWith('DateTo (');
+    return false;
+  };
+
   // Compares two records on a single sort rule — date-type fields compare chronologically,
   // everything else compares as case-insensitive text. Used to build multi-level sorts,
   // where each rule in `sortBy` breaks ties left by the rules before it.
   const compareBySortRule = (a: any, b: any, rule: { field: string; direction: 'asc' | 'desc' }): number => {
     const dir = rule.direction === 'desc' ? -1 : 1;
-    if (getColumnType(rule.field) === 'date') {
+    if (isDateColumn(rule.field)) {
       const parse = (item: any) => {
         const raw = item[rule.field];
         const t = raw ? new Date(raw).getTime() : NaN;
@@ -6457,7 +6493,7 @@ export default function App() {
   // The first date-type rule in a multi-sort — used to keep whole groups ordered
   // chronologically (rather than alphabetically) when the user has sorted by date.
   const getDateSortRule = (rules: { field: string; direction: 'asc' | 'desc' }[]) =>
-    rules.find(r => getColumnType(r.field) === 'date') || null;
+    rules.find(r => isDateColumn(r.field)) || null;
 
   // Memoized calculation to sort and group data for the visual/card views.
   // Sorted + grouped data for visual/card view (respects sortBy and groupByField)
@@ -10174,6 +10210,9 @@ thead.sticky th.sticky {
                                           clickedCol = getTableColumns()[tdIdx];
                                           // MusicLog star column — don't enter edit mode
                                           if (activeTable === 'MusicLog' && clickedCol === 'Relevance') return;
+                                          // PlayID / VideoPlayId are server-assigned autonumbers — read-only
+                                          if (activeTable === 'MusicLog' && clickedCol === 'PlayID') return;
+                                          if (activeTable === 'VideoLog' && clickedCol === 'VideoPlayId') return;
                                           // Images/Attachments column — don't enter inline edit mode (manager handles it)
                                           if (clickedCol === 'Images' || clickedCol === 'Attachments' || clickedCol === 'Attachment') {
                                             setImageManager({ item: { ...row.data }, column: clickedCol, collection: getImageCollection(), isOpen: true });
@@ -10693,7 +10732,7 @@ thead.sticky th.sticky {
                       <div className="space-y-3">
                         <div className="space-y-1">
                           <label className={lbl}>Play ID</label>
-                          <Input value={newRecord.playId || ''} onChange={(e) => setNewRecord({ ...newRecord, playId: e.target.value })} placeholder="" className="bg-brand-bg h-9 text-xs" />
+                          <div className="h-9 flex items-center px-3 rounded-md bg-slate-100 border border-slate-200 text-[11px] font-mono text-slate-400 italic">Auto-generated on save</div>
                         </div>
                         <div className="space-y-1">
                           <label className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Session</label>
@@ -10765,6 +10804,7 @@ thead.sticky th.sticky {
                               records={getDataForTable('Tracks')}
                               nameField="Title"
                               linkedTable="Tracks"
+                              single
                               onCommit={val => setNewRecord((prev: any) => ({ ...prev, track: val }))}
                               onCancel={() => { }}
                             />
@@ -10777,7 +10817,18 @@ thead.sticky th.sticky {
                           </div>
                           <div className="space-y-1">
                             <label className={lbl}>Relevance</label>
-                            <Input value={newRecord.relevance || ''} onChange={(e) => setNewRecord({ ...newRecord, relevance: e.target.value })} placeholder="" className="bg-brand-bg h-9 text-xs" />
+                            <div className="h-9 flex items-center gap-1 px-1">
+                              {[1, 2, 3, 4, 5].map(star => (
+                                <button
+                                  key={star}
+                                  type="button"
+                                  onClick={() => setNewRecord((prev: any) => ({ ...prev, relevance: Number(prev.relevance) === star ? '' : String(star) }))}
+                                  className="p-0.5"
+                                >
+                                  <Star className={`h-4 w-4 ${Number(newRecord.relevance) >= star ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} />
+                                </button>
+                              ))}
+                            </div>
                           </div>
                           <div className="space-y-1">
                             <label className={lbl}>Patrank</label>
@@ -10825,7 +10876,7 @@ thead.sticky th.sticky {
                         <div className="grid grid-cols-2 gap-3">
                           <div className="space-y-1">
                             <label className={lbl}>Video Play ID</label>
-                            <Input value={newRecord.VideoPlayId || ''} onChange={(e) => setNewRecord({ ...newRecord, VideoPlayId: e.target.value })} placeholder="" className="bg-brand-bg h-9 text-xs" />
+                            <div className="h-9 flex items-center px-3 rounded-md bg-slate-100 border border-slate-200 text-[11px] font-mono text-slate-400 italic">Auto-generated on save</div>
                           </div>
                           <div className="space-y-1">
                             <label className="text-[9px] font-black uppercase tracking-widest text-brand-primary">Session</label>
@@ -11654,7 +11705,7 @@ thead.sticky th.sticky {
                   )}
                   <div>
                     <label className={labelCls}>Play ID</label>
-                    <input className={inputCls} value={newRecord.playId || ''} onChange={e => setNewRecord({ ...newRecord, playId: e.target.value })} placeholder="Play ID…" />
+                    <div className="h-11 flex items-center px-3.5 rounded-xl bg-slate-100 border border-slate-200 text-[13px] font-mono text-slate-400 italic">Auto-generated on save</div>
                   </div>
                 </div>
               )
@@ -11666,7 +11717,7 @@ thead.sticky th.sticky {
                   <div>
                     <label className={labelCls}>Track Name</label>
                     <div className="min-h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
-                      <LinkedRecordPicker value={newRecord.track || ''} records={getDataForTable('Tracks')} nameField="Title" linkedTable="Tracks" onCommit={val => setNewRecord({ ...newRecord, track: val })} onCancel={() => { }} />
+                      <LinkedRecordPicker value={newRecord.track || ''} records={getDataForTable('Tracks')} nameField="Title" linkedTable="Tracks" single onCommit={val => setNewRecord({ ...newRecord, track: val })} onCancel={() => { }} />
                     </div>
                   </div>
                   <div className="grid grid-cols-2 gap-3">
@@ -11686,7 +11737,18 @@ thead.sticky th.sticky {
                     </div>
                     <div>
                       <label className={labelCls}>Relevance</label>
-                      <input className={inputCls} value={newRecord.relevance || ''} onChange={e => setNewRecord({ ...newRecord, relevance: e.target.value })} placeholder="Relevance" />
+                      <div className="h-11 flex items-center gap-1.5 px-1">
+                        {[1, 2, 3, 4, 5].map(star => (
+                          <button
+                            key={star}
+                            type="button"
+                            onClick={() => setNewRecord((prev: any) => ({ ...prev, relevance: Number(prev.relevance) === star ? '' : String(star) }))}
+                            className="p-1"
+                          >
+                            <Star className={`h-5 w-5 ${Number(newRecord.relevance) >= star ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} />
+                          </button>
+                        ))}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -11736,7 +11798,7 @@ thead.sticky th.sticky {
                   )}
                   <div>
                     <label className={labelCls}>Video Play ID</label>
-                    <input className={inputCls} value={newRecord.VideoPlayId || ''} onChange={e => setNewRecord({ ...newRecord, VideoPlayId: e.target.value })} placeholder="Video Play ID…" />
+                    <div className="h-11 flex items-center px-3.5 rounded-xl bg-slate-100 border border-slate-200 text-[13px] font-mono text-slate-400 italic">Auto-generated on save</div>
                   </div>
                 </div>
               )

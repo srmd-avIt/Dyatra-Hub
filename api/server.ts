@@ -363,6 +363,26 @@ app.get('/api/drive-proxy/:id', async (req, res) => {
 /**
  * HELPER FUNCTIONS
  */
+// Atomically assigns the next number for `name`, self-healing against drift: a record
+// inserted outside this path (bulk import, manual DB edit, a legacy client) can leave
+// the counter behind the collection's true max, which would otherwise hand out a
+// number that already exists. Every call re-checks the true max and jumps the
+// counter forward to stay ahead of it, so the seed step isn't a one-time thing.
+async function getNextSequence(db: any, name: string, seedCollection: string, seedField: string) {
+  const [top] = await db.collection(seedCollection)
+    .find({ [seedField]: { $type: 'number' } })
+    .sort({ [seedField]: -1 })
+    .limit(1)
+    .toArray();
+  const currentMax = top ? top[seedField] : 0;
+  const result = await db.collection('counters').findOneAndUpdate(
+    { _id: name },
+    [{ $set: { seq: { $add: [{ $max: [{ $ifNull: ['$seq', 0] }, currentMax] }, 1] } } }],
+    { returnDocument: 'after', upsert: true }
+  );
+  return (result.value ?? result).seq;
+}
+
 async function createAssignmentNotifications(db: any, collection: string, recordId: any, recordData: any, assignees: string, modifiedBy: string) {
   try {
     const assigneeList = assignees.split(',').map((s: string) => s.trim()).filter(Boolean);
@@ -469,6 +489,12 @@ app.post('/api/equipment-movement', async (req, res) => {
 
 const collections = ['events', 'sessions', 'musiclog', 'videolog', 'checklist', 'locations', 'led_details', 'rentals', 'guidance', 'media', 'videosetup', 'audiosetup', 'equipment', 'equipment_movements'];
 
+// Collections whose primary-key field is a server-assigned autonumber, not client input.
+const AUTONUMBER_FIELDS: Record<string, string> = {
+  musiclog: 'PlayID',
+  videolog: 'VideoPlayId',
+};
+
 collections.forEach(col => {
   // GET ALL
   app.get(`/api/${col}`, async (req, res) => {
@@ -496,6 +522,10 @@ collections.forEach(col => {
       const modifiedBy = req.body._modifiedBy || 'Someone';
       const newItem = { ...req.body, created_at: new Date() };
       delete newItem._modifiedBy;
+      const autonumberField = AUTONUMBER_FIELDS[col];
+      if (autonumberField) {
+        newItem[autonumberField] = await getNextSequence(db, `${col}_${autonumberField.toLowerCase()}`, col, autonumberField);
+      }
       const result = await db.collection(col).insertOne(newItem);
       
       const assignees = newItem.Assignee || newItem.assignee || newItem['People Involved'];
@@ -516,7 +546,8 @@ collections.forEach(col => {
       const modifiedBy = updateData._modifiedBy || 'Someone';
       delete updateData._id;
       delete updateData._modifiedBy;
-      
+      if (AUTONUMBER_FIELDS[col]) delete updateData[AUTONUMBER_FIELDS[col]];
+
       const oldItem = await db.collection(col).findOne({ _id: new ObjectId(id) });
       await db.collection(col).updateOne({ _id: new ObjectId(id) }, { $set: updateData });
 
