@@ -2259,7 +2259,7 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
     } else if (isSe && col === 'Occasion')
       opts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
     else if (isSe && col === 'Time Of Day')
-      opts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
+      opts = [...new Set(sessions.map((s: any) => s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"]).filter(Boolean))].sort() as string[];
     else if (isSe && col === 'SessionType')
       opts = [...new Set(sessions.map((s: any) => s.SessionType).filter(Boolean))].sort() as string[];
     else if (isSe && col === 'Parent Event')
@@ -10654,7 +10654,7 @@ thead.sticky th.sticky {
               {/* SESSION FIELDS */}
               {activeTable === 'Session' && (() => {
                 const eventOpts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
-                const timeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
+                const timeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"]).filter(Boolean))].sort() as string[];
                 const sessOccasionOpts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
                 const sessionTypeOpts = [...new Set(sessions.map((s: any) => s.SessionType).filter(Boolean))].sort() as string[];
                 const sessionCityOpts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
@@ -10721,7 +10721,7 @@ thead.sticky th.sticky {
 
               {/* MUSIC LOG FIELDS - 17 Columns Compact View */}
               {activeTable === 'MusicLog' && (() => {
-                const mlTimeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
+                const mlTimeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"]).filter(Boolean))].sort() as string[];
                 const mlOccasionOpts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
                 const mlPlayedAtOpts = [...new Set(musicLogs.map((m: any) => m.PlayedAt).filter(Boolean))].sort() as string[];
                 const lbl = "text-[9px] font-black uppercase tracking-widest text-slate-500";
@@ -10743,7 +10743,7 @@ thead.sticky th.sticky {
                               onCommit={val => {
                                 const s = sessions.find((x: any) => x["Session Name"] === val);
                                 const norm = (d: any) => toISODate(d);
-                                if (s) setNewRecord((prev: any) => ({ ...prev, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), timeOfDay: s["Time Of Day"] || '', occasion: s["Occasion"] || '' }));
+                                if (s) setNewRecord((prev: any) => ({ ...prev, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), timeOfDay: s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '', occasion: s["Occasion"] || '' }));
                                 else setNewRecord((prev: any) => ({ ...prev, session: val }));
                               }}
                               onCancel={() => { }}
@@ -10863,7 +10863,7 @@ thead.sticky th.sticky {
               {/* VIDEOLOG FIELDS */}
               {activeTable === 'VideoLog' && (() => {
                 const vlCityOpts = [...new Set([...sessions.map((s: any) => s.City), ...events.map((e: any) => e.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
-                const vlTimeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
+                const vlTimeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"]).filter(Boolean))].sort() as string[];
                 const vlOccasionOpts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
                 const vlSessionTypeOpts = [...new Set(sessions.map((s: any) => s.SessionType).filter(Boolean))].sort() as string[];
                 const vlEventOpts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
@@ -10887,7 +10887,7 @@ thead.sticky th.sticky {
                                 onCommit={val => {
                                   const s = sessions.find((x: any) => x["Session Name"] === val);
                                   const norm = (d: any) => toISODate(d);
-                                  if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), city: s["City"] || '', venue: s["Venue"] || '', timeOfDay: s["Time Of Day"] || '', occasion: s["Occasion"] || '', sessionType: s["SessionType"] || '' });
+                                  if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), city: s["City"] || '', venue: s["Venue"] || '', timeOfDay: s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '', occasion: s["Occasion"] || '', sessionType: s["SessionType"] || '' });
                                   else setNewRecord({ ...newRecord, session: val });
                                 }}
                                 onCancel={() => { }}
@@ -11611,7 +11611,7 @@ thead.sticky th.sticky {
         } else if (activeTable === 'Session') {
           const sessionCityOpts = [...new Set([...events.map((e: any) => e.City), ...sessions.map((s: any) => s.City)].filter(Boolean).flatMap((c: string) => c.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
           const eventOpts = events.map((e: any) => e["Event Name"]).filter(Boolean).sort() as string[];
-          const timeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"]).filter(Boolean))].sort() as string[];
+          const timeOpts = [...new Set(sessions.map((s: any) => s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"]).filter(Boolean))].sort() as string[];
           const sessionTypeOpts = [...new Set(sessions.map((s: any) => s.SessionType).filter(Boolean))].sort() as string[];
           const sessOccasionOpts = [...new Set(sessions.map((s: any) => s.Occasion).filter(Boolean).flatMap((o: string) => o.split(',').map((x: string) => x.trim())).filter(Boolean))].sort() as string[];
           wizardSteps = [
@@ -11692,7 +11692,7 @@ thead.sticky th.sticky {
                     <CellDropdown value={newRecord.session || ''} options={sessionOpts} onCommit={val => {
                       const s = sessions.find((x: any) => x["Session Name"] === val);
                       const norm = (d: any) => toISODate(d);
-                      if (s) setNewRecord((prev: any) => ({ ...prev, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), timeOfDay: s["Time Of Day"] || '', occasion: s["Occasion"] || '' }));
+                      if (s) setNewRecord((prev: any) => ({ ...prev, session: s["Session Name"], parentEvent: s["Parent Event"] || '', date: norm(s["Date"]), timeOfDay: s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '', occasion: s["Occasion"] || '' }));
                       else setNewRecord((prev: any) => ({ ...prev, session: val }));
                     }} onCancel={() => { }} placeholder="Select session…" tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20" />
                   </div>
@@ -11784,7 +11784,7 @@ thead.sticky th.sticky {
                     <label className={labelCls}>Session</label>
                     <CellDropdown value={newRecord.session || ''} options={sessionOpts} onCommit={val => {
                       const s = sessions.find((x: any) => x["Session Name"] === val);
-                      if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: s["Date"], city: s["City"], venue: s["Venue"], timeOfDay: s["Time Of Day"], occasion: s["Occasion"], sessionType: s["SessionType"] });
+                      if (s) setNewRecord({ ...newRecord, session: s["Session Name"], parentEvent: s["Parent Event"], date: toISODate(s["Date"]), city: s["City"], venue: s["Venue"], timeOfDay: s["Time Of Day"] || s["TimeOfDay"] || s["timeOfDay"] || '', occasion: s["Occasion"], sessionType: s["SessionType"] });
                       else setNewRecord({ ...newRecord, session: val });
                     }} onCancel={() => { }} placeholder="Select session…" tagClass="bg-brand-primary/10 text-brand-primary text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-primary/20" />
                   </div>
