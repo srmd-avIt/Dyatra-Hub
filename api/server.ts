@@ -71,6 +71,13 @@ async function getDb() {
   await client.connect();
   cachedClient = client;
   cachedDb = client.db('dyatra_ops');
+
+  // Hard backstop against duplicate PlayID/VideoPlayId: even if the
+  // gap-filling logic in getNextAvailableNumber ever races, the database
+  // itself refuses a second document with the same number.
+  await cachedDb.collection('musiclog').createIndex({ PlayID: 1 }, { unique: true });
+  await cachedDb.collection('videolog').createIndex({ VideoPlayId: 1 }, { unique: true });
+
   return cachedDb;
 }
 
@@ -363,24 +370,92 @@ app.get('/api/drive-proxy/:id', async (req, res) => {
 /**
  * HELPER FUNCTIONS
  */
-// Atomically assigns the next number for `name`, self-healing against drift: a record
-// inserted outside this path (bulk import, manual DB edit, a legacy client) can leave
-// the counter behind the collection's true max, which would otherwise hand out a
-// number that already exists. Every call re-checks the true max and jumps the
-// counter forward to stay ahead of it, so the seed step isn't a one-time thing.
-async function getNextSequence(db: any, name: string, seedCollection: string, seedField: string) {
+// Always the last-used number in `seedField` plus one — deleted numbers are never
+// reused, only ever the next one after whatever is currently the highest. Reads the
+// true current max on every call rather than trusting a separately-stored counter, so
+// a record inserted outside this path (bulk import, manual DB edit) can't leave a stale
+// counter behind that would later hand out a number that already exists.
+// This can race under concurrent creates (two requests reading the same max at once);
+// the caller retries on a duplicate-key error, and the unique index created in getDb()
+// is what actually guarantees two records can never end up with the same number.
+async function getNextAvailableNumber(db: any, seedCollection: string, seedField: string): Promise<number> {
   const [top] = await db.collection(seedCollection)
     .find({ [seedField]: { $type: 'number' } })
     .sort({ [seedField]: -1 })
     .limit(1)
     .toArray();
-  const currentMax = top ? top[seedField] : 0;
-  const result = await db.collection('counters').findOneAndUpdate(
-    { _id: name },
-    [{ $set: { seq: { $add: [{ $max: [{ $ifNull: ['$seq', 0] }, currentMax] }, 1] } } }],
-    { returnDocument: 'after', upsert: true }
-  );
-  return (result.value ?? result).seq;
+  return (top ? top[seedField] : 0) + 1;
+}
+
+// Keeps a Track's "Plays" field (its reverse list of MusicLog PlayIDs) in sync whenever
+// a MusicLog record's Track link changes — mirrors syncSessionToEvent's reverse-link
+// pattern on the frontend, but done server-side since MusicLog records get created,
+// edited, and deleted from several different UI paths (the Add dialog, the mobile
+// wizard, inline cell edits, the "+ Add new record" row) that don't all funnel through
+// one shared frontend handler.
+async function syncTrackPlays(db: any, playId: number, oldTrackTitle: string | undefined, newTrackTitle: string | undefined) {
+  if (oldTrackTitle === newTrackTitle) return;
+  const playIdStr = String(playId);
+
+  const removeFrom = async (title: string) => {
+    const track = await db.collection('media').findOne({ Title: title });
+    if (!track) return;
+    const remaining = String(track.Plays || '').split(',').map((s: string) => s.trim()).filter(Boolean).filter((p: string) => p !== playIdStr);
+    await db.collection('media').updateOne({ _id: track._id }, { $set: { Plays: remaining.join(', '), LastUpdated: formatLastUpdated(new Date()) } });
+  };
+  const addTo = async (title: string) => {
+    const track = await db.collection('media').findOne({ Title: title });
+    if (!track) return;
+    const existing = String(track.Plays || '').split(',').map((s: string) => s.trim()).filter(Boolean);
+    if (existing.includes(playIdStr)) return;
+    await db.collection('media').updateOne({ _id: track._id }, { $set: { Plays: [...existing, playIdStr].join(', '), LastUpdated: formatLastUpdated(new Date()) } });
+  };
+
+  if (oldTrackTitle) await removeFrom(oldTrackTitle);
+  if (newTrackTitle) await addTo(newTrackTitle);
+}
+
+// Formats a timestamp as e.g. "25-08-2026 3:34pm" — DD-MM-YYYY, matching the rest of
+// the app's date-display convention — plus h:mmam/pm. This is the display string
+// stamped into Tracks' "LastUpdated" field. Stored as this exact string (not a
+// Date/ISO value) since that's the format the field is meant to show, not a raw
+// timestamp to reformat.
+function formatLastUpdated(date: Date): string {
+  const day = String(date.getDate()).padStart(2, '0');
+  const month = String(date.getMonth() + 1).padStart(2, '0');
+  const hour24 = date.getHours();
+  const hour12 = hour24 % 12 === 0 ? 12 : hour24 % 12;
+  const minutes = String(date.getMinutes()).padStart(2, '0');
+  const ampm = hour24 >= 12 ? 'pm' : 'am';
+  return `${day}-${month}-${date.getFullYear()} ${hour12}:${minutes}${ampm}`;
+}
+
+// A separate external sync periodically overwrites the whole Tracks collection from a
+// source that uses different field names/formats than the app's own canonical schema
+// — "Last Updated" (with a space, M/D/YYYY h:mmam/pm or bare YYYY-MM-DD) instead of
+// "LastUpdated" (DD-MM-YYYY h:mmam/pm), "Link" instead of "FileLink". That wipes out
+// the canonical fields every time it runs, so a one-time backfill doesn't hold.
+// Normalize on every read instead — response-only, doesn't touch the stored document
+// — so the frontend always has a usable value regardless of which key the data
+// currently happens to be under. Add more field pairs here as the same pattern turns
+// up elsewhere in this collection.
+function normalizeTrack(doc: any) {
+  if (!doc.LastUpdated && doc['Last Updated']) {
+    const legacy = doc['Last Updated'];
+    const slash = /^(\d{1,2})\/(\d{1,2})\/(\d{4})\s+(\d{1,2}):(\d{2})(am|pm)$/i.exec(legacy);
+    const iso = !slash && /^(\d{4})-(\d{2})-(\d{2})$/.exec(legacy);
+    if (slash) {
+      const [, mo, day, yr, hr, min, ap] = slash;
+      doc.LastUpdated = `${day.padStart(2, '0')}-${mo.padStart(2, '0')}-${yr} ${hr}:${min}${ap.toLowerCase()}`;
+    } else if (iso) {
+      const [, yr, mo, day] = iso;
+      doc.LastUpdated = `${day}-${mo}-${yr}`;
+    } else {
+      doc.LastUpdated = legacy; // unrecognized shape — show it raw rather than nothing
+    }
+  }
+  if (!doc.FileLink && doc.Link) doc.FileLink = doc.Link;
+  return doc;
 }
 
 async function createAssignmentNotifications(db: any, collection: string, recordId: any, recordData: any, assignees: string, modifiedBy: string) {
@@ -501,7 +576,7 @@ collections.forEach(col => {
     try {
       const db = await getDb();
       const data = await db.collection(col).find({}).sort({ created_at: 1 }).toArray();
-      res.json(data);
+      res.json(col === 'media' ? data.map(normalizeTrack) : data);
     } catch (e) { res.status(500).json({ error: 'Fetch failed' }); }
   });
 
@@ -511,7 +586,7 @@ collections.forEach(col => {
       const db = await getDb();
       const item = await db.collection(col).findOne({ _id: new ObjectId(req.params.id) });
       if (!item) return res.status(404).json({ error: 'Not found' });
-      res.json(item);
+      res.json(col === 'media' ? normalizeTrack(item) : item);
     } catch (e) { res.status(500).json({ error: 'Fetch failed' }); }
   });
 
@@ -522,15 +597,34 @@ collections.forEach(col => {
       const modifiedBy = req.body._modifiedBy || 'Someone';
       const newItem = { ...req.body, created_at: new Date() };
       delete newItem._modifiedBy;
+      if (col === 'media') newItem.LastUpdated = formatLastUpdated(new Date());
+
       const autonumberField = AUTONUMBER_FIELDS[col];
+      let result;
       if (autonumberField) {
-        newItem[autonumberField] = await getNextSequence(db, `${col}_${autonumberField.toLowerCase()}`, col, autonumberField);
+        // Retry on the rare race where two requests grab the same freed number at
+        // once — the unique index (see getDb()) is what actually rejects the loser.
+        for (let attempt = 0; ; attempt++) {
+          newItem[autonumberField] = await getNextAvailableNumber(db, col, autonumberField);
+          try {
+            result = await db.collection(col).insertOne(newItem);
+            break;
+          } catch (e: any) {
+            if (e?.code === 11000 && attempt < 15) continue;
+            throw e;
+          }
+        }
+      } else {
+        result = await db.collection(col).insertOne(newItem);
       }
-      const result = await db.collection(col).insertOne(newItem);
-      
+
       const assignees = newItem.Assignee || newItem.assignee || newItem['People Involved'];
       if (assignees) {
         await createAssignmentNotifications(db, col, result.insertedId, newItem, assignees, modifiedBy);
+      }
+
+      if (col === 'musiclog' && newItem.Track) {
+        await syncTrackPlays(db, newItem.PlayID, undefined, newItem.Track);
       }
 
       res.status(201).json({ ...newItem, _id: result.insertedId });
@@ -549,6 +643,18 @@ collections.forEach(col => {
       if (AUTONUMBER_FIELDS[col]) delete updateData[AUTONUMBER_FIELDS[col]];
 
       const oldItem = await db.collection(col).findOne({ _id: new ObjectId(id) });
+
+      if (col === 'media') {
+        // Inline cell editing PUTs the whole record on every blur, even when the
+        // user just clicked into a field and clicked away without changing it —
+        // only bump the timestamp when something actually differs from what's stored.
+        const changed = Object.keys(updateData).some(
+          k => k !== 'LastUpdated' && JSON.stringify(updateData[k]) !== JSON.stringify(oldItem?.[k])
+        );
+        if (changed) updateData.LastUpdated = formatLastUpdated(new Date());
+        else delete updateData.LastUpdated;
+      }
+
       await db.collection(col).updateOne({ _id: new ObjectId(id) }, { $set: updateData });
 
       const oldAssignees = oldItem?.Assignee || oldItem?.assignee || oldItem?.['People Involved'] || '';
@@ -563,6 +669,10 @@ collections.forEach(col => {
         }
       }
 
+      if (col === 'musiclog' && 'Track' in updateData && updateData.Track !== oldItem?.Track) {
+        await syncTrackPlays(db, oldItem?.PlayID, oldItem?.Track, updateData.Track);
+      }
+
       res.json({ success: true });
     } catch (e) { res.status(500).json({ error: 'Update failed' }); }
   });
@@ -571,7 +681,11 @@ collections.forEach(col => {
   app.delete(`/api/${col}/:id`, async (req, res) => {
     try {
       const db = await getDb();
+      const item = col === 'musiclog' ? await db.collection(col).findOne({ _id: new ObjectId(req.params.id) }) : null;
       await db.collection(col).deleteOne({ _id: new ObjectId(req.params.id) });
+      if (item?.Track) {
+        await syncTrackPlays(db, item.PlayID, item.Track, undefined);
+      }
       res.json({ success: true });
     } catch (e) { res.status(500).json({ error: 'Delete failed' }); }
   });

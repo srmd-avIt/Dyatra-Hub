@@ -2071,6 +2071,19 @@ const RecordExpandModal = React.memo(function RecordExpandModal({
       );
     }
 
+    if (tableName === 'Tracks' && col === 'LastUpdated') {
+      return (
+        <div className="w-full h-10 bg-slate-100 border border-slate-200 rounded-xl px-3.5 text-[13px] font-mono font-bold text-slate-500 flex items-center gap-2 group/readonly">
+          <span className="truncate">{draft[col] ?? '—'}</span>
+          <div className="ml-auto opacity-0 group-hover/readonly:opacity-100 transition-opacity">
+            <Badge variant="outline" className="text-[10px] border-slate-300 text-slate-500 uppercase">
+              Auto-Updated
+            </Badge>
+          </div>
+        </div>
+      );
+    }
+
     // Check for ANY auto-filled columns (Session or Event)
     const isAutoFilled =
       col.includes('(from Session)') ||
@@ -4543,6 +4556,8 @@ export default function App() {
         await syncSessionToEvent(record['Session Name'], undefined, record['Parent Event']);
       } else if (activeTable === 'Events' && (record['Sessions'] || record['Imported table'])) {
         await syncEventToSessions(record['Event Name'], undefined, record['Sessions'] || record['Imported table']);
+      } else if (activeTable === 'MusicLog' && record['Track']) {
+        fetchActiveTable('Tracks');
       }
     } catch (e) {
       console.error('Delete failed', e);
@@ -4968,7 +4983,7 @@ export default function App() {
     if (['Purchase Date', 'Warranty Expiry'].includes(col)) return 'date';
     // Smart defaults by column name
     if (['PlayID', 'VideoPlayId', 'LedId', 'LearningId'].includes(col) || (col.toLowerCase().endsWith('id') && !col.includes(' '))) return 'id';
-    if (['DateFrom', 'DateTo', 'Date', 'PlayedAt', 'LastUpdated'].includes(col) || col.startsWith('Date (') || col.startsWith('DateFrom (') || col.startsWith('DateTo (')) return 'date';
+    if (['DateFrom', 'DateTo', 'Date', 'PlayedAt'].includes(col) || col.startsWith('Date (') || col.startsWith('DateFrom (') || col.startsWith('DateTo (')) return 'date';
     if (['Year', 'Year (from Event)'].includes(col)) return 'year';
     if (['Occasion', 'Occasion (from Session)', 'Tags', 'Assignee'].includes(col)) return 'badge_multi';
     if (['City', 'City (from Session)', 'City (from 🕘 Session)', 'Dept', 'TaskGroup', 'Indoor/Outdoor LED?'].includes(col)) return 'badge';
@@ -5547,7 +5562,7 @@ export default function App() {
 
             return (
               <td key={col} className={`${cellCls} ${isColFrozen ? stickyBg : ''}`} style={style}>
-                <div className="flex flex-wrap gap-1.5 justify-start">
+                <div className="flex flex-wrap gap-1.5 justify-start overflow-hidden">
                   {names.length > 0 ? names.map((eName, idx) => {
                     const linkedEv = events.find((ev) => {
                       const eventName = (ev as any)["Event Name"] || (ev as any).EventName;
@@ -5679,7 +5694,7 @@ export default function App() {
             return (
               <td key={col} className={`${cellCls} ${isColFrozen ? stickyBg : ''}`} style={style}>
                 {item["FileLink"]
-                  ? <a href={item["FileLink"]} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px]">Link</a>
+                  ? <a href={item["FileLink"]} target="_blank" rel="noopener noreferrer" className="text-brand-primary underline text-[13px] truncate block max-w-full">{item["FileLink"]}</a>
                   : <span className="text-slate-300 italic text-[12px]">—</span>}
               </td>
             );
@@ -6132,7 +6147,7 @@ export default function App() {
         remap('occasion', 'Occasion (from Session)'); remap('notes', 'Notes');
         remap('order', 'Order'); remap('playedAt', 'PlayedAt'); remap('track', 'Track');
         remap('theme', 'Theme'); remap('relevance', 'Relevance'); remap('patrank', 'Patrank');
-        remap('topic', 'Topic'); remap('cue', 'Cue'); remap('ppgRemarks', 'PPG'); remap('trackId', 'TrackID');
+        remap('topic', 'Topic'); remap('cue', 'Cue'); remap('ppgRemarks', 'PPG');
         break;
       case 'VideoLog':
         collection = 'videolog';
@@ -6149,7 +6164,7 @@ export default function App() {
         remap('duration', 'Duration'); remap('durationTime', 'DurationTime');
         remap('bpm', 'BPM'); remap('key', 'Key'); remap('source', 'Source');
         remap('fileLink', 'FileLink'); remap('tags', 'Tags'); remap('lyrics', 'Lyrics');
-        remap('lexiconID', 'LexiconID'); remap('lastUpdated', 'LastUpdated'); remap('plays', 'Plays');
+        remap('lexiconID', 'LexiconID');
         break;
       case 'DyatraChecklist':
         collection = 'checklist';
@@ -6208,6 +6223,11 @@ export default function App() {
           await syncSessionToEvent(data['Session Name'], data['Parent Event']);
         } else if (activeTable === 'Events' && data['Sessions']) {
           await syncEventToSessions(data['Event Name'], data['Sessions']);
+        } else if (activeTable === 'MusicLog') {
+          // The server keeps the linked Track's "Plays" field in sync, but that's a
+          // different collection than the one we just refetched — pull it fresh too
+          // so the Tracks table reflects it immediately, not just after a page reload.
+          fetchActiveTable('Tracks');
         }
       } else {
         showToast('Failed to save record to database.');
@@ -6899,6 +6919,8 @@ export default function App() {
           await syncSessionToEvent(draft['Session Name'], draft['Parent Event'], priorSessionParentEvent);
         } else if (activeTable === 'Events' && 'Sessions' in draft) {
           await syncEventToSessions(draft['Event Name'], draft['Sessions'], priorEventSessions);
+        } else if (activeTable === 'MusicLog') {
+          fetchActiveTable('Tracks');
         }
       } else {
         alert("Failed to update record");
@@ -7034,6 +7056,8 @@ export default function App() {
         await syncSessionToEvent(newDraft['Session Name'], newDraft['Parent Event'], priorSessionParentEvent);
       } else if (activeTable === 'Events' && 'Sessions' in newDraft) {
         await syncEventToSessions(newDraft['Event Name'], newDraft['Sessions'], priorEventSessions);
+      } else if (activeTable === 'MusicLog') {
+        fetchActiveTable('Tracks');
       }
     } catch (e) {
       console.error("Expand save error", e);
@@ -9907,7 +9931,14 @@ thead.sticky th.sticky {
                     >
                       <table
                         className="border-collapse text-left text-[11px] table-fixed"
-                        style={{ width: 'max-content' }}
+                        style={{
+                          // An explicit pixel width, not 'max-content' — with table-layout:fixed,
+                          // 'max-content' lets the browser fall back to sizing columns off their
+                          // widest unclipped content across every rendered row (this grid isn't
+                          // virtualized), which silently overrides colWidths and makes columns
+                          // refuse to shrink below whatever their longest cell needs.
+                          width: 48 + getTableColumns().reduce((sum, c) => sum + (colWidths[c] || 200), 0) + (hasPerm(user, activeTable, 'edit') ? 48 : 0),
+                        }}
                       >
                         <thead className="sticky top-0 z-30 bg-slate-50 border-b border-slate-200">
                           {/* --- UI: Grid Header Row --- */}
@@ -10213,6 +10244,8 @@ thead.sticky th.sticky {
                                           // PlayID / VideoPlayId are server-assigned autonumbers — read-only
                                           if (activeTable === 'MusicLog' && clickedCol === 'PlayID') return;
                                           if (activeTable === 'VideoLog' && clickedCol === 'VideoPlayId') return;
+                                          // Tracks' LastUpdated is a server-stamped timestamp — read-only
+                                          if (activeTable === 'Tracks' && clickedCol === 'LastUpdated') return;
                                           // Images/Attachments column — don't enter inline edit mode (manager handles it)
                                           if (clickedCol === 'Images' || clickedCol === 'Attachments' || clickedCol === 'Attachment') {
                                             setImageManager({ item: { ...row.data }, column: clickedCol, collection: getImageCollection(), isOpen: true });
@@ -10779,7 +10812,7 @@ thead.sticky th.sticky {
 
                     <div className="p-3 bg-brand-accent/5 border border-brand-accent/10 rounded-lg">
                       <p className="text-[9px] font-black uppercase tracking-widest text-brand-accent mb-3">Track & Performance Details</p>
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
+                      <div className="grid grid-cols-2 gap-3">
                         <div className="space-y-1">
                           <label className={lbl}>Order</label>
                           <Input value={newRecord.order || ''} onChange={(e) => setNewRecord({ ...newRecord, order: e.target.value })} placeholder="" className="bg-brand-bg h-9 text-xs" />
@@ -10789,10 +10822,6 @@ thead.sticky th.sticky {
                           <div className="h-9 border border-slate-200 rounded-xl overflow-visible bg-white">
                             <CellDropdown value={newRecord.playedAt || ''} options={[...new Set([...mlPlayedAtOpts, ...(customTags['MusicLog']?.['PlayedAt'] || [])])]} onAddOption={val => handleAddCustomTag('MusicLog', 'PlayedAt', val)} removableOptions={[...new Set([...mlPlayedAtOpts, ...(customTags['MusicLog']?.['PlayedAt'] || [])])]} onRemoveOption={val => handleRemoveTagGlobally('MusicLog', 'PlayedAt', val)} onCommit={val => setNewRecord((prev: any) => ({ ...prev, playedAt: val }))} onCancel={() => { }} placeholder="Select…" tagClass="bg-brand-accent/10 text-brand-accent text-[11px] font-semibold px-2 py-0.5 rounded-sm border border-brand-accent/20" />
                           </div>
-                        </div>
-                        <div className="space-y-1">
-                          <label className={lbl}>Track ID</label>
-                          <Input value={newRecord.trackId || ''} onChange={(e) => setNewRecord({ ...newRecord, trackId: e.target.value })} placeholder="" className="bg-brand-bg h-9 text-xs" />
                         </div>
                       </div>
                       <div className="mt-3 space-y-3">
@@ -10817,18 +10846,20 @@ thead.sticky th.sticky {
                           </div>
                           <div className="space-y-1">
                             <label className={lbl}>Relevance</label>
-                            <div className="h-9 flex items-center gap-1 px-1">
-                              {[1, 2, 3, 4, 5].map(star => (
-                                <button
-                                  key={star}
-                                  type="button"
-                                  onClick={() => setNewRecord((prev: any) => ({ ...prev, relevance: Number(prev.relevance) === star ? '' : String(star) }))}
-                                  className="p-0.5"
-                                >
-                                  <Star className={`h-4 w-4 ${Number(newRecord.relevance) >= star ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} />
-                                </button>
-                              ))}
-                            </div>
+                            <Input
+                              type="number"
+                              min={1}
+                              max={5}
+                              value={newRecord.relevance || ''}
+                              onChange={(e) => {
+                                const v = e.target.value;
+                                if (v === '') { setNewRecord((prev: any) => ({ ...prev, relevance: '' })); return; }
+                                const n = Math.max(1, Math.min(5, Number(v)));
+                                setNewRecord((prev: any) => ({ ...prev, relevance: String(n) }));
+                              }}
+                              placeholder="1-5"
+                              className="bg-brand-bg h-9 text-xs"
+                            />
                           </div>
                           <div className="space-y-1">
                             <label className={lbl}>Patrank</label>
@@ -11065,14 +11096,6 @@ thead.sticky th.sticky {
                   <div className="space-y-2">
                     <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Lexicon ID</label>
                     <Input value={newRecord.lexiconID || ''} onChange={(e) => setNewRecord({ ...newRecord, lexiconID: e.target.value })} placeholder="Lexicon ID" className="bg-brand-bg" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Last Updated</label>
-                    <Input value={newRecord.lastUpdated || ''} onChange={(e) => setNewRecord({ ...newRecord, lastUpdated: e.target.value })} placeholder="YYYY-MM-DD" type="date" className="bg-brand-bg" />
-                  </div>
-                  <div className="space-y-2">
-                    <label className="text-[10px] font-bold uppercase tracking-[0.2em] text-brand-text-muted">Plays</label>
-                    <Input value={newRecord.plays || ''} onChange={(e) => setNewRecord({ ...newRecord, plays: e.target.value })} placeholder="Number of Plays" type="number" className="bg-brand-bg" />
                   </div>
                 </>
               )}
@@ -11737,18 +11760,20 @@ thead.sticky th.sticky {
                     </div>
                     <div>
                       <label className={labelCls}>Relevance</label>
-                      <div className="h-11 flex items-center gap-1.5 px-1">
-                        {[1, 2, 3, 4, 5].map(star => (
-                          <button
-                            key={star}
-                            type="button"
-                            onClick={() => setNewRecord((prev: any) => ({ ...prev, relevance: Number(prev.relevance) === star ? '' : String(star) }))}
-                            className="p-1"
-                          >
-                            <Star className={`h-5 w-5 ${Number(newRecord.relevance) >= star ? 'fill-yellow-400 text-yellow-400' : 'text-slate-300'}`} />
-                          </button>
-                        ))}
-                      </div>
+                      <input
+                        type="number"
+                        min={1}
+                        max={5}
+                        className={inputCls}
+                        value={newRecord.relevance || ''}
+                        onChange={e => {
+                          const v = e.target.value;
+                          if (v === '') { setNewRecord({ ...newRecord, relevance: '' }); return; }
+                          const n = Math.max(1, Math.min(5, Number(v)));
+                          setNewRecord({ ...newRecord, relevance: String(n) });
+                        }}
+                        placeholder="1-5"
+                      />
                     </div>
                   </div>
                 </div>
